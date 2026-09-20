@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Eudemonia needs this permission to intercept hardware buttons (like volume keys) globally to start and stop voice recording instantly, even when the app is in the background.</string>
+</resources>

@@ -1,0 +1,42 @@
+package com.eudemonia.eudemonia
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity: FlutterActivity() {
+    private val CHANNEL = "com.eudemonia/hardware_buttons"
+    private var methodChannel: MethodChannel? = null
+
+    private val hardwareTriggerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.eudemonia.eudemonia.HARDWARE_TRIGGER") {
+                // Forward the trigger to Flutter
+                methodChannel?.invokeMethod("onHardwareTrigger", null)
+            }
+        }
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        
+        // Register the receiver
+        val filter = IntentFilter("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(hardwareTriggerReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(hardwareTriggerReceiver, filter)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(hardwareTriggerReceiver)
+    }
+}
