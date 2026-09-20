@@ -38,7 +38,7 @@ class MainActivity: FlutterActivity() {
                 if (vibrator.hasVibrator()) {
                     if (isStart) {
                         // Double pulse: wait 0, play 50, wait 50, play 50
-                        val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 50, 50), -1)
+                        val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 100, 50), -1)
                         vibrator.vibrate(effect)
                     } else {
                         // Single long pulse
