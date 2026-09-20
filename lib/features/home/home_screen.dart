@@ -41,12 +41,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!isRecording) {
         // Start recording
         ref.read(isRecordingProvider.notifier).setRecording(true);
-        // Haptic feedback
-        HapticFeedback.heavyImpact();
+        // Haptic feedback (Native)
+        _channel.invokeMethod('playHaptic', {'isStart': true});
       } else {
         // Stop recording
         ref.read(isRecordingProvider.notifier).setRecording(false);
-        HapticFeedback.vibrate();
+        _channel.invokeMethod('playHaptic', {'isStart': false});
         // Here we would call the STT -> LLM -> Save pipeline
       }
     }

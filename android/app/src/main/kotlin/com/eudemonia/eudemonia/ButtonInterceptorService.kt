@@ -1,7 +1,11 @@
 package com.eudemonia.eudemonia
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.util.Log
@@ -12,59 +16,74 @@ class ButtonInterceptorService : AccessibilityService() {
     private var isVolumeUpPressed = false
     private var isVolumeDownPressed = false
     private var isTriggered = false
-    
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Not used for button interception
+    private val handler = Handler(Looper.getMainLooper())
+    private var volumeRunnable: Runnable? = null
+    private lateinit var audioManager: AudioManager
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
 
-    override fun onInterrupt() {
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        Log.d(TAG, "KeyEvent received: ${event.keyCode}, action: ${event.action}")
-        
-        when (event.keyCode) {
-            KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (event.action == KeyEvent.ACTION_DOWN) {
-                    isVolumeUpPressed = true
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    isVolumeUpPressed = false
-                }
-            }
-            KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (event.action == KeyEvent.ACTION_DOWN) {
-                    isVolumeDownPressed = true
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    isVolumeDownPressed = false
-                }
-            }
-            else -> return super.onKeyEvent(event)
+        if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
+            return super.onKeyEvent(event)
         }
 
-        // If currently triggered, we must consume ALL volume events (including UP)
-        // so the OS doesn't receive orphaned UP events, which causes stuck volume.
-        if (isTriggered) {
+        // Always consume volume keys to prevent the OS from sticking them
+        if (event.action == KeyEvent.ACTION_UP) {
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed = false
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) isVolumeDownPressed = false
+            
             if (!isVolumeUpPressed && !isVolumeDownPressed) {
-                // Both released, reset trigger
                 isTriggered = false
-                Log.d(TAG, "Both buttons released. Resetting trigger.")
             }
             return true
         }
 
-        // Check if both are pressed to start the trigger
-        if (isVolumeUpPressed && isVolumeDownPressed) {
-            Log.d(TAG, "Both volume buttons pressed simultaneously!")
-            sendTriggerToApp()
-            isTriggered = true
-            return true
-        }
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val wasAlreadyPressed = if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed else isVolumeDownPressed
+            
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed = true
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) isVolumeDownPressed = true
 
-        return super.onKeyEvent(event)
+            if (isTriggered) return true // Already triggered, just consume
+
+            // If both are pressed simultaneously
+            if (isVolumeUpPressed && isVolumeDownPressed) {
+                // Cancel pending volume changes
+                volumeRunnable?.let { handler.removeCallbacks(it) }
+                
+                Log.d(TAG, "Both volume buttons pressed simultaneously!")
+                sendTriggerToApp()
+                isTriggered = true
+                return true
+            }
+
+            // If only one is pressed
+            if (!wasAlreadyPressed) {
+                // Wait 60ms for the second button
+                volumeRunnable = Runnable {
+                    if (!isTriggered) {
+                        val direction = if (isVolumeUpPressed) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+                        audioManager.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, AudioManager.FLAG_SHOW_UI)
+                    }
+                }
+                handler.postDelayed(volumeRunnable!!, 60)
+            } else if (!isTriggered) {
+                // Key repeat (held down for volume change)
+                val direction = if (isVolumeUpPressed) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+                audioManager.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, AudioManager.FLAG_SHOW_UI)
+            }
+        }
+        
+        return true
     }
 
     private fun sendTriggerToApp() {
-        // Send a broadcast that the MainActivity will pick up
         val intent = Intent("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
         intent.setPackage(packageName)
         sendBroadcast(intent)

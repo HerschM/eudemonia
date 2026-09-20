@@ -32,6 +32,21 @@ class MainActivity: FlutterActivity() {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
                 result.success(null)
+            } else if (call.method == "playHaptic") {
+                val isStart = call.argument<Boolean>("isStart") ?: true
+                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                if (vibrator.hasVibrator()) {
+                    if (isStart) {
+                        // Double pulse: wait 0, play 50, wait 50, play 50
+                        val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 50, 50), -1)
+                        vibrator.vibrate(effect)
+                    } else {
+                        // Single long pulse
+                        val effect = android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                        vibrator.vibrate(effect)
+                    }
+                }
+                result.success(null)
             } else {
                 result.notImplemented()
             }
