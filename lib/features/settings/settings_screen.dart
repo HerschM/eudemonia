@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -24,10 +25,19 @@ class SettingsScreen extends StatelessWidget {
             onTap: () {},
           ),
           ListTile(
-            title: const Text('Hardware Button Config'),
-            subtitle: const Text('Currently: Volume UP Long Press'),
+            title: const Text('Hardware Shortcut'),
+            subtitle: const Text('Press both volume buttons to capture'),
             trailing: const Icon(Icons.hardware),
-            onTap: () {},
+          ),
+          const Divider(),
+          ListTile(
+            title: const Text('Enable Accessibility Service'),
+            subtitle: const Text('Required for background button interception'),
+            trailing: const Icon(Icons.settings_accessibility),
+            onTap: () {
+              const channel = MethodChannel('com.eudemonia/hardware_buttons');
+              channel.invokeMethod('openAccessibilitySettings');
+            },
           ),
         ],
       ),

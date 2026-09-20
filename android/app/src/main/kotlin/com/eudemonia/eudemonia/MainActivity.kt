@@ -26,6 +26,17 @@ class MainActivity: FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         
+        methodChannel?.setMethodCallHandler { call, result ->
+            if (call.method == "openAccessibilitySettings") {
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                result.success(null)
+            } else {
+                result.notImplemented()
+            }
+        }
+
         // Register the receiver
         val filter = IntentFilter("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

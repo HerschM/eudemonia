@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
+import '../settings/settings_screen.dart';
+
 // A simple provider to hold the recording state for UI reactivity
 class IsRecordingNotifier extends Notifier<bool> {
   @override
@@ -61,7 +63,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () {
-              // Navigate to settings
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
             },
           )
         ],
@@ -103,7 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Expanded(
                 child: Center(
                   child: Text(
-                    'No thoughts yet.\nLong press volume up to capture.',
+                    'No thoughts yet.\nPress both volume buttons to capture.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Theme.of(context).colorScheme.secondary),
                   ),
