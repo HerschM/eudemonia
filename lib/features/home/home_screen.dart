@@ -3,7 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 // A simple provider to hold the recording state for UI reactivity
-final isRecordingProvider = StateProvider<bool>((ref) => false);
+class IsRecordingNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setRecording(bool value) {
+    state = value;
+  }
+}
+
+final isRecordingProvider = NotifierProvider<IsRecordingNotifier, bool>(() {
+  return IsRecordingNotifier();
+});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -27,12 +38,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       
       if (!isRecording) {
         // Start recording
-        ref.read(isRecordingProvider.notifier).state = true;
+        ref.read(isRecordingProvider.notifier).setRecording(true);
         // Haptic feedback
         HapticFeedback.heavyImpact();
       } else {
         // Stop recording
-        ref.read(isRecordingProvider.notifier).state = false;
+        ref.read(isRecordingProvider.notifier).setRecording(false);
         HapticFeedback.vibrate();
         // Here we would call the STT -> LLM -> Save pipeline
       }

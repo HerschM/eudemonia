@@ -26,7 +26,7 @@ class AppTheme {
         ),
       ),
       scaffoldBackgroundColor: const Color(0xFFF5F5F7),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -62,7 +62,7 @@ class AppTheme {
         ),
       ),
       scaffoldBackgroundColor: const Color(0xFF000000), // Pure black for OLED
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: const Color(0xFF1C1C1E),
         elevation: 0,
         shape: RoundedRectangleBorder(
