@@ -17,7 +17,8 @@ class MainActivity: FlutterActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.eudemonia.eudemonia.HARDWARE_TRIGGER") {
                 // Forward the trigger to Flutter
-                methodChannel?.invokeMethod("onHardwareTrigger", null)
+                val isLocked = intent.getBooleanExtra("isLocked", false)
+                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
             }
         }
     }

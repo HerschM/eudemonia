@@ -84,7 +84,11 @@ class ButtonInterceptorService : AccessibilityService() {
     }
 
     private fun sendTriggerToApp() {
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+        val isLocked = keyguardManager.isKeyguardLocked
+
         val intent = Intent("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
+        intent.putExtra("isLocked", isLocked)
         intent.setPackage(packageName)
         sendBroadcast(intent)
     }

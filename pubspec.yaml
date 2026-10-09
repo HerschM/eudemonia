@@ -42,6 +42,8 @@ dependencies:
   permission_handler: ^11.3.1
   ffi: ^2.2.0
   shared_preferences: ^2.5.5
+  sherpa_onnx: ^1.13.8
+  llama_cpp_dart: ^0.2.2
 
 dev_dependencies:
   flutter_test:

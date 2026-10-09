@@ -1,12 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
-import 'package:ffi/ffi.dart';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-// Assuming we have a C-API wrapper for llama.cpp
-typedef GenerateTextC = Pointer<Utf8> Function(Pointer<Utf8> prompt);
-typedef GenerateTextDart = Pointer<Utf8> Function(Pointer<Utf8> prompt);
+import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 
 class LLMResponse {
   final String correctedText;
@@ -23,24 +19,30 @@ class LLMResponse {
 }
 
 class LLMService {
-  late DynamicLibrary _lib;
-  late GenerateTextDart _generateText;
+  LlamaParent? _llama;
   bool _isInitialized = false;
 
-  LLMService() {
-    // In a real implementation:
-    // _lib = DynamicLibrary.open('libllama.so');
-    // _generateText = _lib.lookupFunction<GenerateTextC, GenerateTextDart>('generate_text');
-  }
-
   Future<void> initialize(String modelPath) async {
-    // Load GGUF model into memory
-    await Future.delayed(const Duration(seconds: 2)); // Simulate loading
+    if (_isInitialized) return;
+
+    if (!await File(modelPath).exists()) {
+      throw Exception('LLM model not found at $modelPath');
+    }
+
+    final loadCommand = LlamaLoad(
+      path: modelPath,
+      modelParams: ModelParams(),
+      contextParams: ContextParams(),
+      samplingParams: SamplerParams(),
+    );
+
+    _llama = LlamaParent(loadCommand);
+    await _llama!.init();
     _isInitialized = true;
   }
 
   Future<LLMResponse> processText(String rawText) async {
-    if (!_isInitialized) throw Exception('LLM Service not initialized');
+    if (!_isInitialized || _llama == null) throw Exception('LLM Service not initialized');
 
     final systemPrompt = '''
 You are an AI assistant that corrects grammar, removes filler words (ums, ahs), and categorizes thoughts.
@@ -49,29 +51,43 @@ Output strictly in JSON format: {"corrected_text": "...", "folder": "Work/Ideas/
 Raw text: "$rawText"
 ''';
 
-    // Simulate LLM inference (100% offline)
-    await Future.delayed(const Duration(seconds: 3));
+    final buffer = StringBuffer();
+    final streamSub = _llama!.stream.listen((response) {
+      buffer.write(response);
+    });
 
-    // Mock LLM output
-    final mockJsonString = '''
-    {
-      "corrected_text": "This is a corrected transcription without filler words.",
-      "folder": "Ideas"
-    }
-    ''';
-
-    // Parse the JSON output
+    String fullResponse = '';
     try {
-      final jsonMap = jsonDecode(mockJsonString);
-      return LLMResponse.fromJson(jsonMap);
+      final promptId = await _llama!.sendPrompt(systemPrompt);
+      await _llama!.completions
+          .firstWhere((e) => e.promptId == promptId)
+          .timeout(const Duration(seconds: 25));
+      fullResponse = buffer.toString();
     } catch (e) {
-      // Fallback if LLM generates invalid JSON
+      print('LLM generation error/timeout: $e');
+      fullResponse = buffer.toString();
+    } finally {
+      await streamSub.cancel();
+    }
+
+    try {
+      final jsonStart = fullResponse.indexOf('{');
+      final jsonEnd = fullResponse.lastIndexOf('}');
+      if (jsonStart != -1 && jsonEnd != -1) {
+        final jsonStr = fullResponse.substring(jsonStart, jsonEnd + 1);
+        final jsonMap = jsonDecode(jsonStr);
+        return LLMResponse.fromJson(jsonMap);
+      } else {
+        throw FormatException('No JSON found in LLM response');
+      }
+    } catch (e) {
       return LLMResponse(correctedText: rawText, folder: 'Uncategorized');
     }
   }
 
   void dispose() {
-    // Unload model to save RAM
+    _llama?.dispose();
+    _llama = null;
     _isInitialized = false;
   }
 }
