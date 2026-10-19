@@ -46,8 +46,6 @@ class BatchPipelineService {
         // 2. Process with LLM for cleanup and categorization
         print('Processing transcription with LLM...');
         final llmResponse = await _llmService.processText(rawTranscription);
-        print('Cleaned text: ${llmResponse.correctedText}');
-        print('Category: ${llmResponse.folder}');
 
         // 3. Save to Isar Database
         final note = Note()
@@ -58,7 +56,7 @@ class BatchPipelineService {
           ..originalAudioPath = audioPath;
           
         await _notesRepo.saveNote(note);
-        print('Note saved successfully to database!');
+        print('Note saved successfully to database in folder: "${llmResponse.folder}"');
         
       } catch (e, stack) {
         print('Pipeline Error: $e');

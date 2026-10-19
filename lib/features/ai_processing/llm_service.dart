@@ -1,26 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
+import 'note_classifier.dart';
 
-class LLMResponse {
-  final String correctedText;
-  final String folder;
+export 'note_classifier.dart';
 
-  LLMResponse({required this.correctedText, required this.folder});
-
-  factory LLMResponse.fromJson(Map<String, dynamic> json) {
-    return LLMResponse(
-      correctedText: json['corrected_text'] ?? '',
-      folder: json['folder'] ?? 'Uncategorized',
-    );
-  }
-}
+/// Legacy alias for NoteClassificationResult for backwards compatibility.
+typedef LLMResponse = NoteClassificationResult;
 
 class LLMService {
   LlamaParent? _llama;
   bool _isInitialized = false;
+
+  bool get isInitialized => _isInitialized;
 
   Future<void> initialize(String modelPath) async {
     if (_isInitialized) return;
@@ -41,16 +34,15 @@ class LLMService {
     _isInitialized = true;
   }
 
-  Future<LLMResponse> processText(String rawText) async {
-    if (!_isInitialized || _llama == null) throw Exception('LLM Service not initialized');
+  Future<NoteClassificationResult> processText(String rawText) async {
+    if (!_isInitialized || _llama == null) {
+      print('[LLMService] LLM not initialized, falling back to heuristic classifier.');
+      final result = NoteClassifier.fallbackClassify(rawText, reason: 'LLM not initialized');
+      result.printDebugLog();
+      return result;
+    }
 
-    final systemPrompt = '''
-You are an AI assistant that corrects grammar, removes filler words (ums, ahs), and categorizes thoughts.
-Output strictly in JSON format: {"corrected_text": "...", "folder": "Work/Ideas/Todos/Journal"}
-
-Raw text: "$rawText"
-''';
-
+    final prompt = NoteClassifier.buildPrompt(rawText);
     final buffer = StringBuffer();
     final streamSub = _llama!.stream.listen((response) {
       buffer.write(response);
@@ -58,31 +50,21 @@ Raw text: "$rawText"
 
     String fullResponse = '';
     try {
-      final promptId = await _llama!.sendPrompt(systemPrompt);
+      final promptId = await _llama!.sendPrompt(prompt);
       await _llama!.completions
           .firstWhere((e) => e.promptId == promptId)
           .timeout(const Duration(seconds: 25));
       fullResponse = buffer.toString();
     } catch (e) {
-      print('LLM generation error/timeout: $e');
+      print('[LLMService] LLM generation error or timeout: $e');
       fullResponse = buffer.toString();
     } finally {
       await streamSub.cancel();
     }
 
-    try {
-      final jsonStart = fullResponse.indexOf('{');
-      final jsonEnd = fullResponse.lastIndexOf('}');
-      if (jsonStart != -1 && jsonEnd != -1) {
-        final jsonStr = fullResponse.substring(jsonStart, jsonEnd + 1);
-        final jsonMap = jsonDecode(jsonStr);
-        return LLMResponse.fromJson(jsonMap);
-      } else {
-        throw FormatException('No JSON found in LLM response');
-      }
-    } catch (e) {
-      return LLMResponse(correctedText: rawText, folder: 'Uncategorized');
-    }
+    final result = NoteClassifier.parseResponse(rawText, fullResponse);
+    result.printDebugLog();
+    return result;
   }
 
   void dispose() {
