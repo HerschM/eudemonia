@@ -10,77 +10,117 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.util.Log
 
-class ButtonInterceptorService : AccessibilityService() {
+class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
 
     private val TAG = "ButtonInterceptor"
-    private var isVolumeUpPressed = false
-    private var isVolumeDownPressed = false
-    private var isTriggered = false
-    private val handler = Handler(Looper.getMainLooper())
-    private var volumeRunnable: Runnable? = null
+
     private lateinit var audioManager: AudioManager
+    private lateinit var coordinator: VolumeButtonCoordinator
+    private val handler = Handler(Looper.getMainLooper())
+    private val runnableMap = mutableMapOf<Any, Runnable>()
+
+    private val scheduler = object : Scheduler {
+        override fun postDelayed(token: Any, delayMs: Long, action: () -> Unit) {
+            cancel(token)
+            val runnable = Runnable {
+                runnableMap.remove(token)
+                action()
+            }
+            runnableMap[token] = runnable
+            handler.postDelayed(runnable, delayMs)
+        }
+
+        override fun cancel(token: Any) {
+            runnableMap.remove(token)?.let {
+                handler.removeCallbacks(it)
+            }
+        }
+
+        override fun cancelAll() {
+            for ((_, runnable) in runnableMap) {
+                handler.removeCallbacks(runnable)
+            }
+            runnableMap.clear()
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        coordinator = VolumeButtonCoordinator(
+            actionHandler = this,
+            scheduler = scheduler,
+            dualPressWindowMs = 50L,
+            initialRepeatDelayMs = 300L,
+            repeatIntervalMs = 110L,
+            maxRepeatSteps = 25
+        )
+        Log.i(TAG, "ButtonInterceptorService connected successfully in dedicated process.")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-    override fun onInterrupt() {}
+
+    override fun onInterrupt() {
+        Log.w(TAG, "ButtonInterceptorService interrupted, resetting coordinator.")
+        if (::coordinator.isInitialized) {
+            coordinator.reset()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.i(TAG, "ButtonInterceptorService destroying.")
+        if (::coordinator.isInitialized) {
+            coordinator.reset()
+        }
+        scheduler.cancelAll()
+        handler.removeCallbacksAndMessages(null)
+    }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
+        val keyCode = event.keyCode
+
+        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
             return super.onKeyEvent(event)
         }
 
-        // Always consume volume keys to prevent the OS from sticking them
-        if (event.action == KeyEvent.ACTION_UP) {
-            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed = false
-            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) isVolumeDownPressed = false
-            
-            if (!isVolumeUpPressed && !isVolumeDownPressed) {
-                isTriggered = false
-            }
+        if (!::coordinator.isInitialized) {
             return true
         }
 
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            val wasAlreadyPressed = if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed else isVolumeDownPressed
-            
-            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP) isVolumeUpPressed = true
-            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) isVolumeDownPressed = true
-
-            if (isTriggered) return true // Already triggered, just consume
-
-            // If both are pressed simultaneously
-            if (isVolumeUpPressed && isVolumeDownPressed) {
-                // Cancel pending volume changes
-                volumeRunnable?.let { handler.removeCallbacks(it) }
-                
-                Log.d(TAG, "Both volume buttons pressed simultaneously!")
-                sendTriggerToApp()
-                isTriggered = true
-                return true
-            }
-
-            // If only one is pressed
-            if (!wasAlreadyPressed) {
-                // Wait 60ms for the second button
-                volumeRunnable = Runnable {
-                    if (!isTriggered) {
-                        val direction = if (isVolumeUpPressed) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                        audioManager.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, AudioManager.FLAG_SHOW_UI)
-                    }
-                }
-                handler.postDelayed(volumeRunnable!!, 60)
-            } else if (!isTriggered) {
-                // Key repeat (held down for volume change)
-                val direction = if (isVolumeUpPressed) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                audioManager.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, AudioManager.FLAG_SHOW_UI)
-            }
+        val coordKey = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+            VolumeButtonCoordinator.KEY_VOLUME_UP
+        } else {
+            VolumeButtonCoordinator.KEY_VOLUME_DOWN
         }
-        
-        return true
+
+        return when (event.action) {
+            KeyEvent.ACTION_DOWN -> coordinator.onKeyDown(coordKey, event.repeatCount)
+            KeyEvent.ACTION_UP -> coordinator.onKeyUp(coordKey)
+            else -> true
+        }
+    }
+
+    override fun adjustVolume(direction: Int) {
+        val audioDir = if (direction == VolumeButtonCoordinator.DIRECTION_UP) {
+            AudioManager.ADJUST_RAISE
+        } else {
+            AudioManager.ADJUST_LOWER
+        }
+        try {
+            audioManager.adjustSuggestedStreamVolume(
+                audioDir,
+                AudioManager.USE_DEFAULT_STREAM_TYPE,
+                AudioManager.FLAG_SHOW_UI
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adjusting volume: ${e.message}")
+        }
+    }
+
+    override fun triggerVoicePipeline() {
+        Log.d(TAG, "Both volume buttons pressed simultaneously! Sending trigger broadcast.")
+        sendTriggerToApp()
     }
 
     private fun sendTriggerToApp() {

@@ -38,6 +38,7 @@
         <service
             android:name=".ButtonInterceptorService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:process=":interceptor"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
