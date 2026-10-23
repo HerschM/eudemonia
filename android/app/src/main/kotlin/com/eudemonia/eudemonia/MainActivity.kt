@@ -28,28 +28,77 @@ class MainActivity: FlutterActivity() {
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         
         methodChannel?.setMethodCallHandler { call, result ->
-            if (call.method == "openAccessibilitySettings") {
-                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-                result.success(null)
-            } else if (call.method == "playHaptic") {
-                val isStart = call.argument<Boolean>("isStart") ?: true
-                val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
-                if (vibrator.hasVibrator()) {
-                    if (isStart) {
-                        // Double pulse: wait 0, play 50, wait 50, play 50
-                        val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 100, 50), -1)
-                        vibrator.vibrate(effect)
-                    } else {
-                        // Single long pulse
-                        val effect = android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
-                        vibrator.vibrate(effect)
+            when (call.method) {
+                "openAccessibilitySettings" -> {
+                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
+                    startActivity(intent)
+                    result.success(null)
                 }
-                result.success(null)
-            } else {
-                result.notImplemented()
+                "isAccessibilityServiceEnabled" -> {
+                    val enabledServices = android.provider.Settings.Secure.getString(
+                        contentResolver,
+                        android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                    ) ?: ""
+                    val isEnabled = enabledServices.contains(packageName) && enabledServices.contains("ButtonInterceptorService")
+                    result.success(isEnabled)
+                }
+                "isIgnoringBatteryOptimizations" -> {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                    val isIgnoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        powerManager.isIgnoringBatteryOptimizations(packageName)
+                    } else {
+                        true
+                    }
+                    result.success(isIgnoring)
+                }
+                "requestIgnoreBatteryOptimizations" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    }
+                    result.success(null)
+                }
+                "requestSimultaneousPermissions" -> {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                    val isBatteryIgnored = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        powerManager.isIgnoringBatteryOptimizations(packageName)
+                    } else {
+                        true
+                    }
+                    if (!isBatteryIgnored && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    } else {
+                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    }
+                    result.success(null)
+                }
+                "playHaptic" -> {
+                    val isStart = call.argument<Boolean>("isStart") ?: true
+                    val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                    if (vibrator.hasVibrator()) {
+                        if (isStart) {
+                            val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 100, 50), -1)
+                            vibrator.vibrate(effect)
+                        } else {
+                            val effect = android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                            vibrator.vibrate(effect)
+                        }
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
             }
         }
 

@@ -7,8 +7,12 @@ class STTService {
   OfflineRecognizer? _recognizer;
   bool _isInitialized = false;
 
+  bool get isInitialized => _isInitialized;
+
   Future<void> initialize(String modelDir) async {
     if (_isInitialized) return;
+
+    print('[STTService] Initializing Parakeet v3 STT model from $modelDir...');
 
     try {
       initBindings();
@@ -39,6 +43,7 @@ class STTService {
 
     _recognizer = OfflineRecognizer(config);
     _isInitialized = true;
+    print('[STTService] Parakeet v3 STT model loaded successfully.');
   }
 
   Future<String> transcribe(String audioFilePath) async {
@@ -60,9 +65,11 @@ class STTService {
   }
 
   void dispose() {
+    print('[STTService] Disposing Parakeet v3 STT model...');
     _recognizer?.free();
     _recognizer = null;
     _isInitialized = false;
+    print('[STTService] Parakeet v3 STT model disposed.');
   }
 }
 

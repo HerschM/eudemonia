@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../ai_processing/batch_pipeline_service.dart';
 import '../settings/settings_screen.dart';
+import '../settings/background_permission_service.dart';
 
 import '../notes/data/note_model.dart';
 import '../notes/data/notes_repository.dart';
@@ -105,6 +106,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Ambient permission banner if background capture is not fully enabled
+              Consumer(
+                builder: (context, ref, _) {
+                  final permAsync = ref.watch(backgroundPermissionStatusProvider);
+                  final permService = ref.watch(backgroundPermissionServiceProvider);
+                  return permAsync.maybeWhen(
+                    data: (status) {
+                      if (status.areAllGranted) return const SizedBox.shrink();
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.amber.shade400),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Background capture permissions needed (Accessibility & Battery exemption).',
+                                style: TextStyle(
+                                  color: Colors.amber.shade900,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                backgroundColor: Colors.amber.shade300,
+                              ),
+                              child: const Text('Enable', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                              onPressed: () => permService.showSimultaneousPermissionModal(
+                                context,
+                                onPermissionsUpdated: () {
+                                  ref.invalidate(backgroundPermissionStatusProvider);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    orElse: () => const SizedBox.shrink(),
+                  );
+                },
+              ),
               Text(
                 'Folders',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
