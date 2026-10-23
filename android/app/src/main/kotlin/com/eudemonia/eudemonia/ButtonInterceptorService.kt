@@ -119,17 +119,43 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
     }
 
     override fun triggerVoicePipeline() {
-        Log.d(TAG, "Both volume buttons pressed simultaneously! Sending trigger broadcast.")
+        Log.d(TAG, "Both volume buttons pressed simultaneously! Performing instant haptic & sending trigger broadcast.")
+        playInstantHaptic()
         sendTriggerToApp()
     }
 
-    private fun sendTriggerToApp() {
-        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-        val isLocked = keyguardManager.isKeyguardLocked
+    private fun playInstantHaptic() {
+        try {
+            val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                vibratorManager?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            }
 
-        val intent = Intent("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
-        intent.putExtra("isLocked", isLocked)
-        intent.setPackage(packageName)
+            if (vibrator?.hasVibrator() == true) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)
+                    vibrator.vibrate(effect)
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(80L)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error playing instant haptic: ${e.message}")
+        }
+    }
+
+    private fun sendTriggerToApp() {
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+        val isLocked = keyguardManager?.isKeyguardLocked ?: false
+
+        val intent = Intent("com.eudemonia.eudemonia.HARDWARE_TRIGGER").apply {
+            putExtra("isLocked", isLocked)
+            setPackage(packageName)
+        }
         sendBroadcast(intent)
     }
 }

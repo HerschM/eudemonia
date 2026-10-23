@@ -119,54 +119,47 @@ void main() {
       expect(fakeLLM.initializeCallCount, equals(1));
     });
 
-    test('inactivity TTL timer evicts models after configured idle duration', () {
-      fakeAsync((async) {
-        manager.ensureModelsLoaded();
-        async.flushMicrotasks();
+    testWidgets('inactivity TTL timer evicts models after configured idle duration', (tester) async {
+      await manager.ensureModelsLoaded();
+      expect(manager.areModelsLoaded, isTrue);
 
-        expect(manager.areModelsLoaded, isTrue);
+      // Call touch() to simulate activity completion (e.g. note processed)
+      manager.touch(reason: 'note processed');
 
-        // Call touch() to simulate activity completion (e.g. note processed)
-        manager.touch(reason: 'note processed');
+      // Advance time by 2 minutes (less than 3-minute TTL)
+      await tester.pump(const Duration(minutes: 2));
+      expect(manager.areModelsLoaded, isTrue);
+      expect(fakeSTT.disposeCallCount, equals(0));
+      expect(fakeLLM.disposeCallCount, equals(0));
 
-        // Advance time by 2 minutes (less than 3-minute TTL)
-        async.elapse(const Duration(minutes: 2));
-        expect(manager.areModelsLoaded, isTrue);
-        expect(fakeSTT.disposeCallCount, equals(0));
-        expect(fakeLLM.disposeCallCount, equals(0));
+      // Advance past 3 minutes
+      await tester.pump(const Duration(minutes: 1, seconds: 1));
 
-        // Advance past 3 minutes
-        async.elapse(const Duration(minutes: 1, seconds: 1));
-
-        expect(manager.state, equals(ModelLifecycleState.unloaded));
-        expect(manager.areModelsLoaded, isFalse);
-        expect(fakeSTT.disposeCallCount, equals(1));
-        expect(fakeLLM.disposeCallCount, equals(1));
-      });
+      expect(manager.state, equals(ModelLifecycleState.unloaded));
+      expect(manager.areModelsLoaded, isFalse);
+      expect(fakeSTT.disposeCallCount, equals(1));
+      expect(fakeLLM.disposeCallCount, equals(1));
     });
 
-    test('new activity resets the inactivity timer and prevents eviction', () {
-      fakeAsync((async) {
-        manager.ensureModelsLoaded();
-        async.flushMicrotasks();
-        manager.touch(reason: 'initial note');
+    testWidgets('new activity resets the inactivity timer and prevents eviction', (tester) async {
+      await manager.ensureModelsLoaded();
+      manager.touch(reason: 'initial note');
 
-        // Advance 2 minutes
-        async.elapse(const Duration(minutes: 2));
+      // Advance 2 minutes
+      await tester.pump(const Duration(minutes: 2));
 
-        // Touch again (user records another note)
-        manager.touch(reason: 'second note');
+      // Touch again (user records another note)
+      manager.touch(reason: 'second note');
 
-        // Advance another 2 minutes (4 minutes total, but only 2m since last touch)
-        async.elapse(const Duration(minutes: 2));
-        expect(manager.areModelsLoaded, isTrue);
-        expect(fakeSTT.disposeCallCount, equals(0));
+      // Advance another 2 minutes (4 minutes total, but only 2m since last touch)
+      await tester.pump(const Duration(minutes: 2));
+      expect(manager.areModelsLoaded, isTrue);
+      expect(fakeSTT.disposeCallCount, equals(0));
 
-        // Advance final 1m1s to expire second timer
-        async.elapse(const Duration(minutes: 1, seconds: 1));
-        expect(manager.areModelsLoaded, isFalse);
-        expect(fakeSTT.disposeCallCount, equals(1));
-      });
+      // Advance final 1m1s to expire second timer
+      await tester.pump(const Duration(minutes: 1, seconds: 1));
+      expect(manager.areModelsLoaded, isFalse);
+      expect(fakeSTT.disposeCallCount, equals(1));
     });
 
     test('models can be reloaded cleanly on-demand after eviction', () async {

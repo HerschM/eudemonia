@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../ai_processing/batch_pipeline_service.dart';
+import '../ai_processing/audio_queue_service.dart';
+import '../../core/logger/app_logger.dart';
 import '../settings/settings_screen.dart';
 import '../settings/background_permission_service.dart';
 
@@ -35,48 +37,67 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   static const _channel = MethodChannel('com.eudemonia/hardware_buttons');
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler(_handleMethodCall);
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(backgroundPermissionStatusProvider);
+    }
+  }
+
+  DateTime? _lastTriggerTime;
+  bool _isToggling = false;
+
   Future<void> _handleMethodCall(MethodCall call) async {
     if (call.method == 'onHardwareTrigger') {
-      final isRecording = ref.read(isRecordingProvider);
-      
-      // Extract contextual state from Android (used for dynamic pipeline routing)
-      final bool isLocked = call.arguments?['isLocked'] ?? false;
-      
-      if (!isRecording) {
-        // Start recording
-        ref.read(isRecordingProvider.notifier).setRecording(true);
-        // Haptic feedback (Native)
-        _channel.invokeMethod('playHaptic', {'isStart': true});
-        
-        // TODO: FUTURE ENHANCEMENT (Flow A vs Flow B)
-        // This is where we will route the AI pipeline dynamically.
-        // If (isLocked == false) -> Initialize Flow A (Streaming Zipformer, Read Screen Context, Native Text Injection).
-        // If (isLocked == true) -> Initialize Flow B (Batch STT like Parakeet, Qwen categorization, Database Save).
-        print("Hardware Trigger Started. isLocked: $isLocked");
-        
-        await ref.read(batchPipelineProvider).startRecording();
-        
-      } else {
-        // Stop recording
-        ref.read(isRecordingProvider.notifier).setRecording(false);
-        _channel.invokeMethod('playHaptic', {'isStart': false});
-        
-        // TODO: Finalize recording and execute the selected pipeline.
-        // For our current milestone, we are executing Flow B (Batch Mode).
-        print("Hardware Trigger Stopped. Executing Batch Pipeline (Flow B)...");
-        await ref.read(batchPipelineProvider).stopRecordingAndProcess();
-        
-        // Refresh the UI list
-        ref.invalidate(recentNotesProvider);
+      final now = DateTime.now();
+      if (_lastTriggerTime != null && now.difference(_lastTriggerTime!) < const Duration(milliseconds: 500)) {
+        ref.read(appLoggerProvider).warning('[HomeScreen] Trigger dropped by debounce (<500ms)');
+        return;
+      }
+      if (_isToggling) {
+        ref.read(appLoggerProvider).warning('[HomeScreen] Trigger dropped: already toggling');
+        return;
+      }
+
+      _lastTriggerTime = now;
+      _isToggling = true;
+
+      try {
+        final isRecording = ref.read(isRecordingProvider);
+        final bool isLocked = call.arguments?['isLocked'] ?? false;
+        ref.read(appLoggerProvider).trigger('Hardware Trigger Received. isLocked: $isLocked, current isRecording: $isRecording');
+
+        if (!isRecording) {
+          // Start recording
+          ref.read(isRecordingProvider.notifier).setRecording(true);
+          await ref.read(batchPipelineProvider).startRecording();
+        } else {
+          // Stop recording
+          ref.read(isRecordingProvider.notifier).setRecording(false);
+          await ref.read(batchPipelineProvider).stopRecordingAndProcess();
+          // Invalidate notes list once enqueued
+          ref.invalidate(recentNotesProvider);
+        }
+      } catch (e, stack) {
+        ref.read(appLoggerProvider).error('[HomeScreen] Error during hardware trigger handling', error: e, stackTrace: stack);
+      } finally {
+        _isToggling = false;
       }
     }
   }
@@ -89,6 +110,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: const Text('Eudemonia'),
         actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final count = ref.watch(pendingQueueCountProvider);
+              if (count <= 0) return const SizedBox.shrink();
+
+              return Container(
+                margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$count pending',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () {
@@ -97,7 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
             },
-          )
+          ),
         ],
       ),
       body: SafeArea(
@@ -154,6 +215,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       );
                     },
                     orElse: () => const SizedBox.shrink(),
+                  );
+                },
+              ),
+              // In-body pending queue processing banner
+              Consumer(
+                builder: (context, ref, _) {
+                  final pendingCount = ref.watch(pendingQueueCountProvider);
+                  if (pendingCount <= 0) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            pendingCount == 1
+                                ? 'Processing voice thought...'
+                                : 'Processing voice thought ($pendingCount pending)...',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              // In-body failed queue banner with Retry button
+              Consumer(
+                builder: (context, ref, _) {
+                  final failedCount = ref.watch(failedQueueCountProvider);
+                  if (failedCount <= 0) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade300),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red.shade900),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '$failedCount thought(s) failed to process',
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            backgroundColor: Colors.red.shade200,
+                          ),
+                          child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          onPressed: () {
+                            ref.read(audioQueueServiceProvider).retryFailed();
+                          },
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),

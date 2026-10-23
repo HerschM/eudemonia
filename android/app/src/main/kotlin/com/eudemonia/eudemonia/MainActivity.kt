@@ -10,15 +10,20 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "com.eudemonia/hardware_buttons"
+    companion object {
+        const val CHANNEL = "com.eudemonia/hardware_buttons"
+        var activeMethodChannel: MethodChannel? = null
+    }
+
     private var methodChannel: MethodChannel? = null
 
     private val hardwareTriggerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.eudemonia.eudemonia.HARDWARE_TRIGGER") {
-                // Forward the trigger to Flutter
-                val isLocked = intent.getBooleanExtra("isLocked", false)
-                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+                if (TriggerDebouncer.shared.tryTrigger()) {
+                    val isLocked = intent.getBooleanExtra("isLocked", false)
+                    methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+                }
             }
         }
     }
@@ -26,6 +31,7 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        activeMethodChannel = methodChannel
         
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -62,6 +68,34 @@ class MainActivity: FlutterActivity() {
                         startActivity(intent)
                     }
                     result.success(null)
+                }
+                "openBatteryOptimizationSettings" -> {
+                    val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(intent)
+                    result.success(null)
+                }
+                "startForegroundService" -> {
+                    val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+                        action = ForegroundServiceCoordinator.ACTION_START
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
+                    result.success(true)
+                }
+                "stopForegroundService" -> {
+                    val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+                        action = ForegroundServiceCoordinator.ACTION_STOP
+                    }
+                    startService(serviceIntent)
+                    result.success(true)
+                }
+                "isForegroundServiceRunning" -> {
+                    result.success(EudemoniaForegroundService.isRunning)
                 }
                 "requestSimultaneousPermissions" -> {
                     val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -109,10 +143,32 @@ class MainActivity: FlutterActivity() {
         } else {
             registerReceiver(hardwareTriggerReceiver, filter)
         }
+
+        // Check if activity was launched by service trigger
+        if (intent?.getBooleanExtra("autoTrigger", false) == true) {
+            if (TriggerDebouncer.shared.tryTrigger()) {
+                val isLocked = intent.getBooleanExtra("isLocked", false)
+                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("autoTrigger", false)) {
+            if (TriggerDebouncer.shared.tryTrigger()) {
+                val isLocked = intent.getBooleanExtra("isLocked", false)
+                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(hardwareTriggerReceiver)
+        activeMethodChannel = null
+        try {
+            unregisterReceiver(hardwareTriggerReceiver)
+        } catch (_: Exception) {}
     }
 }

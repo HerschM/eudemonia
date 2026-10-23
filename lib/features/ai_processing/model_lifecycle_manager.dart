@@ -91,11 +91,12 @@ class ModelLifecycleManager {
       final sttModelPath = '$modelsDirPath/parakeet';
       final llmModelPath = '$modelsDirPath/qwen2.5-1.5b.gguf';
 
-      // Load both models in parallel for minimum latency
-      await Future.wait([
-        _sttService.initialize(sttModelPath),
-        _llmService.initialize(llmModelPath),
-      ]);
+      // Load models sequentially to prevent simultaneous memory spikes and OS OOM kills
+      print('[ModelLifecycle] Step 1/2: Initializing Sherpa-ONNX STT model...');
+      await _sttService.initialize(sttModelPath);
+
+      print('[ModelLifecycle] Step 2/2: Initializing Qwen GGUF LLM model...');
+      await _llmService.initialize(llmModelPath);
 
       stopwatch.stop();
       _state = ModelLifecycleState.ready;

@@ -10,6 +10,7 @@ void main() {
       const allTrue = BackgroundPermissionStatus(
         isAccessibilityEnabled: true,
         isBatteryOptimizationIgnored: true,
+        isForegroundServiceRunning: true,
       );
       expect(allTrue.areAllGranted, isTrue);
 
@@ -36,10 +37,15 @@ void main() {
       const initial = BackgroundPermissionStatus(
         isAccessibilityEnabled: false,
         isBatteryOptimizationIgnored: false,
+        isForegroundServiceRunning: false,
       );
-      final updated = initial.copyWith(isBatteryOptimizationIgnored: true);
+      final updated = initial.copyWith(
+        isBatteryOptimizationIgnored: true,
+        isForegroundServiceRunning: true,
+      );
       expect(updated.isAccessibilityEnabled, isFalse);
       expect(updated.isBatteryOptimizationIgnored, isTrue);
+      expect(updated.isForegroundServiceRunning, isTrue);
     });
   });
 
@@ -58,6 +64,11 @@ void main() {
             return true;
           case 'isIgnoringBatteryOptimizations':
             return true;
+          case 'isForegroundServiceRunning':
+            return true;
+          case 'startForegroundService':
+          case 'stopForegroundService':
+          case 'openBatteryOptimizationSettings':
           case 'requestIgnoreBatteryOptimizations':
           case 'openAccessibilitySettings':
           case 'requestSimultaneousPermissions':
@@ -75,15 +86,20 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     });
 
-    test('checkStatus returns correct status when both are true', () async {
+    test('checkStatus returns correct status when all are true', () async {
       final status = await service.checkStatus();
       expect(status.isAccessibilityEnabled, isTrue);
       expect(status.isBatteryOptimizationIgnored, isTrue);
+      expect(status.isForegroundServiceRunning, isTrue);
       expect(status.areAllGranted, isTrue);
 
       expect(
         methodCalls.map((m) => m.method),
-        containsAll(['isAccessibilityServiceEnabled', 'isIgnoringBatteryOptimizations']),
+        containsAll([
+          'isAccessibilityServiceEnabled',
+          'isIgnoringBatteryOptimizations',
+          'isForegroundServiceRunning',
+        ]),
       );
     });
 
@@ -96,7 +112,21 @@ void main() {
       final status = await service.checkStatus();
       expect(status.isAccessibilityEnabled, isFalse);
       expect(status.isBatteryOptimizationIgnored, isFalse);
+      expect(status.isForegroundServiceRunning, isFalse);
       expect(status.areAllGranted, isFalse);
+    });
+
+    test('startForegroundService and stopForegroundService invoke native methods', () async {
+      await service.startForegroundService();
+      expect(methodCalls.any((m) => m.method == 'startForegroundService'), isTrue);
+
+      await service.stopForegroundService();
+      expect(methodCalls.any((m) => m.method == 'stopForegroundService'), isTrue);
+    });
+
+    test('openBatteryOptimizationSettings invokes native method', () async {
+      await service.openBatteryOptimizationSettings();
+      expect(methodCalls.any((m) => m.method == 'openBatteryOptimizationSettings'), isTrue);
     });
 
     test('requestSimultaneousPermissions invokes native method', () async {
