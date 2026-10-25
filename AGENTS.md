@@ -82,6 +82,19 @@ Agents must follow a strict **Test-Driven Development (TDD)** discipline:
 3. **Edge Case & Layout Testing**:
    - Verify boundary conditions: empty audio, silent transcripts, rapid trigger presses, narrow viewports (e.g. 360dp width).
    - Ensure widgets do not produce `RenderFlex` overflows or framework assertions.
+4. **Task-Driven Execution Loop**:
+   - Consult [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) to pick up the next atomic task (`[ ]` or `[/]`).
+   - Maintain strict task boundaries: execute one atomic task at a time, check off sub-tasks, and mark `[x]` upon passing all verification commands.
+
+### B. Task Creation & Maintenance Standards (`TASKS.md`)
+When creating or updating tasks in [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md), agents **must** follow these strict rules:
+1. **Strict Spec Alignment**: The `Spec` link **must** cite and link directly to the exact line range in [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) using line anchors (e.g., `[PRODUCT_SPEC.md:L146](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L146)`). The link must jump directly to the specific requirement, never to the generic top of the file. Never invent requirements not grounded in the specification.
+2. **Never Create Out-of-Scope Tasks**: Consult [`PRODUCT_SPEC.md#5.B`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L134-L140). Never create tasks for out-of-scope features (e.g., cloud sync, multi-tag graphs, streaming transcription, iOS). If a new capability is needed, update `PRODUCT_SPEC.md` first with human alignment before creating tasks.
+3. **Structured Verification Breakdown**: Every task's `Verification` section **must** contain explicit sub-sections:
+   - **Unit Tests**: Test file path and specific bulleted test cases covered.
+   - **Widget Tests**: Test file path and specific interaction/rendering test cases covered (or `N/A - Non-UI component`).
+   - **Integration / Command Tests**: Exact CLI verification command (e.g., `flutter test`, `./gradlew :app:testDebugUnitTest`).
+4. **Task Atomicity & Execution Boundaries**: Keep tasks scoped to single atomic units of work so any agent can execute one task from start to finish without scope creep.
 
 ---
 
@@ -90,6 +103,7 @@ Agents must follow a strict **Test-Driven Development (TDD)** discipline:
 ### Always
 - Write unit or widget tests for every functional change.
 - Verify tests and static analysis (`flutter test`, `dart analyze`) pass with 0 errors before concluding.
+- Consult and update [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) when picking up or finishing tasks.
 - Provide failure isolation: if one queued item fails, log the error, mark it failed, and continue processing remaining items.
 - Use resilient, synchronous state providers (like Riverpod `NotifierProvider`) for values required by new subscribers, avoiding raw broadcast streams that drop past events.
 - **Update [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md)** whenever you refactor, optimize, or alter any subsystem to keep the living blueprint synchronized.
@@ -129,6 +143,7 @@ For comprehensive details on product requirements, how subsystems are currently 
 
 - [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) — Comprehensive product requirements document, target personas, user journeys, functional/non-functional specs, and product roadmap.
 - [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) — Technical reference, subsystem mechanics, and historical chronicle of fixes.
+- [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) — SDLC task tracker bridging product spec and implementation with completed and pending atomic tasks.
 
 > [!IMPORTANT]
 > **`IMPLEMENTATION.md` is a Living Blueprint, Not Absolute Dogma**:

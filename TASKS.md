@@ -1,0 +1,543 @@
+# TASKS.md — Eudemonia SDLC Task Tracker & Execution Backlog
+
+> **Purpose**: This document bridges the gap between [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) (the *What* & *Why*) and [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) (the *How* & *Architecture*). It decomposes all product requirements into atomic, verifiable engineering tasks for AI agents and human developers.
+>
+> **Task Creation & Execution Standards**:
+> 1. **Strict Spec Alignment**: The `Spec` link **must** point directly to the exact line range in [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) using line anchors (`#L...-L...`). Never invent requirements not grounded in the specification.
+> 2. **No Out-of-Scope Tasks**: Never create tasks for features defined as out-of-scope in [`PRODUCT_SPEC.md#5.B`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L134-L140) (e.g., multi-tag graphs, cloud sync, real-time streaming STT, waveform visualizers, iOS).
+> 3. **Structured Verification Breakdown**: Every task **must** include dedicated sub-sections for:
+>    - **Unit Tests**: Test file path and specific bulleted cases covered.
+>    - **Widget Tests**: Test file path and specific interaction/rendering cases covered (or `N/A - Non-UI component`).
+>    - **Integration / Command Tests**: Prescribed CLI verification command.
+> 4. **TDD Workflow**: Pick the next pending task (`[ ]` or `[/]`), write failing unit/widget tests first, implement the minimal solution, verify passing, and check off `[x]`.
+
+---
+
+## Task Status Legend
+- `[x]` **Completed**: Implemented, verified with unit/widget tests, and passing all quality gates.
+- `[/]` **In Progress**: Active development or test coverage underway.
+- `[ ]` **Pending**: Ready for pickup within the active milestone.
+
+---
+
+## Milestone 1: Hardware Trigger & Native Android Layer (In-Scope v1.0)
+
+- [x] **TASK-001: Accessibility Service & Volume Key Interception**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/ButtonInterceptorService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L146`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L146) (`FR1.1: The system must intercept VOLUME_UP and VOLUME_DOWN key events via an Android AccessibilityService`)
+  - **Details**: Implement an Android `AccessibilityService` running in isolated process `:interceptor` capturing `KEYCODE_VOLUME_UP` and `KEYCODE_VOLUME_DOWN`.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt)
+      - Cases:
+        1. Verifies interception of volume up key events.
+        2. Verifies interception of volume down key events.
+        3. Verifies non-volume key events are passed through to the system.
+    - **Widget Tests**:
+      - N/A — Native Android service component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-002: Dual-Volume Key Detection & Timing Windows**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinator.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L147`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L147) (`FR1.2: If both volume keys are pressed within a 50ms window, trigger thought recording toggle`)
+  - **Details**: Implement a state machine detecting simultaneous dual-press within 50ms window (`dualPressWindowMs = 50L`) to toggle thought capture.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt)
+      - Cases:
+        1. Pressing VolUp then VolDown within 50ms triggers `triggerVoicePipeline()`.
+        2. Pressing VolDown then VolUp within 50ms triggers `triggerVoicePipeline()`.
+        3. Pressing second key after 50ms does not trigger dual press.
+        4. Releasing either key resets dual-press detection state.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-003: Volume Key Pass-Through & Runaway Prevention**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinator.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L149`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L149) (`FR1.4: Single volume clicks and holds must delegate transparently to AudioManager with repeat delays without runaway loops`)
+  - **Details**: Route single clicks and long-press holds transparently to `AudioManager.adjustSuggestedStreamVolume(..., FLAG_SHOW_UI)` with 300ms initial delay and 110ms repeat intervals.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt)
+      - Cases:
+        1. Single VolUp click raises volume once via `adjustVolume(DIRECTION_UP)`.
+        2. Single VolDown click lowers volume once via `adjustVolume(DIRECTION_DOWN)`.
+        3. Continuous VolUp hold schedules repeat after 300ms, then steps at 110ms intervals.
+        4. Key release cancels repeat scheduler, preventing runaway volume loops.
+        5. Maximum repeat steps cap (`maxRepeatSteps = 25`) prevents infinite repeat loops.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-004: Instant Native Haptic Vibration**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/ButtonInterceptorService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L148`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L148) (`FR1.3: Trigger haptic feedback must execute directly in Android native code upon event confirmation without deferring to Flutter`)
+  - **Details**: Trigger dual-pulse haptic vibration (`VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)`) directly in native code upon dual-key confirmation (<20ms).
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/VolumeButtonCoordinatorTest.kt)
+      - Cases:
+        1. Verifies `triggerVoicePipeline()` is called synchronously upon dual-press confirmation.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-005: Native Trigger Debounce Cooldown**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/TriggerDebouncer.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L150`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L150) (`FR1.5: The system must enforce a 500ms cooldown (TriggerDebouncer) to prevent duplicate trigger cascades across receivers`)
+  - **Details**: Create shared thread-safe 500ms cooldown debouncer across `MainActivity` and `EudemoniaForegroundService` to eliminate duplicate trigger cascades.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/NativeTriggerDebounceTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/NativeTriggerDebounceTest.kt)
+      - Cases:
+        1. First trigger call returns `true`.
+        2. Immediate subsequent call within 500ms returns `false` (debounced).
+        3. Trigger call after 500ms cooldown returns `true`.
+        4. Explicit `reset()` clears cooldown timestamp.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-006: Explicit Broadcast Dispatch without Rogue Activity Launches**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/ButtonInterceptorService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L146-L151`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L146-L151) (`FR1: Hardware Key Trigger & Volume Safety`)
+  - **Details**: Remove `startActivity(launchIntent)` from the interceptor process. Route hardware events strictly via `com.eudemonia.eudemonia.HARDWARE_TRIGGER` broadcast with `isLocked` extra.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt)
+      - Cases:
+        1. Broadcast receiver unpacks `isLocked: false` and forwards to MethodChannel.
+        2. Broadcast receiver unpacks `isLocked: true` and forwards to MethodChannel.
+        3. Unrelated broadcast action is ignored.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+---
+
+## Milestone 2: Background Reliability & Permissions (In-Scope v1.0)
+
+- [x] **TASK-007: Android Foreground Keep-Alive Service**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L188`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L188) (`FR8.1: Provide an Android Foreground Service with an ongoing low-priority notification to protect from OS termination`)
+  - **Details**: Implement foreground service with `foregroundServiceType="microphone"`, low-priority ongoing notification (`eudemonia_background_channel`), and broadcast receiver for triggers.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt)
+      - Cases:
+        1. Verifies notification channel ID and constants.
+        2. Coordinator starts foreground and updates `isRunning` flag to true.
+        3. Coordinator stops foreground and updates `isRunning` flag to false.
+        4. MethodChannel delivery forwards trigger when active channel is available.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [x] **TASK-008: Battery Optimization Exemption Integration**
+  - **Area**: `android/app/src/main/AndroidManifest.xml`, `MainActivity.kt`
+  - **Spec**: [`PRODUCT_SPEC.md:L189`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L189) (`FR8.2: Detect and request both Accessibility Service and Battery Optimization Exemption`)
+  - **Details**: Add `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and `WAKE_LOCK`. Add `MethodChannel` handler to prompt system battery exemption dialog and query status.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/settings/background_permission_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_service_test.dart)
+      - Cases:
+        1. `checkStatus()` returns true when both accessibility and battery optimization are granted.
+        2. `checkStatus()` returns false when battery optimization is not ignored.
+        3. `requestIgnoreBatteryOptimizations()` invokes native platform channel method.
+        4. `isIgnoringBatteryOptimizations` queries PowerManager correctly.
+    - **Widget Tests**:
+      - N/A — Platform service logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/background_permission_service_test.dart`
+
+- [x] **TASK-009: Simultaneous Permission Flow & Educational Modal**
+  - **Area**: `lib/features/settings/background_permission_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L189`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L189) (`FR8.2: Prompt for both permissions simultaneously through an educational modal`)
+  - **Details**: Implement `showSimultaneousPermissionModal()` explaining both Accessibility and Battery Exemption requirements, allowing one-tap sequential grant.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/settings/background_permission_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_service_test.dart)
+      - Cases:
+        1. `requestSimultaneousPermissions()` dispatches platform channel request.
+    - **Widget Tests**:
+      - File: [`test/features/settings/background_permission_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_ui_test.dart)
+      - Cases:
+        1. Modal renders title, explanation, and "Enable Both" action on standard viewports.
+        2. Modal renders on 360dp narrow viewport with 0 `RenderFlex` overflows.
+        3. List tiles inside modal have Material ancestor without framework assertions.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/background_permission_ui_test.dart`
+
+- [x] **TASK-010: Standardized Permission States & Ambient Home Banner**
+  - **Area**: `lib/features/settings/settings_screen.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L190`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L190) (`FR8.3: Permission status indicators across settings and alerts must use standardized Enabled (Green) and Disabled (Amber) badges`)
+  - **Details**: Standardize status labels to **Enabled** (Green) and **Disabled** (Amber). Add ambient warning banner on Home screen that auto-dismisses via `WidgetsBindingObserver` on app resume.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/settings/background_permission_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_service_test.dart)
+      - Cases:
+        1. Model copyWith updates permission states accurately.
+    - **Widget Tests**:
+      - File: [`test/features/settings/background_permission_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_ui_test.dart)
+      - Cases:
+        1. SettingsScreen renders green "Enabled" chip when permissions are active.
+        2. SettingsScreen renders amber "Disabled" chip when permissions are inactive.
+        3. Verifies complete absence of ambiguous "Active" or "Granted" text.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/background_permission_ui_test.dart`
+
+---
+
+## Milestone 3: Decoupled FIFO Queue & Zero-Latency Capture (In-Scope v1.0)
+
+- [x] **TASK-011: Lightweight Non-Blocking Capture Dispatch**
+  - **Area**: `lib/features/ai_processing/batch_pipeline_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L153-L155`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L153-L155) (`FR2: Non-Blocking Audio Capture (<5ms budget)`)
+  - **Details**: Decouple audio capture from AI model loading. `startRecording()` initiates capture with 0ms delay. `stopRecordingAndProcess()` enqueues audio and returns in <5ms without awaiting inference.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/batch_pipeline_queue_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/batch_pipeline_queue_test.dart)
+      - Cases:
+        1. `startRecording()` starts audio capture without initiating model loading.
+        2. `stopRecordingAndProcess()` enqueues audio file into `AudioQueueService` immediately.
+        3. Null audio path from cancelled recording does not enqueue item.
+    - **Widget Tests**:
+      - N/A — Service layer logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/batch_pipeline_queue_test.dart`
+
+- [x] **TASK-012: Persistent FIFO Audio Queue Service**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`, `audio_queue_item.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L158`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L158) (`FR3.1: Enqueued audio files must be persisted to queue.json with ID, timestamp, and status pending`)
+  - **Details**: Create disk-backed FIFO queue stored at `${appDocumentsDir}/queue/queue.json` tracking status: `pending` -> `transcribing` -> `categorizing` -> `completed` / `failed`.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Initial queue state is empty with `pendingCount = 0` and `failedCount = 0`.
+        2. `enqueue()` adds multiple items and persists items to storage JSON.
+        3. Item serialization round-trip retains `id`, `audioFilePath`, `recordedAt`, and `status`.
+    - **Widget Tests**:
+      - N/A — Core queue service.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/audio_queue_service_test.dart`
+
+- [x] **TASK-013: Synchronous Riverpod State Notifiers**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L160`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L160) (`FR3.3: Expose real-time synchronous counts via Riverpod NotifierProvider`)
+  - **Details**: Replace broadcast stream with Riverpod 3 `NotifierProvider<PendingQueueCountNotifier, int>` and `NotifierProvider<FailedQueueCountNotifier, int>` to prevent dropped events.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Enqueuing updates `PendingQueueCountNotifier` synchronously.
+        2. Processing completion decrements `pendingCount` synchronously.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_screen_trigger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_screen_trigger_test.dart)
+      - Cases:
+        1. UI reacts immediately to count updates without needing full pump rebuilds.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/home_screen_trigger_test.dart`
+
+- [x] **TASK-014: Sequential Background Queue Worker Loop**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L159`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L159) (`FR3.2: A background queue worker must process items sequentially one at a time`)
+  - **Details**: Implement asynchronous queue loop that ensures models are loaded, transcribes via STT, categorizes via LLM, persists to Isar, cleans up temporary audio, and resets inactivity TTL.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Worker invokes `ModelLifecycleManager.ensureModelsLoaded()` before transcribing.
+        2. Worker passes audio to STT and transcript to LLM sequentially.
+        3. Worker saves completed note to `NotesRepository`.
+        4. Worker calls `_modelLifecycle.touch()` upon note completion.
+    - **Widget Tests**:
+      - N/A — Asynchronous worker loop.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/audio_queue_service_test.dart`
+
+- [x] **TASK-015: Queue Failure Isolation & Retry Mechanism**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L161-L162`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L161-L162) (`FR3.4 & FR3.5: Failed items transition to failed status without blocking; retryFailed() resets failed items back to pending`)
+  - **Details**: Isolate failed items (e.g. empty audio) to `failed` status without blocking the queue. Implement `retryFailed()` to reset failed items back to `pending`.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Empty speech transcript marks item `failed` and does not throw uncaught error.
+        2. Subsequent pending item in queue is processed successfully after prior failure.
+        3. `retryFailed()` flips all failed items back to `pending` and triggers processing.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_screen_trigger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_screen_trigger_test.dart)
+      - Cases:
+        1. Failed item renders retry banner; tapping "Retry" calls `retryFailed()`.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/home_screen_trigger_test.dart`
+
+---
+
+## Milestone 4: On-Device AI Models & Memory Management (In-Scope v1.0)
+
+- [x] **TASK-016: On-Device Speech Recognition (Sherpa-ONNX)**
+  - **Area**: `lib/features/ai_processing/stt_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L165-L166`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L165-L166) (`FR4: On-Device Speech Recognition via Sherpa-ONNX Parakeet v3 with empty speech detection`)
+  - **Details**: Integrate `sherpa_onnx` offline recognizer with Parakeet v3 CTC/Transducer models (~600MB). Return raw transcript.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Uninitialized STT throws `Exception: STT Service not initialized`.
+        2. Initialized STT transcribes WAV audio file and returns text.
+        3. Empty speech returns empty transcript string.
+    - **Widget Tests**:
+      - N/A — Native model bridge.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/audio_queue_service_test.dart`
+
+- [x] **TASK-017: Model Lifecycle State Machine**
+  - **Area**: `lib/features/ai_processing/model_lifecycle_manager.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L178`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L178) (`FR6.1: Maintain three lifecycle states: unloaded, loading, and ready`)
+  - **Details**: Implement `unloaded`, `loading`, and `ready` states. `ensureModelsLoaded()` provides idempotent, thread-safe future caching.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/model_lifecycle_manager_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/model_lifecycle_manager_test.dart)
+      - Cases:
+        1. Initial state is `unloaded`.
+        2. State transitions to `loading` during initialization, then `ready` upon completion.
+        3. Concurrent calls to `ensureModelsLoaded()` await the same Future without double-initialization.
+    - **Widget Tests**:
+      - N/A — Lifecycle controller.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/model_lifecycle_manager_test.dart`
+
+- [x] **TASK-018: Sequential Model Loading (RAM Spike Prevention)**
+  - **Area**: `lib/features/ai_processing/model_lifecycle_manager.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L179`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L179) (`FR6.2: Models must be loaded sequentially (STT first, LLM second) to prevent memory allocation spikes`)
+  - **Details**: Sequence model initialization (Sherpa-ONNX first, Qwen GGUF second) to prevent simultaneous peak allocation spikes above Android LMK threshold.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/model_lifecycle_manager_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/model_lifecycle_manager_test.dart)
+      - Cases:
+        1. STT initialize completes before LLM initialize begins.
+        2. Total memory footprint during sequential loading stays below concurrent load threshold.
+    - **Widget Tests**:
+      - N/A — Native model loading logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/model_lifecycle_manager_test.dart`
+
+- [x] **TASK-019: Inactivity TTL Model Eviction (3-Minute Timer)**
+  - **Area**: `lib/features/ai_processing/model_lifecycle_manager.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L180-L181`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L180-L181) (`FR6.3 & FR6.4: Unload both models from RAM after 3 minutes idle, resetting timer on activity`)
+  - **Details**: Implement inactivity timer disposing native C++ handles for both STT and LLM after 3 minutes idle, returning baseline RAM footprint to <60 MB.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/model_lifecycle_manager_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/model_lifecycle_manager_test.dart)
+      - Cases:
+        1. Advancing time by 2 minutes preserves models in `ready` state.
+        2. Advancing time past 3 minutes (180s) triggers `evictModels()`, transitioning state to `unloaded`.
+        3. Calling `touch()` resets the 3-minute countdown.
+        4. Calling `ensureModelsLoaded()` after eviction re-loads models cleanly.
+    - **Widget Tests**:
+      - N/A — Timer lifecycle controller.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/model_lifecycle_manager_test.dart`
+
+- [x] **TASK-020: Language Correction & Single-Folder Classification**
+  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `llm_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L170-L174`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L170-L174) (`FR5.2 & FR5.3: Grammar cleanup, filler-word removal, strict single-folder assignment, confidence score parsing`)
+  - **Details**: Implement ChatML prompt for Qwen-2.5 1.5B GGUF with grammar cleanup, filler-word removal (*"um"*, *"like"*), strict single-folder assignment (`Work`, `Ideas`, `Todos`, `Journal`, or `Uncategorized`), and confidence score parsing.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/note_classifier_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/note_classifier_test.dart)
+      - Cases:
+        1. ChatML prompt formats system, user, and assistant tokens correctly.
+        2. Filler words ("um", "uh", "you know") stripped from corrected text.
+        3. Valid JSON with single folder parses into `NoteClassificationResult`.
+        4. Confidence scores parse into normalized percentages (0.0 to 1.0).
+        5. Invalid or multi-folder slash string defaults to single best folder or `Uncategorized`.
+    - **Widget Tests**:
+      - N/A — Natural language classification logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/note_classifier_test.dart`
+
+- [x] **TASK-021: Granular LLM Configuration & Stateless KV Cache Purging**
+  - **Area**: `lib/features/ai_processing/llm_config.dart`, `llm_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L175`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L175) (`FR5.4: Purge KV cache after every turn (clearKvCacheEveryXTurns = 1)`)
+  - **Details**: Create `LLMConfig` defining `kvCacheMaxSize` (2048), `inputTokenLimit` (1536), and `clearKvCacheEveryXTurns` (default 1). Purge KV slot via `_llama.disposeScope()` after each turn to avoid residual RAM consumption.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/llm_config_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/llm_config_test.dart)
+      - Cases:
+        1. Default `LLMConfig` parameters match specifications.
+        2. Config assertions validate positive token limits and batch sizes.
+      - File: [`test/features/ai_processing/llm_service_kv_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/llm_service_kv_test.dart)
+      - Cases:
+        1. `completedTurnsCount` increments with each `processText` call.
+        2. `clearKvCache()` safely executes without error on empty or uninitialized context.
+        3. Custom config parameters are retained across service calls.
+    - **Widget Tests**:
+      - N/A — LLM inference controller.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/llm_service_kv_test.dart`
+
+- [x] **TASK-022: Heuristic Fallback Classifier**
+  - **Area**: `lib/features/ai_processing/note_classifier.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L174`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L174) (`FR5.3: If parsing fails or LLM is uninitialized, fall back to heuristic keyword classifier`)
+  - **Details**: Implement keyword-based heuristic classifier used as a fallback if the LLM is uninitialized or JSON parsing fails.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/llm_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/llm_service_test.dart)
+      - Cases:
+        1. Uninitialized LLM routes text through heuristic classifier.
+        2. Meeting/project keywords classify into `Work`.
+        3. Brainstorming keywords classify into `Ideas`.
+        4. Unknown input without keywords classifies into `Uncategorized`.
+    - **Widget Tests**:
+      - N/A — Classification fallback logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/llm_service_test.dart`
+
+---
+
+## Milestone 5: Persistence, UI Observability & Diagnostics (In-Scope v1.0)
+
+- [x] **TASK-023: Isar Embedded Database Note Persistence**
+  - **Area**: `lib/features/notes/data/note_model.dart`, `notes_repository.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L184-L185`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L184-L185) (`FR7.1 & FR7.2: Processed thoughts saved to Isar database; query by recency and folder`)
+  - **Details**: Create Isar `Note` schema (`id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, `originalAudioPath`) and repository with query methods.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
+      - Cases:
+        1. Notes repository saves note object with correct text, folder, and timestamp.
+        2. Note can be retrieved by id and by folder.
+    - **Widget Tests**:
+      - N/A — Database repository layer.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/audio_queue_service_test.dart`
+
+- [x] **TASK-024: Real-Time Queue Badge in AppBar**
+  - **Area**: `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L252-L254`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L252-L254) (`Section 6: Pending Queue Pill (AppBar) displays X pending when count > 0; hidden when count == 0`)
+  - **Details**: Render a live `$count pending` chip with micro-spinner in the AppBar when `pendingCount > 0`. Hide when queue is empty.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — UI presentation layer.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_screen_trigger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_screen_trigger_test.dart)
+      - Cases:
+        1. AppBar badge renders "2 pending" when pending count is 2.
+        2. AppBar badge renders circular progress indicator.
+        3. AppBar badge is completely hidden when pending count is 0.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/home_screen_trigger_test.dart`
+
+- [x] **TASK-025: In-Body Processing Card**
+  - **Area**: `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L255-L257`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L255-L257) (`Section 6: In-Body Processing Banner displays Processing voice thought with active spinner above Folders`)
+  - **Details**: Render card above Folders indicating `Processing voice thought ($pendingCount pending)...` with active progress indicator while worker is active.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — UI presentation layer.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_screen_trigger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_screen_trigger_test.dart)
+      - Cases:
+        1. Banner renders "Processing voice thought (2 pending)..." when items are queued.
+        2. Banner renders progress indicator.
+        3. Banner hides when pending count drops to 0.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/home_screen_trigger_test.dart`
+
+- [x] **TASK-026: Failed Items Banner with Interactive Retry**
+  - **Area**: `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L258`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L258) (`Section 6: Failed Items Retry Banner displays warning with Retry button when failedCount > 0`)
+  - **Details**: Render warning banner when `failedCount > 0` with a **Retry** button invoking `ref.read(audioQueueServiceProvider).retryFailed()`.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — UI interaction layer.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_screen_trigger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_screen_trigger_test.dart)
+      - Cases:
+        1. Banner renders "1 thought(s) failed to process" when failed count is 1.
+        2. Tapping "Retry" button invokes queue retry mechanism.
+        3. Banner hides when failed count is 0.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/home_screen_trigger_test.dart`
+
+- [x] **TASK-027: Layout Overflows & Material Ink Splash Contract Fixes**
+  - **Area**: `lib/features/settings/background_permission_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L206-L208`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L206-L208) (`NFR: Reliability & Zero Framework UI Assertions`)
+  - **Details**: Wrap text in `Expanded` to prevent 16px right overflow on 360dp screens. Replace `Container(decoration: ...)` with `Material(...)` around `ListTile` to fix framework assertions.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — Layout rendering verification.
+    - **Widget Tests**:
+      - File: [`test/features/settings/background_permission_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/background_permission_ui_test.dart)
+      - Cases:
+        1. Modal renders on 360dp narrow viewport with 0 `RenderFlex` overflows.
+        2. `ListTile` widgets inside modal have Material ancestor without framework ink splash assertions.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/background_permission_ui_test.dart`
+
+- [x] **TASK-028: Rotating File Logger & In-App Telemetry Dump**
+  - **Area**: `lib/core/logger/app_logger.dart`, `lib/features/settings/settings_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L262`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L262) (`Section 6: Diagnostic tools: View System Logs, Copy Diagnostic Log Dump, and Clear Logs`)
+  - **Details**: Implement `AppLogger` writing triggers, transitions, and errors to `${appDocumentsDir}/logs/app_logs.txt` with a 2MB rotating cap. Add live log viewer and clipboard dump in Settings.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/core/logger/app_logger_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/core/logger/app_logger_test.dart)
+      - Cases:
+        1. Logger writes formatted log lines with ISO timestamps.
+        2. `getLogs()` reads log file content accurately.
+        3. `clearLogs()` purges log file on disk.
+        4. Exceeding 2MB rotates file cleanly without unbounded growth.
+    - **Widget Tests**:
+      - N/A — Logger core logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/core/logger/app_logger_test.dart`
+
+---
+
+## Milestone 6: In-Scope Polish & Folder Filtering (In-Scope v1.0 Pending)
+
+- [ ] **TASK-029: Folder-Filtered Notes Screen & Navigation**
+  - **Area**: `lib/features/home/home_screen.dart`, `lib/features/notes/`
+  - **Spec**: [`PRODUCT_SPEC.md:L185`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L185) (`FR7.2: The notes repository must support retrieval sorted by recency and filtered by folder`) & [`PRODUCT_SPEC.md:L78-L82`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L78-L82) (`Scenario 3: Recent thoughts appear organized with folder pills Work, Ideas, Todos, Journal`)
+  - **Details**: Implement navigation when tapping on any of the folder cards (`Ideas`, `Work`, `Journal`, `Todos`) in `HomeScreen` to display notes filtered by that selected folder, calling `notesRepository.getNotesByFolder(folder)`.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/notes_repository_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/notes_repository_test.dart)
+      - Cases:
+        1. `getNotesByFolder('Ideas')` returns only notes with folder equal to 'Ideas'.
+        2. `getNotesByFolder` returns empty list if no notes exist for folder.
+    - **Widget Tests**:
+      - File: [`test/features/home/folder_navigation_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/folder_navigation_test.dart)
+      - Cases:
+        1. Tapping 'Ideas' folder card navigates to filtered screen showing 'Ideas' header.
+        2. Filtered screen displays only notes matching 'Ideas'.
+        3. Back button returns to `HomeScreen`.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/folder_navigation_test.dart`
+
+- [ ] **TASK-030: Automated Capture Latency (<5ms Budget) Benchmark Verification**
+  - **Area**: `test/benchmark/capture_latency_benchmark_test.dart`, `lib/features/ai_processing/batch_pipeline_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md:L198`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L198) (`NFR Latency: Audio Capture Dispatch < 5ms from trigger release to queue handoff`)
+  - **Details**: Implement automated benchmark test measuring elapsed duration from `stopRecordingAndProcess()` trigger call to queue handoff completion, asserting execution completes in under 5ms.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/benchmark/capture_latency_benchmark_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/benchmark/capture_latency_benchmark_test.dart)
+      - Cases:
+        1. Measures 100 iterations of `stopRecordingAndProcess()`.
+        2. Computes P95 and asserts P95 duration is strictly < 5 milliseconds.
+    - **Widget Tests**:
+      - N/A — Benchmark execution test.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/benchmark/capture_latency_benchmark_test.dart`
