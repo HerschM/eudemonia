@@ -125,9 +125,10 @@ test/                    # Unit, widget, and architecture tests mirroring lib/
 
 ## 7. Detailed Technical Reference & Evolution History
 
-For comprehensive details on how subsystems are currently wired, their internal mechanics, and the chronicle of architectural challenges and historical fixes (including volume button debouncing, sequential model pre-warming, KV cache purging, and Riverpod queue notifiers), refer to:
+For comprehensive details on product requirements, how subsystems are currently wired, their internal mechanics, and the chronicle of architectural challenges and historical fixes, refer to:
 
-- [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md)
+- [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) — Comprehensive product requirements document, target personas, user journeys, functional/non-functional specs, and product roadmap.
+- [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) — Technical reference, subsystem mechanics, and historical chronicle of fixes.
 
 > [!IMPORTANT]
 > **`IMPLEMENTATION.md` is a Living Blueprint, Not Absolute Dogma**:
