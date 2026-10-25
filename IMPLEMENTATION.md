@@ -9,7 +9,7 @@
 > - Whenever you modify, refactor, or evolve a subsystem to meet new requirements, **you must update this document** to ensure the blueprint accurately reflects the latest codebase.
 
 ---
-qqq
+
 ## Table of Contents
 1. [Subsystem Architecture & Current Implementation](#1-subsystem-architecture--current-implementation)
    - [A. Hardware Trigger & Native Android Layer](#a-hardware-trigger--native-android-layer)
