@@ -92,6 +92,7 @@ Agents must follow a strict **Test-Driven Development (TDD)** discipline:
 - Verify tests and static analysis (`flutter test`, `dart analyze`) pass with 0 errors before concluding.
 - Provide failure isolation: if one queued item fails, log the error, mark it failed, and continue processing remaining items.
 - Use resilient, synchronous state providers (like Riverpod `NotifierProvider`) for values required by new subscribers, avoiding raw broadcast streams that drop past events.
+- **Update [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md)** whenever you refactor, optimize, or alter any subsystem to keep the living blueprint synchronized.
 
 ### Ask First
 - Adding external cloud/network services (Eudemonia is fundamentally an on-device, local-first system).
@@ -119,3 +120,16 @@ android/
 └── app/src/main/kotlin/ # Accessibility service, foreground service & debouncers
 test/                    # Unit, widget, and architecture tests mirroring lib/
 ```
+
+---
+
+## 7. Detailed Technical Reference & Evolution History
+
+For comprehensive details on how subsystems are currently wired, their internal mechanics, and the chronicle of architectural challenges and historical fixes (including volume button debouncing, sequential model pre-warming, KV cache purging, and Riverpod queue notifiers), refer to:
+
+- [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md)
+
+> [!IMPORTANT]
+> **`IMPLEMENTATION.md` is a Living Blueprint, Not Absolute Dogma**:
+> Treat [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) as a point-in-time snapshot of the codebase, not an immutable truth set in stone. When touching any subsystem, **always question existing patterns, audit them, and seek to improve them** to meet new requirements rather than accepting legacy choices as rigid constraints. When you make changes to a subsystem, you **must** update [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) to keep the documentation aligned with the active codebase.
+
