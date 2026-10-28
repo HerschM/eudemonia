@@ -13,7 +13,7 @@
 3. [Target Personas & User Scenarios](#3-target-personas--user-scenarios)
 4. [Product Principles & Core Value Propositions](#4-product-principles--core-value-propositions)
 5. [Scope & Requirements](#5-scope--requirements)
-   - [A. In-Scope (v1.0 MVP)](#a-in-scope-v10-mvp)
+   - [A. In-Scope (v1.0 MVP & Active Extensions)](#a-in-scope-v10-mvp--active-extensions)
    - [B. Out-of-Scope (Explicit Non-Goals for v1.0)](#b-out-of-scope-explicit-non-goals-for-v10)
    - [C. Functional Requirements (FR)](#c-functional-requirements-fr)
    - [D. Non-Functional Requirements (NFR)](#d-non-functional-requirements-nfr)
@@ -118,24 +118,33 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 ## 5. Scope & Requirements
 
-### A. In-Scope (v1.0 MVP)
+### A. In-Scope (v1.0 MVP & Active Extensions)
 - Android physical dual-volume key trigger detection via an Accessibility Service.
 - Native haptic feedback delivered directly in Android native code (<20ms).
 - Volume button transparent pass-through (single clicks and holds adjust media volume normally without runaway loops).
-- Decoupled FIFO audio processing queue with disk persistence.
+- Decoupled FIFO audio processing queue with disk persistence and cold-start state hydration.
 - On-device speech recognition via Sherpa-ONNX Parakeet v3.
 - On-device language correction and single-folder categorization via quantized Qwen-2.5 1.5B GGUF.
 - Local note persistence via Isar embedded database.
-- Persistent background keep-alive foreground service with low-priority notification.
+- Persistent background keep-alive foreground service with interactive lock screen capture action.
+- Multi-state thought lifecycle feed cards (Enqueued Pastel Yellow with instant audio playback, Processed Soft Blue, Failed Soft Red, and Synthesized Sage Green).
+- Interactive category reassignment dropdown and inline text editing.
+- Unread / viewed thought triage tracking and filter chip.
+- Thought synthesis and clustering (recency/context auto-clubbing and manual multi-select clubbing) preserving origin thoughts and audio clips.
+- Thermal and low-memory adaptive queue gating to prevent device overheating.
+- System transparency telemetry graphs (24h battery impact & memory lifecycle curve) in Settings.
+- Hardware-accelerated 60/120fps progress indicator decoupled from inference load.
+- The Action Engine: on-device action item and commitment extraction with local reminder support.
+- The Emotional Climate: on-device valence/energy scoring for reflections and emotional transition heatmap.
 - Simultaneous permission coordination flow (Accessibility + Battery Optimization Exemption).
 - Real-time queue observability in UI (AppBar badge, in-body processing banner, failed item retry).
 - Diagnostic logging system with 2MB rotating disk cap and in-app viewer.
 
 ### B. Out-of-Scope (Explicit Non-Goals for v1.0)
-- Multi-tag many-to-many graph tagging (reserved for v1.5; v1.0 requires single-folder discipline).
+- Multi-tag many-to-many graph tagging (reserved for v1.5; v1.0 requires single-folder discipline with synthesis clustering).
 - Cloud synchronization (Dropbox, Google Drive, iCloud) or cross-device sync.
 - Real-time streaming transcription while speaking (streaming adds high memory and CPU competition during recording; batch transcription post-capture is chosen for battery efficiency).
-- Audio waveform visualizer / playback editing tools.
+- Multi-track audio waveform visualizer / complex DAW editing tools (direct audio playback scrubber is supported).
 - iOS platform support (iOS restricts background hardware button interception).
 
 ---
@@ -189,6 +198,45 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR8.2**: The app must detect and request both Accessibility Service and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) simultaneously through an educational modal.
 - **FR8.3**: Permission status indicators across settings and alerts must use standardized **Enabled** (Green) and **Disabled** (Amber) badges.
 
+#### FR9: Thought Lifecycle States & Feed Presentation
+- **FR9.1**: As soon as a voice recording completes and is validated as non-empty (>0.5s audio), the system must optimistically insert an entry into the feed within 5ms. The entry must display current date and time, a pastel yellow background (`#FEF3C7` / `#78350F`), and an animated shimmer sub-text (*"Transcribing & organizing..."*).
+- **FR9.2**: The leading icon of the thought card must feature an interactive **Audio Playback Button** (`[ ▶ ]` / `[ ⏸ ]`), enabling the user to immediately listen to their raw captured audio even while inference is pending or failed.
+- **FR9.3**: Once STT transcription, grammar correction, and categorization complete, the card must dynamically transition its background to soft blue (`#DBEAFE` / `#1E3A8A`), populating corrected text and folder tags.
+- **FR9.4**: Tapping the category badge must present a quick-select dropdown or bottom sheet, allowing the user to override and reassign the folder in 1 tap.
+- **FR9.5**: Users must be able to edit the corrected thought text inline or via a quick edit sheet, saving changes locally to the database.
+- **FR9.6**: If transcription or post-processing fails, the card background must transition to soft red (`#FEE2E2` / `#7F1D1D`), display the failure reason, keep original audio playable, and provide an explicit 1-tap **Retry** action.
+- **FR9.7**: The system must track an `isRead` / `isViewed` boolean flag for each thought. Unviewed items must display a subtle electric blue unread indicator dot (`•`), and the feed must support filtering by unread thoughts.
+
+#### FR10: Lock Screen & Notification Center Capture Trigger
+- **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
+- **FR10.2**: Toggling the notification button must trigger start and stop of thought recording directly from the lock screen or notification shade without requiring device unlock.
+- **FR10.3**: While recording is active, the notification must update dynamically to display an elapsed timer (`Recording 00:06...`) and a `[ ⏹ Stop & Save ]` action.
+
+#### FR11: Thought Synthesis & Clustering (Clubbing)
+- **FR11.1**: The system must provide an on-device long-processing auto-clubbing capability. When consecutive thoughts are recorded within a temporal window (default: 45 minutes) that share contextual continuity or topical affinity, the LLM must automatically cluster them into a single synthesized note.
+- **FR11.2**: Synthesized thoughts must render with a sage green background (`#DCFCE7` / `#14532D`) and a distinct synthesis badge (`[ 🧩 Clubbed Note ]`).
+- **FR11.3**: Auto-clubbing must never destroy raw thought data. A synthesized green note must provide an expandable origin audit view displaying the constituent sub-thoughts, their individual timestamps, and original audio playback buttons.
+- **FR11.4**: The system must provide a manual multi-select mode in the feed. Selecting two or more notes presents a floating **"Club Thoughts"** action that forces an LLM synthesis turn across the selected items.
+
+#### FR12: Thermal & Resource-Aware Adaptive Queue Gating
+- **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
+- **FR12.2**: Audio capture and lightweight STT must never be throttled or blocked.
+- **FR12.3**: If device thermal state reaches `THERMAL_STATUS_SEVERE` or `THERMAL_STATUS_CRITICAL`, or if available system RAM drops below 300MB, the system must defer on-device LLM post-processing into an adaptive backoff queue.
+- **FR12.4**: As soon as device thermal headroom returns to safe levels (`THERMAL_STATUS_MODERATE` or lower), the queue worker must automatically resume deferred LLM inference.
+
+#### FR13: System Observability & Telemetry Visualizers
+- **FR13.1**: The Settings screen must render an interactive 24-hour battery consumption curve showing Eudemonia's background energy draw relative to device drain.
+- **FR13.2**: The Settings screen must render a memory lifecycle timeline graph illustrating baseline idle RAM (<60MB), sequential load spikes during inference (~1.6GB), and the sharp reclamation curve following the 3-minute inactivity eviction.
+- **FR13.3**: The queue service and UI state must hydrate synchronously from disk (`queue.json`) on cold app restart within <50ms, ensuring pending and processing items never vanish prematurely.
+
+#### FR14: The Action Engine (Tasks & Commitments)
+- **FR14.1**: During LLM post-processing, the model must extract any actionable commitments, errands, or tasks stated in the thought, producing structured action items with description, detected due date/time anchor, and urgency level.
+- **FR14.2**: Extracted action items must be organized within an interactive Action Center view, supporting checkbox completion, item editing, and local Android calendar/reminder intent dispatch without external cloud services.
+
+#### FR15: The Emotional Climate & Mind Heatmap
+- **FR15.1**: For thoughts classified under the `Journal` category, the on-device LLM must evaluate emotional valence (-1.0 to +1.0) and cognitive energy (Low/High).
+- **FR15.2**: The system must visualize emotional transitions over days and weeks in an on-device "Mind Climate" heatmap, allowing users to observe cognitive clarity patterns without telemetry or cloud exposure.
+
 ---
 
 ### D. Non-Functional Requirements (NFR)
@@ -204,6 +252,9 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 | **Memory** | Inactivity Eviction Timeout | Models evicted after **180 seconds (3 min)** of zero activity |
 | **Battery** | 24-Hour Background Standby | **< 2.5%** total battery consumption in foreground listening mode |
 | **Reliability** | Queue Failure Isolation | **100%**: A corrupt or silent audio file must never block the queue |
+| **Reliability** | Queue Cold-Start Hydration | **< 50ms** hydration from disk on app restart |
+| **Reliability** | UI Render Fluidity | **Locked 60/120fps** animation on processing indicators during active inference |
+| **Reliability** | Thermal Safeguard | LLM deferred when thermal status >= `THERMAL_STATUS_SEVERE` |
 | **Reliability** | App Crash-Free Rate | **> 99.9%** across background trigger cycles |
 | **Privacy** | Network Transmission | **0 bytes**: Absolute zero outbound traffic for audio, text, or metrics |
 
@@ -241,9 +292,21 @@ Eudemonia adopts **Flutter Code-as-Design** as its official UI/UX design and ite
    - Status chips for **Accessibility Service** and **Background Execution (Battery Exemption)** using standardized **Enabled** (Green) and **Disabled** (Amber) badges.
    - Switch toggle for **"Keep App Alive in Background"** (controls `EudemoniaForegroundService`).
    - Telemetry gauge showing active AI Model Lifecycle state (`Ready`, `Loading`, or `Unloaded`) and RAM consumption (<60 MB idle, ~1.6 GB peak).
+   - Interactive 24-hour battery consumption curve and memory lifecycle timeline graphs.
    - Diagnostic tools: **View System Logs**, **Copy Diagnostic Log Dump**, and **Clear Logs**.
 6. **Ambient Permissions Alert**:
    - An ambient status card rendered at the top of the Home feed whenever Accessibility or Battery Exemption is missing. Automatically dismisses via lifecycle observer the moment both are granted.
+7. **4-Color Thought Lifecycle Feed Cards & Audio Note Integration**:
+   - Immediate **Pastel Yellow** card on non-empty audio recording completion, hosting direct **Audio Playback** (`[ ▶ ]`), timestamp, and processing shimmer.
+   - Transitions to **Soft Blue** upon successful STT and classification, showing corrected text, 1-tap category dropdown pill, inline edit action, and subtle unread indicator dot (`•`).
+   - Transitions to **Soft Red** on failure, keeping original audio playable and offering a 1-tap **Retry** button.
+   - Transitions to **Sage Green** for auto- or manually-clubbed thoughts, featuring an expandable audit trail of original sub-thoughts and audio notes.
+8. **Lock Screen Persistent Notification Controller**:
+   - Ongoing Android foreground service notification with an interactive `[ 🎙️ Record Thought ]` action button and live recording timer.
+9. **Action Center (The Action Engine)**:
+   - Extracted commitments, tasks, and errands organized with interactive checkboxes and local system calendar/reminder dispatch.
+10. **The Emotional Climate & Mind Heatmap**:
+    - Daily and weekly visual heatmap plotting emotional valence and cognitive energy derived locally from `Journal` thoughts.
 
 ---
 

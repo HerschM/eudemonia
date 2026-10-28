@@ -41,6 +41,11 @@ When designing, modifying, or refactoring any screen in Eudemonia, AI agents and
 | `accentAI` | `#8B5CF6` (Violet) | `#7C3AED` | Language-corrected text badges, model processing |
 | `accentWarning` | `#F59E0B` (Amber) | `#D97706` | Missing permissions, pending background warnings |
 | `accentError` | `#EF4444` (Rose Red) | `#DC2626` | Failed queue items, retry triggers |
+| `stateEnqueuedBg` | `#26200A` (Amber Tint) | `#FEF3C7` (Pastel Yellow) | Optimistic pending capture card background |
+| `stateProcessedBg` | `#111827` (Slate Blue) | `#DBEAFE` (Soft Blue) | Completed & categorized thought card background |
+| `stateFailedBg` | `#271111` (Deep Red) | `#FEE2E2` (Soft Red) | Failed processing thought card background |
+| `stateSynthesizedBg` | `#0D2319` (Forest Tint) | `#DCFCE7` (Sage Green) | Clubbed / synthesized multi-thought background |
+| `unreadDot` | `#60A5FA` (Electric Blue) | `#3B82F6` | Subtle indicator for unreviewed / unread thoughts |
 | `textPrimary` | `#F9FAFB` | `#111827` | Headings, primary thought text |
 | `textSecondary` | `#9CA3AF` | `#6B7280` | Timestamps, metadata, folder labels |
 | `textTertiary` | `#6B7280` | `#9CA3AF` | Inactive hints, micro-copy, drag handles |
@@ -109,7 +114,7 @@ previews/
 ## 4. Screen 1: Home Dashboard & Capture Feed
 
 ### Screen Overview
-The central hub displaying live queue processing status, ambient background permissions alert, horizontal category folders, and a reverse-chronological feed of language-corrected voice thoughts.
+The central hub displaying live queue processing status, ambient background permissions alert, horizontal category folders, unread triage filter, multi-select note clustering bar, and a reverse-chronological feed with 4 distinct thought lifecycle states (Yellow = Enqueued, Blue = Processed, Red = Failed, Green = Synthesized).
 
 ### Visual ASCII Wireframe
 
@@ -122,25 +127,41 @@ The central hub displaying live queue processing status, ambient background perm
 │  └──────────────────────────────────────────────────┘  │     (Auto-hides when granted)
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ 🌀  Processing voice thought (2 pending)...       │  │ ◄── In-Body Processing Card
-│  └──────────────────────────────────────────────────┘  │     (Animated spinner during inference)
+│  │ 🌀  Processing voice thought (2 pending)...       │  │ ◄── In-Body Processing Card (Smooth 60fps)
+│  └──────────────────────────────────────────────────┘  │     (Hydrates from disk on cold restart)
 │                                                        │
-│  FOLDERS                                               │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────┐ │
-│  │ 💡 Ideas   │ │ 💼 Work    │ │ 📓 Journal │ │ ✅...│ │ ◄── Horizontal Glassmorphic Folders
-│  │    14      │ │    28      │ │     7      │ │      │ │     (Emoji + Count badge + Folder name)
-│  └────────────┘ └────────────┘ └────────────┘ └──────┘ │
+│  FILTERS & FOLDERS                                     │
+│  ┌───────┐ ┌──────────────┐ ┌────────────┐ ┌─────────┐ │
+│  │ All   │ │ • Unread (3) │ │ 💡 Ideas 14│ │ 💼 Work │ │ ◄── Triage & Category Carousel
+│  └───────┘ └──────────────┘ └────────────┘ └─────────┘ │
 │                                                        │
-│  RECENT THOUGHTS                                       │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ 💼 WORK • 10m ago                           [ ⋯ ]│  │ ◄── Thought Card
-│  │ "Remember to send the quarterly sync notes to    │  │     (Folder badge, relative time,
-│  │  Sarah before the end-of-day sprint review."     │  │      language-corrected text)
+│  │ [ 2 Selected ]         [ 🧩 Club Thoughts ]  [✕] │  │ ◄── Multi-Select Floating Bar
+│  └──────────────────────────────────────────────────┘  │     (Appears during note selection)
+│                                                        │
+│  THOUGHT FEED                                          │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [ ▶ ] 00:05 • Just now          [ ⏳ Enqueued ]  │  │ ◄── 1. PASTEL YELLOW (#FEF3C7)
+│  │ ~ "Transcribing & organizing speech..." ~        │  │     Immediate audio playback ready;
+│  └──────────────────────────────────────────────────┘  │     processing shimmer sub-text
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [ ▶ ] 00:12 • 10m ago • [ 💼 Work ▾ ] [ ✎ ]    • │  │ ◄── 2. SOFT BLUE (#DBEAFE)
+│  │ "Remember to send the quarterly sync notes to    │  │     Completed thought; unread dot (•);
+│  │  Sarah before the end-of-day sprint review."     │  │     1-tap category dropdown; inline edit
 │  └──────────────────────────────────────────────────┘  │
+│                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ 💡 IDEAS • 2h ago                           [ ⋯ ]│  │
-│  │ "Explore on-device vector embedding index for    │  │
-│  │  instant semantic recall of audio transcripts."  │  │
+│  │ [ ▶ ] 00:03 • 25m ago   [ ⚠️ Failed ]  [ ↻ Retry]│  │ ◄── 3. SOFT RED (#FEE2E2)
+│  │ Error: "No speech detected in audio recording"   │  │     Audio preserved; 1-tap retry
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [ 🧩 ] 3 Thoughts • 1h ago   [ 💡 Ideas ▾ ] [ ✎ ]│  │ ◄── 4. SAGE GREEN (#DCFCE7)
+│  │ "Consolidated architectural plan for on-device   │  │     Synthesized / clubbed thought;
+│  │  vector search & local battery optimizations."   │  │     audit trail of origin notes:
+│  │  ▼ 3 Origin Thoughts & Audio Notes (Tap to View) │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
 │         [ 🎙️ Press Vol Up + Vol Down to Capture ]      │ ◄── Ambient hardware trigger hint
@@ -151,19 +172,30 @@ The central hub displaying live queue processing status, ambient background perm
 - **Sandbox File**: [`previews/screens/home_preview.dart`](file:///Users/harshmavani/Documents/Eudemonia/previews/screens/home_preview.dart)
 - **Production Target**: [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
 - **Key Parameters**:
-  - `int pendingCount`: Count of audio items in queue (renders AppBar pill and In-Body banner when > 0).
+  - `int pendingCount`: Count of audio items in queue (renders AppBar pill and In-Body banner when > 0, hydrated from disk).
   - `int failedCount`: Count of failed items (renders Retry banner when > 0).
   - `bool hasMissingPermissions`: Renders ambient warning card when true.
-  - `List<NoteItem> notes`: List of language-corrected thought objects.
-  - Callbacks: `onEnablePermissions`, `onRetryFailed`, `onOpenSettings`, `onSelectFolder(folder)`, `onTapNote(noteId)`.
-- **States Covered**: `Idle`, `Processing (X pending)`, `Error/Retry`, `Fresh Install (Empty)`.
+  - `List<NoteItem> notes`: List of thought objects with lifecycle status (`enqueued`, `processed`, `failed`, `synthesized`), audio paths, timestamps, read status, and origin notes.
+  - `Set<String> selectedNoteIds`: IDs of currently selected notes for manual clubbing.
+  - `String activeFilter`: Selected filter (`all`, `unread`, or specific folder).
+  - Callbacks:
+    - `onPlayAudio(noteId)`: Triggers audio playback for raw speech.
+    - `onEditNote(noteId, newText)`: Saves inline or modal text edits to local database.
+    - `onReassignFolder(noteId, newFolder)`: Updates folder category via 1-tap dropdown.
+    - `onToggleSelectNote(noteId)`: Toggles note selection for manual clubbing.
+    - `onClubSelectedNotes(selectedIds)`: Forces LLM synthesis turn across selected notes into a single green thought.
+    - `onToggleReadStatus(noteId)`: Marks thought as read / viewed.
+    - `onRetryFailed()`: Resets failed items in queue back to pending.
+    - `onOpenSettings()`: Navigates to Settings screen.
+- **States Covered**: `Idle`, `Processing Shimmer (Yellow)`, `Completed (Blue)`, `Failed (Red)`, `Synthesized (Green)`, `Selection Mode`, `Empty Feed`.
 
 ### AI Modification Prompt Recipe
 ```markdown
 "Antigravity: In previews/screens/home_preview.dart:
-1. Add an interactive search bar below the FOLDERS section to filter thoughts by keyword in real time.
-2. In the folder carousel, add an 'All' pill selected by default.
-3. Add a swipe-to-delete action on thought cards with an undo snackbar."
+1. Render thought cards with 4 distinct background tint tokens (stateEnqueuedBg, stateProcessedBg, stateFailedBg, stateSynthesizedBg).
+2. Wire the left leading icon as an interactive Audio Playback button that toggles play/pause states.
+3. Add a category dropdown button to the thought header that shows a folder picker on tap.
+4. Add an unread indicator dot (unreadDot token) that clears when the note is tapped."
 ```
 
 ---
@@ -273,7 +305,7 @@ Displays the language-corrected thought, alongside collapsible access to the raw
 ## 7. Screen 4: Settings & Diagnostics Console
 
 ### Screen Overview
-Controls background resilience, physical hardware button listener status, audio retention policies, model lifecycle memory telemetry, and real-time rotating diagnostic logs.
+Controls background resilience, physical hardware button listener status, audio retention policies, model lifecycle memory telemetry, thermal headroom status, 24-hour battery consumption curves, and real-time rotating diagnostic logs.
 
 ### Visual ASCII Wireframe
 
@@ -287,12 +319,28 @@ Controls background resilience, physical hardware button listener status, audio 
 │  Keep Alive Foreground Service:    [ Toggle ON ]       │
 │                                                        │
 │  AUDIO CAPTURE STORAGE                                 │
-│  Keep Raw WAV Audio Files:         [ Toggle OFF ]      │
+│  Keep Raw WAV Audio Files:         [ Toggle ON ]       │
+│                                                        │
+│  DEVICE THERMAL & INFERENCE GATING                     │
+│  Thermal Headroom: 84% (Nominal)   Status: NORMAL      │ ◄── Adaptive Queue Safety
+│  Adaptive Backoff: Idle (No throttling active)         │
 │                                                        │
 │  ON-DEVICE AI MEMORY TELEMETRY                         │
 │  Model State: READY  •  RAM: 1.58 GB                   │ ◄── Live RAM Telemetry Gauge
 │  Inactivity Eviction Countdown: 02:44 (to <60MB)       │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ RAM Lifecycle Curve:                             │  │ ◄── Memory Visualizer
+│  │ 1.6GB ──┐  active inference  ┌───                │  │     Shows baseline (<60MB),
+│  │ <60MB ──┴────────────────────┴─── (evicted)      │  │     spike & sharp drops
+│  └──────────────────────────────────────────────────┘  │
 │  [ Evict Models Now (<60 MB) ]                         │ ◄── Manual memory reclamation trigger
+│                                                        │
+│  24-HOUR BATTERY CONSUMPTION IMPACT                    │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Eudemonia: 1.8% of daily battery                 │  │ ◄── Energy Observability
+│  │ 5% ───────────────────────────────────────────── │  │     Target < 2.5% in 24h
+│  │ 0% ───∿───────────────────────────────────────── │  │
+│  └──────────────────────────────────────────────────┘  │
 │                                                        │
 │  DIAGNOSTIC LOGGING (2MB ROTATING)                     │
 │  [ 👁️ View Live Logs ]  [ 📋 Copy Dump ]  [ 🗑️ Clear ] │ ◄── Rotating 2MB Log Tools
@@ -310,13 +358,16 @@ Controls background resilience, physical hardware button listener status, audio 
   - `String modelLifecycleState`: `Unloaded`, `Loading`, or `Ready`.
   - `String activeRamFootprint`: e.g., `< 60 MB` (idle) or `~1.58 GB` (active).
   - `String evictionCountdown`: e.g., `02:45`.
+  - `double thermalHeadroom`: e.g. `0.84` (normalized 0.0 to 1.0).
+  - `double batteryUsage24h`: e.g. `1.8%`.
   - Callbacks: `onToggleForegroundService`, `onToggleKeepAudio`, `onEvictModels`, `onViewLogs`, `onCopyLogs`, `onClearLogs`.
 
 ### AI Modification Prompt Recipe
 ```markdown
 "Antigravity: In previews/screens/settings_preview.dart:
 1. Add an interactive slider to customize the Inactivity Eviction TTL between 1 and 10 minutes.
-2. Add an export button to share the diagnostic log file directly via the Android ShareSheet."
+2. Add an export button to share the diagnostic log file directly via the Android ShareSheet.
+3. Add animated sparkline charts for the RAM lifecycle curve and 24-hour battery consumption."
 ```
 
 ---
@@ -367,3 +418,121 @@ Explains clearly why Eudemonia requires both **Accessibility Service** (for zero
 1. Add an animated celebratory checkmark when both permissions become granted.
 2. Add a 'Why is this safe?' security FAQ accordion explaining the 0-byte internet network policy."
 ```
+
+---
+
+## 9. Screen 6: Persistent Lock Screen Notification Capture Controller
+
+### Screen Overview
+Enables instant zero-friction thought recording directly from the lock screen, Always-On Display (AOD), or status bar shade without unlocking the device. Managed seamlessly by `EudemoniaForegroundService`.
+
+### Visual ASCII Wireframe
+
+```
+┌────────────────────────────────────────────────────────┐
+│  COLLAPSED NOTIFICATION (Lock Screen / Shade)          │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 🎙️ Eudemonia • Background Service Ready          │  │
+│  │ Double-volume keys active • Standby              │  │
+│  │                                                  │  │
+│  │            [ 🎙️ Record Thought ]                 │  │ ◄── 1-Tap Trigger (Zero Unlock)
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  ACTIVE RECORDING NOTIFICATION                         │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 🔴 Recording Thought...                00:07.4   │  │ ◄── Live Timer
+│  │ Speak freely • Tap to finish                     │  │
+│  │                                                  │  │
+│  │            [ ⏹ Stop & Save ]                     │  │ ◄── Immediate Handoff to Queue
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
+```
+
+### Component Contract & Sandbox
+- **Sandbox File**: [`previews/screens/notification_preview.dart`](file:///Users/harshmavani/Documents/Eudemonia/previews/screens/notification_preview.dart)
+- **Production Target**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundService.kt`
+- **Key Parameters**:
+  - `bool isRecording`: Toggles between standby capture button and active timer/stop button.
+  - `String elapsedDuration`: Active recording timer string (`00:07.4`).
+  - Actions: `ACTION_START_CAPTURE`, `ACTION_STOP_CAPTURE`.
+
+---
+
+## 10. Screen 7: Action Center (The Action Engine)
+
+### Screen Overview
+Transforms passive voice notes into intentional momentum. Surfaces actionable commitments extracted automatically by the on-device LLM from thoughts across all folders.
+
+### Visual ASCII Wireframe
+
+```
+┌────────────────────────────────────────────────────────┐
+│  [ ‹ Back ]             Action Center          [ 📅 ]  │ ◄── Export to System Calendar
+├────────────────────────────────────────────────────────┤
+│  PENDING COMMITMENTS (3)                               │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [ ] Email revised pitch deck to Marcus           │  │ ◄── Extracted Action Item
+│  │     📅 Thursday 5:00 PM  •  ⚡ High Urgency       │  │     Time anchor & priority
+│  │     Source: "Meeting recap with product team..." │  │     Origin thought link
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [ ] Buy replacement guitar strings (.010 gauge)  │  │
+│  │     📅 Tomorrow  •  Normal Urgency               │  │
+│  │     Source: "Studio session thoughts..."         │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  COMPLETED TODAY (1)                                   │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [✓] Review PR for accessibility debouncer        │  │ ◄── Strikethrough completed
+│  │     Finished at 11:30 AM                         │  │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
+```
+
+### Component Contract & Sandbox
+- **Sandbox File**: [`previews/screens/action_center_preview.dart`](file:///Users/harshmavani/Documents/Eudemonia/previews/screens/action_center_preview.dart)
+- **Production Target**: `lib/features/notes/presentation/action_center_screen.dart`
+- **Key Parameters**:
+  - `List<ActionItem> pendingActions`: Extracted commitments with description, time anchor, urgency, and origin noteId.
+  - `List<ActionItem> completedActions`: Completed items.
+  - Callbacks: `onToggleAction(id)`, `onEditAction(id, newDesc)`, `onExportToCalendar(id)`.
+
+---
+
+## 11. Screen 8: The Emotional Climate & Mind Heatmap
+
+### Screen Overview
+Fulfills Eudemonia's philosophical purpose (*Hedonia vs. Eudaimonia*). Visualizes cognitive clarity and emotional valence over days and weeks derived locally from `Journal` reflections.
+
+### Visual ASCII Wireframe
+
+```
+┌────────────────────────────────────────────────────────┐
+│  [ ‹ Back ]           Mind Climate             [ 🌿 ]  │ ◄── Eudaimonia Reflection
+├────────────────────────────────────────────────────────┤
+│  THIS WEEK'S COGNITIVE CLIMATE                         │
+│  Dominant State: Focused & Constructive (+0.6 Valence) │
+│                                                        │
+│  WEEKLY EMOTIONAL VALENCE HEATMAP                      │
+│  Mon   Tue   Wed   Thu   Fri   Sat   Sun               │
+│  [🟢]  [🟢]  [🟡]  [🟢]  [🟣]  [🟢]  [🟢]              │ ◄── Color-coded valence chips:
+│   +0.7  +0.5   0.0  +0.8  -0.4  +0.6  +0.9             │     🟢 Constructive / Joy
+│                                                        │     🟡 Neutral / Pondering
+│  DAILY THOUGHT ENERGY BREAKDOWN                        │     🟣 Frustrated / Depleted
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ Thursday: 6 Thoughts Captured                    │  │
+│  │ • 4 High Energy (Creative breakthrough, Ideas)   │  │
+│  │ • 2 Calmer (Evening gratitude journal)           │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  [ 🧘 2-Minute Coherence Breath (Haptic Reset) ]       │ ◄── Somatic parasympathetic reset
+└────────────────────────────────────────────────────────┘
+```
+
+### Component Contract & Sandbox
+- **Sandbox File**: [`previews/screens/mind_climate_preview.dart`](file:///Users/harshmavani/Documents/Eudemonia/previews/screens/mind_climate_preview.dart)
+- **Production Target**: `lib/features/notes/presentation/mind_climate_screen.dart`
+- **Key Parameters**:
+  - `List<DayValence> weeklyValence`: Daily average valence (-1.0 to +1.0) and cognitive energy score.
+  - `String dominantState`: e.g. "Focused & Constructive".
+  - Callbacks: `onSelectDay(day)`, `onStartCoherenceBreath()`.

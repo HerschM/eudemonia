@@ -541,3 +541,305 @@
       - N/A — Benchmark execution test.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/benchmark/capture_latency_benchmark_test.dart`
+
+---
+
+## Milestone 7: Thought Lifecycle & Feed State Transparency (In-Scope Pending)
+
+- [ ] **TASK-031: Persistent Queue Hydration & Cold-Start State Recovery**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers`](./PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers) (`FR13.3: Queue service and UI state must hydrate synchronously from disk on cold restart within <50ms`)
+  - **Details**: Ensure `AudioQueueService` reads existing `pending` items from `${appDocumentsDir}/queue/queue.json` on cold startup and exposes them synchronously to Riverpod providers, ensuring the AppBar pill and In-Body banner persist across app kills.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/queue_cold_start_hydration_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/queue_cold_start_hydration_test.dart)
+      - Cases:
+        1. Service initializes with pre-existing `queue.json` containing 3 items and sets `pendingCount` to 3.
+        2. Worker resumes processing next pending item without losing queue sequence.
+        3. Corrupt entries are quarantined without terminating hydration.
+    - **Widget Tests**:
+      - File: [`test/features/home/home_cold_start_queue_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/home_cold_start_queue_test.dart)
+      - Cases:
+        1. AppBar displays `3 pending` pill immediately on launch before worker loop starts.
+        2. In-body processing card renders with active indicator on cold start.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/queue_cold_start_hydration_test.dart`
+
+- [ ] **TASK-032: Optimistic Capture Feed Item & Audio Playback Integration**
+  - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.1: Optimistically insert entry with pastel yellow background, FR9.2: Leading audio playback button`)
+  - **Details**: When a recording completes, immediately insert a placeholder note row with current timestamp, pastel yellow background (`#FEF3C7` / `#78350F`), and animated shimmer text. Replace the 3-line icon on the left with an interactive `[ ▶ Play Audio ]` button allowing immediate playback of raw PCM/WAV audio while processing.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/note_lifecycle_model_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_lifecycle_model_test.dart)
+      - Cases:
+        1. `Note` model instantiation supports `ThoughtState.enqueued` with `audioFilePath`.
+        2. Audio player controller toggles play and pause on local file path.
+    - **Widget Tests**:
+      - File: [`test/features/home/optimistic_thought_card_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/optimistic_thought_card_test.dart)
+      - Cases:
+        1. Renders pastel yellow background for enqueued thoughts.
+        2. Tapping play icon toggles playback state without navigating away.
+        3. Shimmer sub-text renders while state is enqueued.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/optimistic_thought_card_test.dart`
+
+- [ ] **TASK-033: Processed Blue & Failed Red Card States with Failure Handling**
+  - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/presentation/failed_retry_card.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.3: Transition to soft blue upon completion, FR9.6: Failed red state with playable audio and 1-tap retry`)
+  - **Details**: Implement dynamic card transition from Yellow to Soft Blue (`#DBEAFE` / `#1E3A8A`) upon successful STT and categorization. If inference fails, transition to Soft Red (`#FEE2E2` / `#7F1D1D`), display explicit error reason, preserve raw audio playback, and provide a 1-tap `Retry` button that resets queue status.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/note_state_transition_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_state_transition_test.dart)
+      - Cases:
+        1. State updates from `enqueued` to `processed` upon worker completion.
+        2. State updates to `failed` with error description when worker throws.
+        3. Retrying failed item resets status to `pending`.
+    - **Widget Tests**:
+      - File: [`test/features/home/thought_card_states_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/thought_card_states_test.dart)
+      - Cases:
+        1. Processed thought card displays soft blue background and folder badge.
+        2. Failed thought card displays soft red background and `Retry` button.
+        3. Tapping `Retry` fires retry callback.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/thought_card_states_test.dart`
+
+- [ ] **TASK-034: Inline Text Editing & 1-Tap Category Dropdown Reassignment**
+  - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/notes_repository.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.4: Category dropdown reassignment, FR9.5: Inline text editing`)
+  - **Details**: Add an inline editing mode or quick-sheet on thought cards allowing direct text edits saved to Isar database. Add a dropdown/picker to the category badge (`[ 💼 Work ▾ ]`) to reassign the folder in 1 tap.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/notes_repository_edit_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/notes_repository_edit_test.dart)
+      - Cases:
+        1. `updateNoteText(id, newText)` persists updated text to database.
+        2. `updateNoteFolder(id, newFolder)` persists updated folder to database.
+    - **Widget Tests**:
+      - File: [`test/features/home/thought_card_interaction_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/thought_card_interaction_test.dart)
+      - Cases:
+        1. Tapping edit icon toggles inline text editor and saves changes on submit.
+        2. Tapping category badge opens category dropdown picker.
+        3. Selecting new category invokes update callback and updates pill label.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/thought_card_interaction_test.dart`
+
+- [ ] **TASK-035: Unread / Viewed Thought Status Tracking & Triage Filter**
+  - **Area**: `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.7: isRead/isViewed flag, electric blue unread dot, unread filter chip`)
+  - **Details**: Add `isRead` boolean field to Note model (default: false). Render a subtle electric blue indicator dot (`•`) on unreviewed cards. Add an `Unread (X)` filter chip to the top carousel that isolates unread items. Tapping a card marks it as read.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/note_read_status_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_read_status_test.dart)
+      - Cases:
+        1. New notes are created with `isRead = false`.
+        2. `markAsRead(id)` updates note in database.
+        3. `getUnreadNotes()` queries only notes where `isRead == false`.
+    - **Widget Tests**:
+      - File: [`test/features/home/unread_triage_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/unread_triage_test.dart)
+      - Cases:
+        1. Unread cards display electric blue dot beside timestamp.
+        2. Tapping unread card clears indicator dot.
+        3. Selecting `Unread` filter chip shows only unread notes.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/unread_triage_test.dart`
+
+- [ ] **TASK-036: Hardware-Accelerated 60/120fps Smooth Progress Indicator**
+  - **Area**: `lib/features/home/presentation/smooth_processing_indicator.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`NFR: UI Render Fluidity locked 60/120fps during active inference`)
+  - **Details**: Implement a lightweight, GPU-accelerated custom painter progress indicator widget that runs independently of Dart isolate event loops, ensuring butter-smooth animation even when background STT/LLM inference is executing at peak CPU.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — Pure visual rendering component.
+    - **Widget Tests**:
+      - File: [`test/features/home/smooth_processing_indicator_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/smooth_processing_indicator_test.dart)
+      - Cases:
+        1. Indicator renders without throwing framework layout assertions.
+        2. Ticking animation controller drives painter sweep angle continuously.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/smooth_processing_indicator_test.dart`
+
+---
+
+## Milestone 8: Lock Screen Capture & Thermal-Aware Scheduling (In-Scope Pending)
+
+- [ ] **TASK-037: Persistent Lock Screen Notification Voice Record Action**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger`](./PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger) (`FR10.1: Action button Record Thought, FR10.2: Toggle without screen unlock, FR10.3: Live timer and stop action`)
+  - **Details**: Add `NotificationCompat.Action` with a `[ 🎙️ Record Thought ]` button to the ongoing foreground service notification. Tapping it starts audio recording directly from lock screen, updates notification to active recording mode with timer, and exposes `[ ⏹ Stop & Save ]` action.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/NotificationCaptureActionTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/NotificationCaptureActionTest.kt)
+      - Cases:
+        1. Foreground notification builder includes `ACTION_START_CAPTURE` action.
+        2. Receiving start action triggers `AudioRecordingService` and updates notification with stop action.
+        3. Receiving stop action stops recording and hands off to queue.
+    - **Widget Tests**:
+      - N/A — Native Android foreground notification component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+
+- [ ] **TASK-038: Thermal & Low-Memory Headroom Gating for LLM Inference**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/ThermalStatusPlugin.kt`, `lib/features/ai_processing/adaptive_queue_coordinator.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr12-thermal--resource-aware-adaptive-queue-gating`](./PRODUCT_SPEC.md#fr12-thermal--resource-aware-adaptive-queue-gating) (`FR12.1-FR12.4: Thermal status query, defer LLM on severe thermal, auto-resume`)
+  - **Details**: Implement platform channel querying Android `PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`. In `AudioQueueService`, never block STT; defer heavy LLM classification into an adaptive backoff queue when device is hot (`THERMAL_STATUS_SEVERE`) or RAM <300MB, auto-resuming when cool.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/thermal_gated_queue_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/thermal_gated_queue_test.dart)
+      - Cases:
+        1. Queue executes STT transcription regardless of thermal status.
+        2. Severe thermal status pauses LLM classification step and marks item cooling.
+        3. Thermal recovery to normal resumes deferred LLM turn.
+    - **Widget Tests**:
+      - N/A — Queue coordination logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/thermal_gated_queue_test.dart`
+
+- [ ] **TASK-039: Settings 24-Hour Battery Impact & Memory Lifecycle Graphs**
+  - **Area**: `lib/features/settings/presentation/battery_memory_telemetry_chart.dart`, `lib/features/settings/settings_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers`](./PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers) (`FR13.1: 24h battery consumption curve, FR13.2: Memory lifecycle timeline graph`)
+  - **Details**: Render animated sparkline charts in Settings showing real 24-hour battery consumption attributed to Eudemonia (<2.5% benchmark) and RAM lifecycle timeline showing baseline (<60MB), sequential load spikes (~1.6GB), and eviction drops.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/settings/telemetry_data_source_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/telemetry_data_source_test.dart)
+      - Cases:
+        1. Telemetry repository records timestamped memory samples.
+        2. Computes 24h battery usage percentage from power manager stats.
+    - **Widget Tests**:
+      - File: [`test/features/settings/telemetry_charts_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/telemetry_charts_ui_test.dart)
+      - Cases:
+        1. Battery sparkline renders within container bounds on 360dp screens.
+        2. Memory lifecycle curve displays baseline and peak annotations.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/telemetry_charts_ui_test.dart`
+
+---
+
+## Milestone 9: Thought Synthesis & Clustering Engine (In-Scope Pending)
+
+- [ ] **TASK-040: Recency & Context-Aware Auto-Clubbing Pipeline**
+  - **Area**: `lib/features/ai_processing/note_clustering_service.dart`, `lib/features/ai_processing/batch_pipeline_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.1: Auto-clubbing of consecutive disjoint recordings within temporal window`)
+  - **Details**: Implement clustering service that checks recent thoughts within 45 minutes for semantic continuity. If topic affinity is confirmed by on-device LLM, synthesizes a consolidated note while preserving origin sub-note IDs.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/note_clustering_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/note_clustering_service_test.dart)
+      - Cases:
+        1. Notes outside temporal window (>45m) are not auto-clubbed.
+        2. Two notes with high contextual overlap are clustered into a synthesized note.
+        3. Two unrelated notes within window remain separate.
+    - **Widget Tests**:
+      - N/A — AI clustering pipeline.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/note_clustering_service_test.dart`
+
+- [ ] **TASK-041: Multi-Select Mode & Manual "Club Thoughts" Action**
+  - **Area**: `lib/features/home/home_screen.dart`, `lib/features/notes/presentation/multi_select_action_bar.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.4: Manual multi-select mode with floating Club Thoughts action`)
+  - **Details**: Implement long-press selection mode on thought cards. Display circular selection checkboxes and bottom floating bar: `[ X Selected ] [ 🧩 Club Thoughts ]`. Tapping button invokes LLM synthesis turn across selected thoughts.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/multi_select_coordinator_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/multi_select_coordinator_test.dart)
+      - Cases:
+        1. Toggling note selection adds/removes ID from active selection set.
+        2. Clearing selection exits selection mode.
+    - **Widget Tests**:
+      - File: [`test/features/home/multi_select_action_bar_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/multi_select_action_bar_test.dart)
+      - Cases:
+        1. Long pressing thought card renders selection checkboxes.
+        2. Floating bar displays count of selected items.
+        3. Tapping "Club Thoughts" invokes clubbing callback with selected IDs.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/multi_select_action_bar_test.dart`
+
+- [ ] **TASK-042: Sage Green Synthesized Thought Card & Origin Audit View**
+  - **Area**: `lib/features/notes/presentation/synthesized_thought_card.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.2: Sage green card, FR11.3: Origin audit view preserving sub-notes and audio`)
+  - **Details**: Build presentational widget for clubbed thoughts using sage green token (`#DCFCE7` / `#14532D`). Include expandable accordion displaying all origin raw thoughts, their individual timestamps, and audio playback buttons.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/synthesized_note_model_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/synthesized_note_model_test.dart)
+      - Cases:
+        1. Synthesized note holds references to list of child note IDs.
+        2. Origin child notes retain original audio paths and timestamps.
+    - **Widget Tests**:
+      - File: [`test/features/notes/synthesized_thought_card_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/synthesized_thought_card_test.dart)
+      - Cases:
+        1. Renders sage green background and `[ 🧩 Clubbed Note ]` badge.
+        2. Tapping origin accordion expands list of constituent thoughts.
+        3. Sub-thought audio buttons trigger respective audio playback.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/notes/synthesized_thought_card_test.dart`
+
+---
+
+## Milestone 10: The Action Engine & Emotional Climate (In-Scope Pending)
+
+- [ ] **TASK-043: Action Item & Commitment Extraction Pipeline**
+  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `lib/features/notes/action_item_model.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments) (`FR14.1: Extract action items, due dates, urgency`)
+  - **Details**: Enhance LLM prompt schema to extract actionable commitments, detecting task description, temporal anchors (due date/time), and urgency level (Normal, High). Store extracted tasks in Isar database linked to origin note.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/action_item_extraction_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/action_item_extraction_test.dart)
+      - Cases:
+        1. Parses structured JSON response extracting task description and temporal anchor.
+        2. Classifies urgent tasks with High urgency flag.
+        3. Returns empty action item list for non-actionable journal thoughts.
+    - **Widget Tests**:
+      - N/A — LLM parsing logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/action_item_extraction_test.dart`
+
+- [ ] **TASK-044: Action Center UI & Local Reminder Dispatch**
+  - **Area**: `lib/features/notes/presentation/action_center_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments) (`FR14.2: Action center with checkboxes and local calendar/reminder intent`)
+  - **Details**: Implement Action Center screen displaying pending commitments with checkboxes, urgency tags, and origin thought links. Include 1-tap dispatch to Android system calendar/reminders via local intent.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/action_repository_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/action_repository_test.dart)
+      - Cases:
+        1. Toggling checkbox updates `isCompleted` in local database.
+        2. Filters pending versus completed actions.
+    - **Widget Tests**:
+      - File: [`test/features/notes/action_center_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/action_center_ui_test.dart)
+      - Cases:
+        1. Renders pending task cards with date tags and urgency chips.
+        2. Tapping checkbox marks task completed with strikethrough styling.
+        3. Tapping calendar icon fires intent dispatch callback.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/notes/action_center_ui_test.dart`
+
+- [ ] **TASK-045: Journal Emotional Valence & Cognitive Energy Scoring**
+  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `lib/features/notes/mind_climate_model.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap`](./PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap) (`FR15.1: Valence -1.0 to +1.0 and cognitive energy scoring for Journal entries`)
+  - **Details**: In `NoteClassifier`, evaluate thoughts assigned to `Journal` category for psychological valence (-1.0 to +1.0) and cognitive energy (Low/High). Store scoring in note metadata.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/valence_scoring_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/valence_scoring_test.dart)
+      - Cases:
+        1. Extracts valence float between -1.0 and +1.0 from structured output.
+        2. Assigns `CognitiveEnergy.high` for creative breakthroughs or energized speech.
+        3. Clamps out-of-range valence scores safely to [-1.0, 1.0].
+    - **Widget Tests**:
+      - N/A — AI classification metadata logic.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/valence_scoring_test.dart`
+
+- [ ] **TASK-046: Mind Climate Heatmap Visualizer**
+  - **Area**: `lib/features/notes/presentation/mind_climate_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap`](./PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap) (`FR15.2: Weekly/monthly emotional transition heatmap`)
+  - **Details**: Build Mind Climate screen rendering a weekly/monthly calendar heatmap color-coded by daily emotional valence (Green = Constructive/Joy, Yellow = Neutral, Violet = Depleted/Frustrated). Include daily energy breakdown and 1-tap 2-minute Coherence Breathing button.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/notes/mind_climate_calculator_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/mind_climate_calculator_test.dart)
+      - Cases:
+        1. Aggregates daily thought valence into average daily score.
+        2. Identifies dominant weekly cognitive climate.
+    - **Widget Tests**:
+      - File: [`test/features/notes/mind_climate_screen_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/mind_climate_screen_test.dart)
+      - Cases:
+        1. Renders 7-day calendar row with color-coded valence chips.
+        2. Tapping a day chip displays thoughts captured on that day.
+        3. Tapping Coherence Breath button triggers breathing session callback.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/notes/mind_climate_screen_test.dart`
