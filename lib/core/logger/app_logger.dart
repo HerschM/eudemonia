@@ -23,7 +23,7 @@ class AppLogger {
   Future<File> _resolveLogFile() async {
     if (_cachedFile != null) return _cachedFile!;
     if (_logFileResolver != null) {
-      _cachedFile = await _logFileResolver!();
+      _cachedFile = await _logFileResolver();
       return _cachedFile!;
     }
     final appDir = await getApplicationDocumentsDirectory();

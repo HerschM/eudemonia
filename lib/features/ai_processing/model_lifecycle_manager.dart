@@ -78,7 +78,7 @@ class ModelLifecycleManager {
     try {
       String? modelsDirPath;
       if (_modelsDirResolver != null) {
-        modelsDirPath = await _modelsDirResolver!();
+        modelsDirPath = await _modelsDirResolver();
       } else {
         final extDir = await getExternalStorageDirectory();
         modelsDirPath = extDir?.path;

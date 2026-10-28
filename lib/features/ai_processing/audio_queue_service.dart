@@ -55,7 +55,7 @@ class AudioQueueService {
   Future<File> _resolveStorageFile() async {
     if (_cachedFile != null) return _cachedFile!;
     if (_storageFileResolver != null) {
-      _cachedFile = await _storageFileResolver!();
+      _cachedFile = await _storageFileResolver();
       return _cachedFile!;
     }
     final appDir = await getApplicationDocumentsDirectory();

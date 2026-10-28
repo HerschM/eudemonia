@@ -14,7 +14,7 @@
 4. [Product Principles & Core Value Propositions](#4-product-principles--core-value-propositions)
 5. [Scope & Requirements](#5-scope--requirements)
    - [A. In-Scope (v1.0 MVP)](#a-in-scope-v10-mvp)
-   - [B. Out-of-Scope (Explicit Non-Goals)](#b-out-of-scope-explicit-non-goals)
+   - [B. Out-of-Scope (Explicit Non-Goals for v1.0)](#b-out-of-scope-explicit-non-goals-for-v10)
    - [C. Functional Requirements (FR)](#c-functional-requirements-fr)
    - [D. Non-Functional Requirements (NFR)](#d-non-functional-requirements-nfr)
 6. [User Experience (UX) & Interaction Specifications](#6-user-experience-ux--interaction-specifications)
@@ -225,46 +225,7 @@ Eudemonia adopts **Flutter Code-as-Design** as its official UI/UX design and ite
 - **Controlled Promotion to Production**:
   Approved presentational widgets are promoted into `lib/features/` as pure components and wired to Riverpod providers. Full component specifications and prompt recipes are detailed in [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
 
-### B. Screen Anatomy (Minimalist Dark / OLED Minimal)
-
-```
-┌────────────────────────────────────────────────────────┐
-│  Eudemonia                    [ ⚡ 2 pending ]  [ ⚙ ]  │ ◄── AppBar with Live Queue Pill
-├────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ ⚠️  Background Permissions Required     [Enable]│  │ ◄── Ambient Permissions Alert
-│  └──────────────────────────────────────────────────┘  │     (Auto-dismisses on grant)
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ 🌀  Processing voice thought (2 pending)...       │  │ ◄── In-Body Processing Card
-│  └──────────────────────────────────────────────────┘  │     (Glow border during inference)
-│                                                        │
-│  FOLDERS                                               │
-│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────┐ │
-│  │ 💡 Ideas   │ │ 💼 Work    │ │ 📓 Journal │ │ ✅...│ │ ◄── Horizontal Glassmorphic Folders
-│  │    14      │ │    28      │ │     7      │ │      │ │
-│  └────────────┘ └────────────┘ └────────────┘ └──────┘ │
-│                                                        │
-│  RECENT THOUGHTS                                       │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ 💼 WORK • 10m ago                           [ ⋯ ]│  │ ◄── Corrected Thought Card
-│  │ "Remember to send the quarterly sync notes to    │  │     (Tap opens detail modal)
-│  │  Sarah before the end-of-day sprint review."     │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ 💡 IDEAS • 2h ago                           [ ⋯ ]│  │
-│  │ "Explore on-device vector embedding index for    │  │
-│  │  instant semantic recall of audio transcripts."  │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                        │
-│    ┌──────────────────────────────────────────────┐    │
-│    │               (( 🎙️ Listening... ))           │    │ ◄── Instant Zero-Latency Capture HUD
-│    │        ▂ ▃ ▅ ▇ █ ▇ ▅ ▃ ▂ ▃ ▅ ▇ ▅ ▃           │    │     (<5ms, animated soundwave, haptics)
-│    └──────────────────────────────────────────────┘    │
-└────────────────────────────────────────────────────────┘
-```
-
-### C. UI Component Specifications & States
+### B. Core UI Component Specifications & States
 
 1. **Active Recording State & Instant Capture HUD**:
    - Toggling the dual-hardware button begins audio capture and displays a translucent glassmorphic HUD with an animated emerald/cyan soundwave and recording indicator.

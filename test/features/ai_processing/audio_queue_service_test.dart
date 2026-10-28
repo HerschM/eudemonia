@@ -19,7 +19,6 @@ class FakeNotesRepository implements NotesRepository {
     savedNotes.add(note);
   }
 
-  @override
   Future<List<Note>> getRecentNotes({int limit = 50}) async => savedNotes;
 }
 
@@ -32,7 +31,6 @@ class FakeSTTService implements STTService {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
-  @override
   bool get isModelLoaded => isInitialized;
 
   @override

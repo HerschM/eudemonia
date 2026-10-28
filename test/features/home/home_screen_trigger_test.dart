@@ -11,7 +11,6 @@ class MockNotesRepo implements NotesRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
-  @override
   Future<List<Note>> getRecentNotes({int limit = 50}) async => [];
 
   @override
