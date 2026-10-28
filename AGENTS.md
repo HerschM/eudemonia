@@ -40,6 +40,12 @@ Always use these exact CLI commands to build, test, and verify changes.
   ```
   *Standard*: All code contributions must achieve **0 errors** and **0 warnings**.
 
+### UI/UX Component Sandbox
+- **Run UI/UX preview sandbox (isolated from backend services)**:
+  ```bash
+  ~/flutter/bin/flutter run -t previews/main_preview.dart -d macos # or chrome/emulator
+  ```
+
 ---
 
 ## 3. Core Architectural Invariants (Non-Negotiable Guardrails)
@@ -96,6 +102,19 @@ When creating or updating tasks in [`TASKS.md`](file:///Users/harshmavani/Docume
    - **Integration / Command Tests**: Exact CLI verification command (e.g., `flutter test`, `./gradlew :app:testDebugUnitTest`).
 4. **Task Atomicity & Execution Boundaries**: Keep tasks scoped to single atomic units of work so any agent can execute one task from start to finish without scope creep.
 
+### C. UI/UX Modification & Prototyping SDLC (Flutter Code-as-Design)
+When designing, modifying, or iterating on user interfaces based on user requirements:
+1. **Isolated Component Sandbox (`previews/`)**:
+   - All exploratory UI/UX design, visual redesigns, and layout modifications requested by the user must take place in `previews/` using typed mock data.
+   - **Never introduce prototype boilerplate, mock datasets, or preview scenario switchers into production (`lib/`)**.
+2. **Pure Presentational Widget Contract**:
+   - UI widgets in `lib/` must remain pure: accept primitive models/values and callback closures.
+   - Presentational widgets must never make direct calls to native platform channels (`MethodChannel`), local databases (`Isar`), or load AI models (`sherpa_onnx`, `llama_cpp_dart`). This guarantees they can be rendered and hot-reloaded instantly in `previews/` without booting backend services.
+3. **Promotion Workflow**:
+   - Iterate with user feedback in `previews/` until visually approved.
+   - Promote the widget to `lib/features/<feature>/presentation/` and wire Riverpod state providers.
+   - Add widget tests under `test/features/` ensuring zero framework assertions and layout overflows.
+
 ---
 
 ## 5. Operational Boundaries (Always / Ask First / Never)
@@ -104,6 +123,7 @@ When creating or updating tasks in [`TASKS.md`](file:///Users/harshmavani/Docume
 - Write unit or widget tests for every functional change.
 - Verify tests and static analysis (`flutter test`, `dart analyze`) pass with 0 errors before concluding.
 - Consult and update [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) when picking up or finishing tasks.
+- Prototype UI/UX screen modifications in the isolated `previews/` sandbox before promoting to production code in `lib/`.
 - Provide failure isolation: if one queued item fails, log the error, mark it failed, and continue processing remaining items.
 - Use resilient, synchronous state providers (like Riverpod `NotifierProvider`) for values required by new subscribers, avoiding raw broadcast streams that drop past events.
 - **Update [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md)** whenever you refactor, optimize, or alter any subsystem to keep the living blueprint synchronized.
@@ -116,6 +136,7 @@ When creating or updating tasks in [`TASKS.md`](file:///Users/harshmavani/Docume
 ### Never
 - Never block the UI thread on AI inference or heavy I/O operations.
 - Never wrap `ListTile` directly inside a decorated container without a `Material` ancestor (violates Material ink splash contracts).
+- Never commit prototype boilerplate, mock preview data, or scenario switchers into `lib/`.
 - Never hardcode machine-specific paths or commit API secrets.
 
 ---
@@ -130,6 +151,11 @@ lib/
 │   ├── home/            # Main capture screen & thought feed
 │   ├── notes/           # Note models, repositories & database storage
 │   └── settings/        # Permissions, diagnostics & configuration
+previews/                # Isolated UI/UX Component Sandbox (0 prod boilerplate)
+├── main_preview.dart    # Standalone launcher: flutter run -t previews/main_preview.dart
+├── mock_data.dart       # Typed mock datasets for all edge cases
+├── gallery_shell.dart   # Interactive gallery switcher
+└── screens/             # Dedicated screen previews (Home, Capture HUD, Notes, Settings)
 android/
 └── app/src/main/kotlin/ # Accessibility service, foreground service & debouncers
 test/                    # Unit, widget, and architecture tests mirroring lib/
@@ -142,6 +168,7 @@ test/                    # Unit, widget, and architecture tests mirroring lib/
 For comprehensive details on product requirements, how subsystems are currently wired, their internal mechanics, and the chronicle of architectural challenges and historical fixes, refer to:
 
 - [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) — Comprehensive product requirements document, target personas, user journeys, functional/non-functional specs, and product roadmap.
+- [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md) — Exhaustive UI/UX specification, Flutter Code-as-Design component contracts, and AI modification recipes.
 - [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) — Technical reference, subsystem mechanics, and historical chronicle of fixes.
 - [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) — SDLC task tracker bridging product spec and implementation with completed and pending atomic tasks.
 

@@ -134,12 +134,16 @@
 
 ### G. User Interface & State Management
 - **Files**:
-  - `lib/features/home/home_screen.dart`
+  - [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
+  - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
+  - [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md) (Exhaustive design tokens, component sandbox specs & widget snippets)
 - **Mechanics**:
-  - **AppBar Queue Pill**: Displays real-time `X pending` pill with a mini-spinner whenever thoughts are in queue.
+  - **Flutter Code-as-Design (Component Sandbox)**: UI/UX prototyping and conversational modifications with AI agents occur in the isolated [`previews/`](file:///Users/harshmavani/Documents/Eudemonia/previews) sandbox (`flutter run -t previews/main_preview.dart`), leaving production `lib/` 100% free of prototype boilerplate while guaranteeing zero translation loss.
+  - **AppBar Queue Pill**: Displays real-time `X pending` pill with a mini-spinner whenever thoughts are in queue (`pendingCount > 0`).
   - **In-Body Processing Banner**: Prominent card above the Folders section displaying `"Processing voice thought..."` with circular progress.
   - **In-Body Failed Banner**: Warning banner displaying `"X thought(s) failed to process"` with a `"Retry"` button invoking `retryFailed()`.
   - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
+  - **Instant Capture HUD**: Ultra-low-latency (<5ms) bottom indicator with pulsating glow ring and soundwave visualization.
 
 ### H. Diagnostic Telemetry & Rotating Logging
 - **Files**:

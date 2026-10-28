@@ -426,7 +426,7 @@
 
 - [x] **TASK-024: Real-Time Queue Badge in AppBar**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md:L252-L254`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L252-L254) (`Section 6: Pending Queue Pill (AppBar) displays X pending when count > 0; hidden when count == 0`)
+  - **Spec**: [`PRODUCT_SPEC.md:L272-L274`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L272-L274) (`Section 6: Pending Queue Pill (AppBar) displays X pending when count > 0; hidden when count == 0`)
   - **Details**: Render a live `$count pending` chip with micro-spinner in the AppBar when `pendingCount > 0`. Hide when queue is empty.
   - **Verification**:
     - **Unit Tests**:
@@ -442,7 +442,7 @@
 
 - [x] **TASK-025: In-Body Processing Card**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md:L255-L257`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L255-L257) (`Section 6: In-Body Processing Banner displays Processing voice thought with active spinner above Folders`)
+  - **Spec**: [`PRODUCT_SPEC.md:L275-L276`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L275-L276) (`Section 6: In-Body Processing Banner displays Processing voice thought with active spinner above Folders`)
   - **Details**: Render card above Folders indicating `Processing voice thought ($pendingCount pending)...` with active progress indicator while worker is active.
   - **Verification**:
     - **Unit Tests**:
@@ -458,7 +458,7 @@
 
 - [x] **TASK-026: Failed Items Banner with Interactive Retry**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md:L258`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L258) (`Section 6: Failed Items Retry Banner displays warning with Retry button when failedCount > 0`)
+  - **Spec**: [`PRODUCT_SPEC.md:L277-L278`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L277-L278) (`Section 6: Failed Items Retry Banner displays warning with Retry button when failedCount > 0`)
   - **Details**: Render warning banner when `failedCount > 0` with a **Retry** button invoking `ref.read(audioQueueServiceProvider).retryFailed()`.
   - **Verification**:
     - **Unit Tests**:
@@ -489,7 +489,7 @@
 
 - [x] **TASK-028: Rotating File Logger & In-App Telemetry Dump**
   - **Area**: `lib/core/logger/app_logger.dart`, `lib/features/settings/settings_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md:L262`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L262) (`Section 6: Diagnostic tools: View System Logs, Copy Diagnostic Log Dump, and Clear Logs`)
+  - **Spec**: [`PRODUCT_SPEC.md:L283`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md#L283) (`Section 6: Diagnostic tools: View System Logs, Copy Diagnostic Log Dump, and Clear Logs`)
   - **Details**: Implement `AppLogger` writing triggers, transitions, and errors to `${appDocumentsDir}/logs/app_logs.txt` with a 2MB rotating cap. Add live log viewer and clipboard dump in Settings.
   - **Verification**:
     - **Unit Tests**:

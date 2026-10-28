@@ -211,44 +211,64 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 ## 6. User Experience (UX) & Interaction Specifications
 
-### Screen Anatomy
+> [!NOTE]
+> **Complete UX Blueprint, Component Sandbox & Declarative Widget Code**:
+> For the exhaustive design token dictionary, component sandbox architecture (`previews/`), production-ready Flutter widget snippets, and AI prompt recipes for every screen, refer to [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
+
+### A. Design Tooling Architecture: Flutter Code-as-Design (Isolated `previews/` Sandbox)
+Eudemonia adopts **Flutter Code-as-Design** as its official UI/UX design and iteration system. Rather than relying on external design tools with translation drift, screens are designed and iterated directly in Flutter using an isolated Component Sandbox (`previews/`).
+
+- **Isolated Preview Sandbox (`previews/`)**:
+  Design mockups, interactive states, and theme experiments live strictly in `previews/` (running via `flutter run -t previews/main_preview.dart`). This isolates UI design from backend functioning (Sherpa-ONNX STT, Qwen LLM, Isar database, and Accessibility Services) with zero prototype boilerplate in production (`lib/`).
+- **Conversational AI Modification Loop**:
+  Developers and AI agents (Antigravity) iterate on designs purely by discussing requirements in natural language. Antigravity modifies the sandboxed Flutter widgets in `previews/`, providing instant visual feedback via Flutter Hot Reload (<500ms).
+- **Controlled Promotion to Production**:
+  Approved presentational widgets are promoted into `lib/features/` as pure components and wired to Riverpod providers. Full component specifications and prompt recipes are detailed in [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
+
+### B. Screen Anatomy (Minimalist Dark / OLED Minimal)
 
 ```
-┌──────────────────────────────────────────────┐
-│  Eudemonia                [⏳ 2 pending] [⚙]  │ ◄── AppBar with Live Queue Pill
-├──────────────────────────────────────────────┤
-│  ┌────────────────────────────────────────┐  │
-│  │ ℹ Background permissions needed [Enable]│  │ ◄── Ambient Permissions Alert
-│  └────────────────────────────────────────┘  │     (Auto-dismisses on grant)
-│                                              │
-│  ┌────────────────────────────────────────┐  │
-│  │ ⚙ Processing voice thought (2 pending) │  │ ◄── In-Body Processing Card
-│  └────────────────────────────────────────┘  │     (Shows while worker is active)
-│                                              │
-│  Folders                                     │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────┐ │
-│  │  Ideas  │ │  Work   │ │ Journal │ │Todos│ │ ◄── Horizontal Folder Cards
-│  └─────────┘ └─────────┘ └─────────┘ └─────┘ │
-│                                              │
-│  Recent Thoughts                             │
-│  ┌────────────────────────────────────────┐  │
-│  │ 📝 "Remember to follow up on the pitch"│  │ ◄── Language-Corrected Note
-│  │    Work • 10/25 18:30                  │  │
-│  └────────────────────────────────────────┘  │
-│  ┌────────────────────────────────────────┐  │
-│  │ 📝 "Synthesize findings into draft"    │  │
-│  │    Ideas • 10/25 17:15                 │  │
-│  └────────────────────────────────────────┘  │
-│                                              │
-│               [ (●) Listening... ]           │ ◄── Non-blocking recording state
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  Eudemonia                    [ ⚡ 2 pending ]  [ ⚙ ]  │ ◄── AppBar with Live Queue Pill
+├────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ ⚠️  Background Permissions Required     [Enable]│  │ ◄── Ambient Permissions Alert
+│  └──────────────────────────────────────────────────┘  │     (Auto-dismisses on grant)
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 🌀  Processing voice thought (2 pending)...       │  │ ◄── In-Body Processing Card
+│  └──────────────────────────────────────────────────┘  │     (Glow border during inference)
+│                                                        │
+│  FOLDERS                                               │
+│  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────┐ │
+│  │ 💡 Ideas   │ │ 💼 Work    │ │ 📓 Journal │ │ ✅...│ │ ◄── Horizontal Glassmorphic Folders
+│  │    14      │ │    28      │ │     7      │ │      │ │
+│  └────────────┘ └────────────┘ └────────────┘ └──────┘ │
+│                                                        │
+│  RECENT THOUGHTS                                       │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 💼 WORK • 10m ago                           [ ⋯ ]│  │ ◄── Corrected Thought Card
+│  │ "Remember to send the quarterly sync notes to    │  │     (Tap opens detail modal)
+│  │  Sarah before the end-of-day sprint review."     │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 💡 IDEAS • 2h ago                           [ ⋯ ]│  │
+│  │ "Explore on-device vector embedding index for    │  │
+│  │  instant semantic recall of audio transcripts."  │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│    ┌──────────────────────────────────────────────┐    │
+│    │               (( 🎙️ Listening... ))           │    │ ◄── Instant Zero-Latency Capture HUD
+│    │        ▂ ▃ ▅ ▇ █ ▇ ▅ ▃ ▂ ▃ ▅ ▇ ▅ ▃           │    │     (<5ms, animated soundwave, haptics)
+│    └──────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────┘
 ```
 
-### UI Component States
+### C. UI Component Specifications & States
 
-1. **Active Recording State**:
-   - When recording is active, a subtle bottom indicator shows `Listening...` with a progress indicator.
-   - Immediately dismisses upon stop trigger.
+1. **Active Recording State & Instant Capture HUD**:
+   - Toggling the dual-hardware button begins audio capture and displays a translucent glassmorphic HUD with an animated emerald/cyan soundwave and recording indicator.
+   - Dismisses immediately (<5ms) upon trigger release without blocking the UI thread.
 2. **Pending Queue Pill (AppBar)**:
    - When `pendingCount > 0`: Displays a pill in the top-right AppBar with a micro-spinner and text: `X pending`.
    - When `pendingCount == 0`: Automatically hidden.
@@ -257,9 +277,12 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 4. **Failed Items Retry Banner**:
    - Displays in amber/red if `failedCount > 0`: `X thought(s) failed to process` accompanied by a distinct **`Retry`** button.
 5. **Settings & Diagnostics Screen**:
-   - Status chips for **Accessibility Service** and **Background Execution (Battery Exemption)**.
+   - Status chips for **Accessibility Service** and **Background Execution (Battery Exemption)** using standardized **Enabled** (Green) and **Disabled** (Amber) badges.
    - Switch toggle for **"Keep App Alive in Background"** (controls `EudemoniaForegroundService`).
+   - Telemetry gauge showing active AI Model Lifecycle state (`Ready`, `Loading`, or `Unloaded`) and RAM consumption (<60 MB idle, ~1.6 GB peak).
    - Diagnostic tools: **View System Logs**, **Copy Diagnostic Log Dump**, and **Clear Logs**.
+6. **Ambient Permissions Alert**:
+   - An ambient status card rendered at the top of the Home feed whenever Accessibility or Battery Exemption is missing. Automatically dismisses via lifecycle observer the moment both are granted.
 
 ---
 
