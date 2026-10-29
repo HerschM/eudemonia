@@ -29,6 +29,8 @@
    - [6. Rogue Background Activity Launches](#6-rogue-background-activity-launches)
    - [7. Worker Failure: STT Service Not Initialized & Test Double False Positives](#7-worker-failure-stt-service-not-initialized--test-double-false-positives)
    - [8. Disappearing Pending Counts & Broadcast Stream Loss](#8-disappearing-pending-counts--broadcast-stream-loss)
+   - [9. Concurrent Queue Execution Race Condition & Retry Completer](#9-concurrent-queue-execution-race-condition--retry-completer)
+   - [10. Mobile Memory Safety & Persistent Cold-Start Hydration](#10-mobile-memory-safety--persistent-cold-start-hydration)
 
 ---
 
@@ -127,20 +129,34 @@
 - **Files**:
   - `lib/features/notes/data/note_model.dart`
   - `lib/features/notes/data/notes_repository.dart`
+  - `lib/features/notes/note_model.dart`
 - **Mechanics**:
   - Managed with Isar database.
   - `Note` schema includes `id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, and `originalAudioPath`.
-  - Notes are saved upon successful categorization; temporary audio files can be preserved or cleaned up.
+  - **Thought Lifecycle States**: The `ThoughtState` enum (`enqueued`, `processed`, `failed`, `synthesized`) represents the lifecycle progression of captured thoughts.
+  - **Zero-Migration Schema Compatibility**: Fields `state`, `isRead`, and `failureReason` use the `@ignore` annotation, providing rich feed presentation and state handling without invalidating existing database schemas or requiring complex migration scripts.
+  - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
 
 ### G. User Interface & State Management
 - **Files**:
   - [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
+  - [`lib/features/notes/presentation/thought_card.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/presentation/thought_card.dart)
+  - [`lib/features/notes/audio_playback_controller.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/audio_playback_controller.dart)
+  - [`lib/features/home/presentation/smooth_processing_indicator.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/smooth_processing_indicator.dart)
   - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
   - [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md) (Exhaustive design tokens, component sandbox specs & widget snippets)
 - **Mechanics**:
   - **Flutter Code-as-Design (Component Sandbox)**: UI/UX prototyping and conversational modifications with AI agents occur in the isolated [`previews/`](file:///Users/harshmavani/Documents/Eudemonia/previews) sandbox (`flutter run -t previews/main_preview.dart`), leaving production `lib/` 100% free of prototype boilerplate while guaranteeing zero translation loss.
-  - **AppBar Queue Pill**: Displays real-time `X pending` pill with a mini-spinner whenever thoughts are in queue (`pendingCount > 0`).
-  - **In-Body Processing Banner**: Prominent card above the Folders section displaying `"Processing voice thought..."` with circular progress.
+  - **ThoughtCard Lifecycle Rendering**:
+    - *Enqueued*: Light pastel yellow background (`#FEF3C7`), animated shimmer subtext, and active spinner.
+    - *Processed*: Soft blue background (`#DBEAFE`), category badge with 1-tap dropdown reassignment, inline text editor, and raw audio playback.
+    - *Failed*: Soft red background (`#FEE2E2`), explicit failure message, 1-tap `Retry` button, and audio playback.
+    - *Synthesized*: Soft mint background (`#DCFCE7`) for clubbed or synthesized thoughts.
+  - **Raw Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>`, managing play/pause state for raw WAV audio files without navigating away from the feed.
+  - **Hardware-Accelerated Smooth Progress Indicator**: `SmoothProcessingIndicator` uses a GPU-accelerated `CustomPainter` with an internal `RepaintBoundary` and ticking `AnimationController`, guaranteeing locked 60/120fps sweep fluidity even during heavy CPU-bound background inference.
+  - **Unread Thought Status & Triage Filter**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator. Filter chips (`All`, `Unread (X)`) above the feed allow instantaneous triage.
+  - **AppBar Queue Pill**: Displays real-time `X pending` pill with `SmoothProcessingIndicator` whenever thoughts are in queue (`pendingCount > 0`).
+  - **In-Body Processing Banner**: Prominent card above the Folders section displaying `"Processing voice thought..."` with `SmoothProcessingIndicator`.
   - **In-Body Failed Banner**: Warning banner displaying `"X thought(s) failed to process"` with a `"Retry"` button invoking `retryFailed()`.
   - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
   - **Instant Capture HUD**: Ultra-low-latency (<5ms) bottom indicator with pulsating glow ring and soundwave visualization.
@@ -221,3 +237,25 @@
   1. Replaced broadcast streams with Riverpod 3 `NotifierProvider<PendingQueueCountNotifier, int>` and `NotifierProvider<FailedQueueCountNotifier, int>`.
   2. Added prominent in-body processing and failed retry banners to `HomeScreen`.
   3. Added unit and widget tests verifying state updates across the queue lifecycle.
+
+### 9. Concurrent Queue Execution Race Condition & Retry Completer
+- **Symptom**: When retrying failed items or enqueuing rapid successive recordings, `AudioQueueService.processPending()` was triggered concurrently, causing duplicate processing loops and race conditions where item statuses jumped unpredictably.
+- **Root Cause**: `AudioQueueService.processPending()` lacked an active processing completer or mutex lock. Multiple asynchronous invocations executed parallel while-loops over the same in-memory list.
+- **Solution**:
+  1. Implemented `Completer<void>? _processingCompleter` in `AudioQueueService`.
+  2. If a processing loop is already active, subsequent calls to `processPending()` or `retryFailed()` simply await `_processingCompleter!.future`, ensuring sequential single-threaded worker passes without duplicative model invocations.
+
+### 11. Feed Optimistic Hydration, Dedicated Audio Playback Architecture & In-Card Triage
+- **Symptom**:
+  1. Capturing a thought did not display an entry in the feed immediately; thoughts only appeared after a cold restart of the app.
+  2. Audio playback button did not play recorded audio.
+  3. A global error banner occupied screen real estate instead of displaying failures directly in the entry with a dedicated Failed filter chip.
+- **Root Cause**:
+  1. `HomeScreen` declared a duplicate `recentNotesProvider` separate from `notes_repository.dart`. When `AudioQueueService` called `ref.invalidate(recentNotesProvider)`, it invalidated the instance in `notes_repository.dart`, leaving `HomeScreen` unaware until restart. Furthermore, `HomeScreen` only watched database notes, ignoring in-flight items in `AudioQueueService`.
+  2. `AudioPlaybackController` and `HomeScreen` shared `MethodChannel('com.eudemonia/hardware_buttons')`, where `HomeScreen.initState`'s `setMethodCallHandler` overwrote `AudioPlaybackController`'s message handler. On the Android side, `MediaPlayer.setDataSource(path)` string failed on private app storage due to `mediaserver` process sandbox permissions.
+  3. Filter chips inside a single horizontal `Row` overflowed on narrow viewports when the third filter chip was introduced.
+- **Solution**:
+  1. **Unified Reactive Feed**: `HomeScreen` synthesizes `allThoughts` by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly enqueued audio items appear instantly (<5ms) with `ThoughtState.enqueued` (pastel yellow, shimmer, date/time, audio play button). Upon worker completion, the note transitions smoothly to `ThoughtState.processed` (pastel blue) without app restart.
+  2. **Dedicated Audio Channel & FileDescriptor**: Extracted `com.eudemonia/audio_playback` with its own platform channel handler. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }` with speech `AudioAttributes`, ensuring robust audio playback without sandbox permission failures.
+  3. **In-Card Failure Presentation & Responsive Failed Chip**: Removed the top error banner. Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`). Placed `Recent Thoughts` heading and an adaptive, horizontally scrollable chip row (`All`, `Unread`, `Failed`) to prevent `RenderFlex` overflows on any device viewport.
+

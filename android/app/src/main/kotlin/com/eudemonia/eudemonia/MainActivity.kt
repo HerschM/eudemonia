@@ -12,10 +12,15 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity: FlutterActivity() {
     companion object {
         const val CHANNEL = "com.eudemonia/hardware_buttons"
+        const val AUDIO_CHANNEL = "com.eudemonia/audio_playback"
         var activeMethodChannel: MethodChannel? = null
+        var activeAudioChannel: MethodChannel? = null
     }
 
     private var methodChannel: MethodChannel? = null
+    private var audioChannel: MethodChannel? = null
+    private var mediaPlayer: android.media.MediaPlayer? = null
+    private var currentlyPlayingPath: String? = null
 
     private val hardwareTriggerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -132,8 +137,17 @@ class MainActivity: FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "playAudio", "pauseAudio", "stopAudio" -> {
+                    handleAudioCall(call, result)
+                }
                 else -> result.notImplemented()
             }
+        }
+
+        audioChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_CHANNEL)
+        activeAudioChannel = audioChannel
+        audioChannel?.setMethodCallHandler { call, result ->
+            handleAudioCall(call, result)
         }
 
         // Register the receiver
@@ -164,9 +178,100 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun handleAudioCall(call: io.flutter.plugin.common.MethodCall, result: io.flutter.plugin.common.MethodChannel.Result) {
+        when (call.method) {
+            "playAudio" -> {
+                val path = call.argument<String>("path")
+                if (path.isNullOrEmpty()) {
+                    result.error("INVALID_PATH", "Audio path is required", null)
+                    return
+                }
+                val file = java.io.File(path)
+                if (!file.exists()) {
+                    android.util.Log.e("MainActivity", "Audio file not found at: $path")
+                    result.error("FILE_NOT_FOUND", "Audio file does not exist at $path", null)
+                    return
+                }
+
+                try {
+                    if (mediaPlayer != null && currentlyPlayingPath == path) {
+                        mediaPlayer?.start()
+                        result.success(true)
+                        return
+                    }
+
+                    mediaPlayer?.release()
+                    mediaPlayer = null
+
+                    val player = android.media.MediaPlayer()
+                    java.io.FileInputStream(file).use { fis ->
+                        player.setAudioAttributes(
+                            android.media.AudioAttributes.Builder()
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                .build()
+                        )
+                        player.setDataSource(fis.fd)
+                        player.prepare()
+                    }
+
+                    player.setOnCompletionListener {
+                        currentlyPlayingPath = null
+                        activeAudioChannel?.invokeMethod("onAudioPlaybackComplete", null)
+                        activeMethodChannel?.invokeMethod("onAudioPlaybackComplete", null)
+                    }
+                    player.setOnErrorListener { _, what, extra ->
+                        android.util.Log.e("MainActivity", "MediaPlayer error: what=$what, extra=$extra")
+                        currentlyPlayingPath = null
+                        activeAudioChannel?.invokeMethod("onAudioPlaybackComplete", null)
+                        activeMethodChannel?.invokeMethod("onAudioPlaybackComplete", null)
+                        true
+                    }
+
+                    player.start()
+                    mediaPlayer = player
+                    currentlyPlayingPath = path
+                    result.success(true)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Error playing audio file $path", e)
+                    currentlyPlayingPath = null
+                    result.error("PLAYBACK_ERROR", e.message, null)
+                }
+            }
+            "pauseAudio" -> {
+                try {
+                    if (mediaPlayer?.isPlaying == true) {
+                        mediaPlayer?.pause()
+                    }
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("PAUSE_ERROR", e.message, null)
+                }
+            }
+            "stopAudio" -> {
+                try {
+                    mediaPlayer?.stop()
+                    mediaPlayer?.release()
+                    mediaPlayer = null
+                    currentlyPlayingPath = null
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.error("STOP_ERROR", e.message, null)
+                }
+            }
+            else -> result.notImplemented()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         activeMethodChannel = null
+        activeAudioChannel = null
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = null
+            currentlyPlayingPath = null
+        } catch (_: Exception) {}
         try {
             unregisterReceiver(hardwareTriggerReceiver)
         } catch (_: Exception) {}

@@ -546,7 +546,7 @@
 
 ## Milestone 7: Thought Lifecycle & Feed State Transparency (In-Scope Pending)
 
-- [ ] **TASK-031: Persistent Queue Hydration & Cold-Start State Recovery**
+- [x] **TASK-031: Persistent Queue Hydration & Cold-Start State Recovery**
   - **Area**: `lib/features/ai_processing/audio_queue_service.dart`, `lib/features/home/home_screen.dart`
   - **Spec**: [`PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers`](./PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers) (`FR13.3: Queue service and UI state must hydrate synchronously from disk on cold restart within <50ms`)
   - **Details**: Ensure `AudioQueueService` reads existing `pending` items from `${appDocumentsDir}/queue/queue.json` on cold startup and exposes them synchronously to Riverpod providers, ensuring the AppBar pill and In-Body banner persist across app kills.
@@ -565,7 +565,7 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/ai_processing/queue_cold_start_hydration_test.dart`
 
-- [ ] **TASK-032: Optimistic Capture Feed Item & Audio Playback Integration**
+- [x] **TASK-032: Optimistic Capture Feed Item & Audio Playback Integration**
   - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
   - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.1: Optimistically insert entry with pastel yellow background, FR9.2: Leading audio playback button`)
   - **Details**: When a recording completes, immediately insert a placeholder note row with current timestamp, pastel yellow background (`#FEF3C7` / `#78350F`), and animated shimmer text. Replace the 3-line icon on the left with an interactive `[ ▶ Play Audio ]` button allowing immediate playback of raw PCM/WAV audio while processing.
@@ -576,18 +576,18 @@
         1. `Note` model instantiation supports `ThoughtState.enqueued` with `audioFilePath`.
         2. Audio player controller toggles play and pause on local file path.
     - **Widget Tests**:
-      - File: [`test/features/home/optimistic_thought_card_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/optimistic_thought_card_test.dart)
+      - File: [`test/features/home/feed_immediate_hydration_and_playback_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/feed_immediate_hydration_and_playback_test.dart)
       - Cases:
-        1. Renders pastel yellow background for enqueued thoughts.
-        2. Tapping play icon toggles playback state without navigating away.
-        3. Shimmer sub-text renders while state is enqueued.
+        1. Enqueued audio immediately renders pastel yellow card in feed with audio playback button without restart.
+        2. Processing completion replaces enqueued placeholder with processed note without restart.
+        3. Tapping play audio button triggers audio playback controller.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/home/optimistic_thought_card_test.dart`
+      - `~/flutter/bin/flutter test test/features/home/feed_immediate_hydration_and_playback_test.dart`
 
-- [ ] **TASK-033: Processed Blue & Failed Red Card States with Failure Handling**
-  - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/presentation/failed_retry_card.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.3: Transition to soft blue upon completion, FR9.6: Failed red state with playable audio and 1-tap retry`)
-  - **Details**: Implement dynamic card transition from Yellow to Soft Blue (`#DBEAFE` / `#1E3A8A`) upon successful STT and categorization. If inference fails, transition to Soft Red (`#FEE2E2` / `#7F1D1D`), display explicit error reason, preserve raw audio playback, and provide a 1-tap `Retry` button that resets queue status.
+- [x] **TASK-033: Processed Blue & Failed Red Card States with Failure Handling**
+  - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/home/home_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.3: Transition to soft blue upon completion, FR9.6: Failed red state with playable audio and 1-tap retry, dedicated Failed filter chip, no top banner`)
+  - **Details**: Implement dynamic card transition from Yellow to Soft Blue (`#DBEAFE` / `#1E3A8A`) upon successful STT and categorization. If inference fails, transition to Soft Red (`#FEE2E2` / `#7F1D1D`), display explicit error reason directly in the entry, preserve raw audio playback, and provide a 1-tap `Retry` button. Remove top failed banner and provide dedicated `Failed` filter chip.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/notes/note_state_transition_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_state_transition_test.dart)
@@ -596,15 +596,15 @@
         2. State updates to `failed` with error description when worker throws.
         3. Retrying failed item resets status to `pending`.
     - **Widget Tests**:
-      - File: [`test/features/home/thought_card_states_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/thought_card_states_test.dart)
+      - File: [`test/features/home/feed_immediate_hydration_and_playback_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/feed_immediate_hydration_and_playback_test.dart)
       - Cases:
-        1. Processed thought card displays soft blue background and folder badge.
-        2. Failed thought card displays soft red background and `Retry` button.
-        3. Tapping `Retry` fires retry callback.
+        1. Processed thought card displays soft blue background and folder badge without restart.
+        2. Failed thought card displays soft red background and `Retry` button inside card with no top banner.
+        3. `Failed` filter chip isolates failed thoughts in feed.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/home/thought_card_states_test.dart`
+      - `~/flutter/bin/flutter test test/features/home/feed_immediate_hydration_and_playback_test.dart`
 
-- [ ] **TASK-034: Inline Text Editing & 1-Tap Category Dropdown Reassignment**
+- [x] **TASK-034: Inline Text Editing & 1-Tap Category Dropdown Reassignment**
   - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/notes_repository.dart`
   - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.4: Category dropdown reassignment, FR9.5: Inline text editing`)
   - **Details**: Add an inline editing mode or quick-sheet on thought cards allowing direct text edits saved to Isar database. Add a dropdown/picker to the category badge (`[ 💼 Work ▾ ]`) to reassign the folder in 1 tap.
@@ -623,7 +623,7 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/thought_card_interaction_test.dart`
 
-- [ ] **TASK-035: Unread / Viewed Thought Status Tracking & Triage Filter**
+- [x] **TASK-035: Unread / Viewed Thought Status Tracking & Triage Filter**
   - **Area**: `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
   - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.7: isRead/isViewed flag, electric blue unread dot, unread filter chip`)
   - **Details**: Add `isRead` boolean field to Note model (default: false). Render a subtle electric blue indicator dot (`•`) on unreviewed cards. Add an `Unread (X)` filter chip to the top carousel that isolates unread items. Tapping a card marks it as read.
@@ -643,7 +643,7 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/unread_triage_test.dart`
 
-- [ ] **TASK-036: Hardware-Accelerated 60/120fps Smooth Progress Indicator**
+- [x] **TASK-036: Hardware-Accelerated 60/120fps Smooth Progress Indicator**
   - **Area**: `lib/features/home/presentation/smooth_processing_indicator.dart`, `lib/features/home/home_screen.dart`
   - **Spec**: [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`NFR: UI Render Fluidity locked 60/120fps during active inference`)
   - **Details**: Implement a lightweight, GPU-accelerated custom painter progress indicator widget that runs independently of Dart isolate event loops, ensuring butter-smooth animation even when background STT/LLM inference is executing at peak CPU.

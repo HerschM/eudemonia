@@ -204,7 +204,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR9.3**: Once STT transcription, grammar correction, and categorization complete, the card must dynamically transition its background to soft blue (`#DBEAFE` / `#1E3A8A`), populating corrected text and folder tags.
 - **FR9.4**: Tapping the category badge must present a quick-select dropdown or bottom sheet, allowing the user to override and reassign the folder in 1 tap.
 - **FR9.5**: Users must be able to edit the corrected thought text inline or via a quick edit sheet, saving changes locally to the database.
-- **FR9.6**: If transcription or post-processing fails, the card background must transition to soft red (`#FEE2E2` / `#7F1D1D`), display the failure reason, keep original audio playable, and provide an explicit 1-tap **Retry** action.
+- **FR9.6**: If transcription or post-processing fails, the card background must transition to soft red (`#FEE2E2` / `#7F1D1D`), display the failure reason directly inside the entry, keep original audio playable, and provide an explicit 1-tap **Retry** action. There must be no global top error banner; failed items must be triaged directly in the feed and filterable via a dedicated **Failed** filter chip alongside **All** and **Unread**.
 - **FR9.7**: The system must track an `isRead` / `isViewed` boolean flag for each thought. Unviewed items must display a subtle electric blue unread indicator dot (`•`), and the feed must support filtering by unread thoughts.
 
 #### FR10: Lock Screen & Notification Center Capture Trigger

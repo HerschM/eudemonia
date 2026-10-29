@@ -5,13 +5,15 @@ import 'package:eudemonia/features/home/home_screen.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
+import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 
 class MockNotesRepo implements NotesRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
-  Future<List<Note>> getRecentNotes({int limit = 50}) async => [];
+  @override
+  Future<List<Note>> getAllNotes() async => [];
 
   @override
   Future<List<Note>> getNotesByFolder(String folder) async => [];
@@ -32,6 +34,13 @@ class FakeFailedQueueCountNotifier extends FailedQueueCountNotifier {
   FakeFailedQueueCountNotifier(this.initial);
   @override
   int build() => initial;
+}
+
+class FakeQueueItemsNotifier extends QueueItemsNotifier {
+  final List<AudioQueueItem> initial;
+  FakeQueueItemsNotifier(this.initial);
+  @override
+  List<AudioQueueItem> build() => initial;
 }
 
 void main() {
@@ -90,7 +99,15 @@ void main() {
     expect(find.textContaining('Processing voice thought'), findsNothing);
   });
 
-  testWidgets('Failed items banner displays with Retry action when a note fails', (tester) async {
+  testWidgets('Failed items are rendered as cards in feed with Failed chip and no top banner', (tester) async {
+    final failedItem = AudioQueueItem(
+      id: '999',
+      audioFilePath: '/mock/path/failed.wav',
+      recordedAt: DateTime.now(),
+      status: AudioQueueStatus.failed,
+      errorMessage: 'Network timeout during transcription.',
+    );
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -104,6 +121,7 @@ void main() {
           )),
           pendingQueueCountProvider.overrideWith(() => FakePendingQueueCountNotifier(0)),
           failedQueueCountProvider.overrideWith(() => FakeFailedQueueCountNotifier(1)),
+          queueItemsProvider.overrideWith(() => FakeQueueItemsNotifier([failedItem])),
         ],
         child: const MaterialApp(
           home: HomeScreen(),
@@ -111,9 +129,17 @@ void main() {
       ),
     );
 
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('failed to process'), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget);
+    // Verify top banner is REMOVED
+    expect(find.textContaining('thought(s) failed to process'), findsNothing);
+
+    // Verify Failed filter chip is present
+    expect(find.byKey(const Key('filter_chip_failed')), findsOneWidget);
+    expect(find.text('Failed (1)'), findsOneWidget);
+
+    // Verify failed thought card displays in-entry failure message and retry button
+    expect(find.text('Network timeout during transcription.'), findsOneWidget);
+    expect(find.byKey(const Key('retry_button')), findsOneWidget);
   });
 }

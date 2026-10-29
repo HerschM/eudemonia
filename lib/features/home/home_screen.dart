@@ -4,12 +4,18 @@ import 'package:flutter/services.dart';
 
 import '../ai_processing/batch_pipeline_service.dart';
 import '../ai_processing/audio_queue_service.dart';
+import '../ai_processing/audio_queue_item.dart';
 import '../../core/logger/app_logger.dart';
 import '../settings/settings_screen.dart';
 import '../settings/background_permission_service.dart';
 
 import '../notes/data/note_model.dart';
 import '../notes/data/notes_repository.dart';
+import '../notes/presentation/thought_card.dart';
+import '../notes/audio_playback_controller.dart';
+import 'presentation/smooth_processing_indicator.dart';
+
+enum ThoughtFilter { all, unread, failed }
 
 // A simple provider to hold the recording state for UI reactivity
 class IsRecordingNotifier extends Notifier<bool> {
@@ -23,11 +29,6 @@ class IsRecordingNotifier extends Notifier<bool> {
 
 final isRecordingProvider = NotifierProvider<IsRecordingNotifier, bool>(() {
   return IsRecordingNotifier();
-});
-
-final recentNotesProvider = FutureProvider<List<Note>>((ref) async {
-  final repo = ref.watch(notesRepositoryProvider);
-  return repo.getAllNotes();
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -62,6 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   DateTime? _lastTriggerTime;
   bool _isToggling = false;
+  ThoughtFilter _currentFilter = ThoughtFilter.all;
 
   Future<void> _handleMethodCall(MethodCall call) async {
     if (call.method == 'onHardwareTrigger') {
@@ -102,6 +104,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
+  List<Note> _getUnifiedThoughts(List<Note> persistedNotes, List<AudioQueueItem> queueItems) {
+    final activeQueueNotes = <Note>[];
+    for (final item in queueItems) {
+      if (persistedNotes.any((n) => n.originalAudioPath == item.audioFilePath)) {
+        continue;
+      }
+      if (item.status == AudioQueueStatus.completed) {
+        continue;
+      }
+
+      final isFailed = item.status == AudioQueueStatus.failed;
+      final queueNote = Note(
+        originalAudioPath: item.audioFilePath,
+        rawText: item.rawTranscript ?? (isFailed ? '' : 'Processing audio note...'),
+        correctedText: item.correctedText ?? item.rawTranscript ?? (isFailed ? 'Failed to process audio recording' : 'Processing audio note...'),
+        folder: item.folder ?? 'Uncategorized',
+        createdAt: item.recordedAt,
+        state: isFailed ? ThoughtState.failed : ThoughtState.enqueued,
+        failureReason: isFailed ? (item.errorMessage ?? 'Error processing voice recording.') : null,
+        isRead: isFailed ? true : false,
+      )..id = -(int.tryParse(item.id) ?? item.hashCode.abs());
+
+      activeQueueNotes.add(queueNote);
+    }
+
+    final all = [...activeQueueNotes, ...persistedNotes];
+    all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return all;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isRecording = ref.watch(isRecordingProvider);
@@ -128,13 +160,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                    SmoothProcessingIndicator(
+                      size: 12,
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -236,13 +265,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     ),
                     child: Row(
                       children: [
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
+                        SmoothProcessingIndicator(
+                          size: 16,
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -256,49 +282,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                               fontSize: 13,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              // In-body failed queue banner with Retry button
-              Consumer(
-                builder: (context, ref, _) {
-                  final failedCount = ref.watch(failedQueueCountProvider);
-                  if (failedCount <= 0) return const SizedBox.shrink();
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.red.shade300),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red.shade900),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '$failedCount thought(s) failed to process',
-                            style: TextStyle(
-                              color: Colors.red.shade900,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            backgroundColor: Colors.red.shade200,
-                          ),
-                          child: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          onPressed: () {
-                            ref.read(audioQueueServiceProvider).retryFailed();
-                          },
                         ),
                       ],
                     ),
@@ -326,24 +309,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 ),
               ),
               const SizedBox(height: 32),
-              Text(
-                'Recent Thoughts',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+              Consumer(
+                builder: (context, ref, _) {
+                  final notesAsync = ref.watch(recentNotesProvider);
+                  final queueItems = ref.watch(queueItemsProvider);
+                  final notes = _getUnifiedThoughts(notesAsync.value ?? [], queueItems);
+                  final unreadCount = notes.where((n) => !n.isRead && n.state == ThoughtState.processed).length;
+                  final failedCount = notes.where((n) => n.state == ThoughtState.failed).length;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recent Thoughts',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ChoiceChip(
+                              key: const Key('filter_chip_all'),
+                              label: const Text('All'),
+                              selected: _currentFilter == ThoughtFilter.all,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  setState(() {
+                                    _currentFilter = ThoughtFilter.all;
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              key: const Key('filter_chip_unread'),
+                              label: Text(unreadCount > 0 ? 'Unread ($unreadCount)' : 'Unread'),
+                              selected: _currentFilter == ThoughtFilter.unread,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  setState(() {
+                                    _currentFilter = ThoughtFilter.unread;
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              key: const Key('filter_chip_failed'),
+                              label: Text(failedCount > 0 ? 'Failed ($failedCount)' : 'Failed'),
+                              selected: _currentFilter == ThoughtFilter.failed,
+                              selectedColor: Colors.red.shade100,
+                              labelStyle: TextStyle(
+                                color: _currentFilter == ThoughtFilter.failed ? Colors.red.shade900 : null,
+                                fontWeight: _currentFilter == ThoughtFilter.failed ? FontWeight.bold : null,
+                              ),
+                              onSelected: (selected) {
+                                if (selected) {
+                                  setState(() {
+                                    _currentFilter = ThoughtFilter.failed;
+                                  });
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
               Expanded(
                 child: Consumer(
                   builder: (context, ref, child) {
                     final notesAsync = ref.watch(recentNotesProvider);
+                    final queueItems = ref.watch(queueItemsProvider);
+                    final playbackState = ref.watch(audioPlaybackControllerProvider);
                     
                     return notesAsync.when(
-                      data: (notes) {
-                        if (notes.isEmpty) {
+                      skipLoadingOnReload: true,
+                      data: (persistedNotes) {
+                        final allThoughts = _getUnifiedThoughts(persistedNotes, queueItems);
+                        final displayedNotes = switch (_currentFilter) {
+                          ThoughtFilter.unread => allThoughts.where((n) => !n.isRead && n.state == ThoughtState.processed).toList(),
+                          ThoughtFilter.failed => allThoughts.where((n) => n.state == ThoughtState.failed).toList(),
+                          ThoughtFilter.all => allThoughts,
+                        };
+
+                        if (displayedNotes.isEmpty) {
+                          final emptyMessage = switch (_currentFilter) {
+                            ThoughtFilter.unread => 'All caught up! No unread thoughts.',
+                            ThoughtFilter.failed => 'No failed thoughts.',
+                            ThoughtFilter.all => 'No thoughts yet.\nPress both volume buttons to capture.',
+                          };
                           return Center(
                             child: Text(
-                              'No thoughts yet.\nPress both volume buttons to capture.',
+                              emptyMessage,
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Theme.of(context).colorScheme.secondary),
                             ),
@@ -351,16 +415,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         }
                         
                         return ListView.builder(
-                          itemCount: notes.length,
+                          itemCount: displayedNotes.length,
                           itemBuilder: (context, index) {
-                            final note = notes[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: ListTile(
-                                leading: Icon(Icons.notes, color: Theme.of(context).colorScheme.primary),
-                                title: Text(note.correctedText),
-                                subtitle: Text('${note.folder} • ${_formatDate(note.createdAt)}'),
-                              ),
+                            final note = displayedNotes[index];
+                            final isPlaying = playbackState.isPlaying &&
+                                playbackState.currentlyPlayingPath == note.originalAudioPath;
+
+                            return ThoughtCard(
+                              key: ValueKey(note.id),
+                              note: note,
+                              isPlaying: isPlaying,
+                              onPlayAudio: note.originalAudioPath != null && note.originalAudioPath!.isNotEmpty
+                                  ? () {
+                                      ref.read(audioPlaybackControllerProvider.notifier).togglePlayback(note.originalAudioPath!);
+                                    }
+                                  : null,
+                              onEdit: (newText) async {
+                                if (note.id > 0) {
+                                  await ref.read(notesRepositoryProvider).updateNoteText(note.id, newText);
+                                  ref.invalidate(recentNotesProvider);
+                                }
+                              },
+                              onCategoryChanged: (newCategory) async {
+                                if (note.id > 0) {
+                                  await ref.read(notesRepositoryProvider).updateNoteFolder(note.id, newCategory);
+                                  ref.invalidate(recentNotesProvider);
+                                }
+                              },
+                              onRetry: () {
+                                ref.read(audioQueueServiceProvider).retryFailed();
+                              },
+                              onTap: () async {
+                                if (!note.isRead && note.id > 0) {
+                                  await ref.read(notesRepositoryProvider).markAsRead(note.id);
+                                  ref.invalidate(recentNotesProvider);
+                                }
+                              },
                             );
                           },
                         );
@@ -425,9 +515,5 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         ),
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.month}/${date.day} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }

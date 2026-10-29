@@ -19,10 +19,13 @@ class AudioQueueService {
   final AppLogger? _logger;
   final Future<File> Function()? _storageFileResolver;
   final void Function(int pending, int failed)? _onQueueChanged;
+  final void Function(List<AudioQueueItem> items)? _onItemsChanged;
+  final void Function()? _onNoteSaved;
 
   final List<AudioQueueItem> _items = [];
   bool _isProcessing = false;
   File? _cachedFile;
+  Future<void>? _loadingFuture;
 
   AudioQueueService(
     this._sttService,
@@ -32,10 +35,17 @@ class AudioQueueService {
     AppLogger? logger,
     Future<File> Function()? storageFileResolver,
     void Function(int pending, int failed)? onQueueChanged,
+    void Function(List<AudioQueueItem> items)? onItemsChanged,
+    void Function()? onNoteSaved,
+    bool autoLoad = true,
   })  : _logger = logger,
         _storageFileResolver = storageFileResolver,
-        _onQueueChanged = onQueueChanged {
-    _loadFromStorage();
+        _onQueueChanged = onQueueChanged,
+        _onItemsChanged = onItemsChanged,
+        _onNoteSaved = onNoteSaved {
+    if (autoLoad) {
+      loadFromStorage();
+    }
   }
 
   List<AudioQueueItem> get items => List.unmodifiable(_items);
@@ -67,6 +77,13 @@ class AudioQueueService {
     return _cachedFile!;
   }
 
+  Future<void> loadFromStorage({bool forceReload = false}) {
+    if (forceReload || _loadingFuture == null) {
+      _loadingFuture = _loadFromStorage();
+    }
+    return _loadingFuture!;
+  }
+
   Future<void> _loadFromStorage() async {
     try {
       final file = await _resolveStorageFile();
@@ -75,7 +92,19 @@ class AudioQueueService {
         if (content.trim().isNotEmpty) {
           final List<dynamic> jsonList = jsonDecode(content);
           _items.clear();
-          _items.addAll(jsonList.map((j) => AudioQueueItem.fromJson(j as Map<String, dynamic>)));
+          for (final j in jsonList) {
+            try {
+              if (j is Map<String, dynamic>) {
+                _items.add(AudioQueueItem.fromJson(j));
+              } else if (j is Map) {
+                _items.add(AudioQueueItem.fromJson(Map<String, dynamic>.from(j)));
+              } else {
+                _logger?.warning('Quarantining invalid non-map queue entry: $j');
+              }
+            } catch (itemErr) {
+              _logger?.warning('Quarantining corrupt queue item: $itemErr');
+            }
+          }
           _notifyState();
         }
       }
@@ -96,6 +125,7 @@ class AudioQueueService {
 
   void _notifyState() {
     _onQueueChanged?.call(pendingCount, failedCount);
+    _onItemsChanged?.call(List.unmodifiable(_items));
   }
 
   Future<AudioQueueItem> enqueue(String audioFilePath, {bool autoProcess = true}) async {
@@ -135,9 +165,17 @@ class AudioQueueService {
     }
   }
 
+  Completer<void>? _processingCompleter;
+
   Future<void> processPending() async {
-    if (_isProcessing) return;
+    if (_isProcessing) {
+      if (_processingCompleter != null && !_processingCompleter!.isCompleted) {
+        await _processingCompleter!.future;
+      }
+      return;
+    }
     _isProcessing = true;
+    _processingCompleter = Completer<void>();
 
     try {
       while (true) {
@@ -149,6 +187,10 @@ class AudioQueueService {
       }
     } finally {
       _isProcessing = false;
+      if (_processingCompleter != null && !_processingCompleter!.isCompleted) {
+        _processingCompleter!.complete();
+      }
+      _processingCompleter = null;
     }
   }
 
@@ -200,6 +242,7 @@ class AudioQueueService {
 
       await _saveToStorage();
       _notifyState();
+      _onNoteSaved?.call();
 
       // Reset inactivity eviction countdown
       _modelLifecycle.touch(reason: 'Finished processing queued item ${item.id}');
@@ -237,6 +280,17 @@ final failedQueueCountProvider = NotifierProvider<FailedQueueCountNotifier, int>
   return FailedQueueCountNotifier();
 });
 
+class QueueItemsNotifier extends Notifier<List<AudioQueueItem>> {
+  @override
+  List<AudioQueueItem> build() => [];
+
+  void setItems(List<AudioQueueItem> items) => state = List.unmodifiable(items);
+}
+
+final queueItemsProvider = NotifierProvider<QueueItemsNotifier, List<AudioQueueItem>>(() {
+  return QueueItemsNotifier();
+});
+
 final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
   final sttService = ref.watch(sttServiceProvider);
   final llmService = ref.watch(llmServiceProvider);
@@ -253,6 +307,12 @@ final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
     onQueueChanged: (pending, failed) {
       ref.read(pendingQueueCountProvider.notifier).setCount(pending);
       ref.read(failedQueueCountProvider.notifier).setCount(failed);
+    },
+    onItemsChanged: (items) {
+      ref.read(queueItemsProvider.notifier).setItems(items);
+    },
+    onNoteSaved: () {
+      ref.invalidate(recentNotesProvider);
     },
   );
 

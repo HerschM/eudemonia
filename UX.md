@@ -131,9 +131,9 @@ The central hub displaying live queue processing status, ambient background perm
 │  └──────────────────────────────────────────────────┘  │     (Hydrates from disk on cold restart)
 │                                                        │
 │  FILTERS & FOLDERS                                     │
-│  ┌───────┐ ┌──────────────┐ ┌────────────┐ ┌─────────┐ │
-│  │ All   │ │ • Unread (3) │ │ 💡 Ideas 14│ │ 💼 Work │ │ ◄── Triage & Category Carousel
-│  └───────┘ └──────────────┘ └────────────┘ └─────────┘ │
+│  ┌───────┐ ┌──────────────┐ ┌──────────────┐ ┌───────┐ │
+│  │ All   │ │ • Unread (3) │ │ ⚠️ Failed (1)│ │ Ideas │ │ ◄── Triage & Category Carousel
+│  └───────┘ └──────────────┘ └──────────────┘ └───────┘ │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ [ 2 Selected ]         [ 🧩 Club Thoughts ]  [✕] │  │ ◄── Multi-Select Floating Bar
@@ -173,7 +173,7 @@ The central hub displaying live queue processing status, ambient background perm
 - **Production Target**: [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
 - **Key Parameters**:
   - `int pendingCount`: Count of audio items in queue (renders AppBar pill and In-Body banner when > 0, hydrated from disk).
-  - `int failedCount`: Count of failed items (renders Retry banner when > 0).
+  - `int failedCount`: Count of failed items (renders Failed filter chip when > 0, with failed cards rendered in feed with 1-tap retry; no top banner).
   - `bool hasMissingPermissions`: Renders ambient warning card when true.
   - `List<NoteItem> notes`: List of thought objects with lifecycle status (`enqueued`, `processed`, `failed`, `synthesized`), audio paths, timestamps, read status, and origin notes.
   - `Set<String> selectedNoteIds`: IDs of currently selected notes for manual clubbing.
