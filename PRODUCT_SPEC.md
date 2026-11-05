@@ -204,13 +204,24 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR8.2**: The app must detect and request both Accessibility Service and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) simultaneously through an educational modal.
 - **FR8.3**: Permission status indicators across settings and alerts must use standardized **Enabled** (Green) and **Disabled** (Amber) badges.
 
-#### FR9: Capture Screen Presentation & Daily Numbering
-- **FR9.1**: Captures appear in the **Capture** stream with a neutral dark card styling (`captureCardBg`). Category folders and color tints are strictly forbidden in this view.
-- **FR9.2**: Every capture note receives a daily sequence number (`#01`, `#02`, `#03`...). The counter resets to `#01` every day at midnight.
-- **FR9.3**: Deleting a note leaves the numbering of subsequent notes intact (e.g., deleting `#02` preserves `#01`, `#03`, `#04`; gaps are explicitly allowed).
-- **FR9.4**: The card heading layout must adhere to the strict order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`. This guarantees visual horizontal alignment across read and unread notes.
-- **FR9.5**: Timestamps at the card footer must strictly display date then time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
-- **FR9.6**: Tapping `[ ✎ Edit ]` allows manual text editing; tapping `[ ✨ Style ▾ ]` opens the AI Style Re-Writer modal.
+#### FR9: Capture Screen Presentation, Status Colors & Dual Filters
+- **FR9.1 (Processing State Color Accents)**: Captures appear in the **Capture** stream with visual state color indicators (no folder category tags):
+  - **Yellow (`stateEnqueuedBg` / Amber)**: Pending audio queue processing / STT transcription.
+  - **Blue (`stateProcessedBg` / Electric Blue)**: Post-STT and language cleanup completed; awaiting session synthesis.
+  - **Green (`stateSynthesizedBg` / Emerald)**: Synthesis completed (clubbed into a synthesized session).
+  - **Red (`stateFailedBg` / Rose)**: Processing failed (with retry action).
+- **FR9.2 (Dual Triage Filters)**:
+  - **Read / Unread Filter**: Toggles between `All`, `Unread`, and `Read`.
+  - **Processing State Filter**: Toggles between `All`, `Processing (Yellow)`, `Processed (Blue)`, `Synthesized (Green)`, and `Failed (Red)`.
+- **FR9.3 (Interactive Floating Capture Trigger)**:
+  - The Capture screen features an elevated floating capsule: `[ 🎙️ / Press Vol Up + Down to Capture ]` with a prominent mic icon (`20sp`) and `"/"` separator.
+  - The trigger is directly clickable in-app to start recording without physical volume buttons.
+  - While recording, the pill transforms to show an active listening loader bar / pulsating audio waveform inside the button itself with elapsed time. Tapping again stops recording and enqueues a Yellow pending note immediately.
+- **FR9.4**: Every capture note receives a daily sequence number (`#01`, `#02`, `#03`...). The counter resets to `#01` every day at midnight.
+- **FR9.5**: Deleting a note leaves the numbering of subsequent notes intact (e.g., deleting `#02` preserves `#01`, `#03`, `#04`; gaps are explicitly allowed).
+- **FR9.6**: The card heading layout must adhere to the strict order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`. This guarantees visual horizontal alignment across read and unread notes.
+- **FR9.7**: Timestamps at the card footer must strictly display date then time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
+- **FR9.8**: Tapping `[ ✎ Edit ]` allows manual text editing; tapping `[ ✨ Style ▾ ]` opens the AI Style Re-Writer modal.
 
 #### FR10: Lock Screen & Notification Center Capture Trigger
 - **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
@@ -222,9 +233,11 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR11.2 (Compact Folder Filter Dropdown)**: The horizontal folder carousel is removed. The Synthesis view provides a compact folder filter dropdown (`[ 📁 Filter: All Folders ▾ ]`) situated in the section sub-header, allowing users to filter synthesized notes by predefined folder without taking up vertical screen real estate.
 - **FR11.3 (Single-Folder Badge & 1-Tap Card Reassignment)**: Each synthesized note displays its assigned folder badge (`[ 💡 Ideas ▾ ]`, `[ 💼 Work ▾ ]`). Tapping opens a quick-picker dropdown to reassign the note among the predefined folders.
 - **FR11.4**: Synthesized notes receive a sequential identifier (`#S-01`, `#S-02`), consolidated synthesis narrative, session time span (`05/11  07:10 AM - 07:45 AM`), session duration (`⏱️ 35m session`), and an expandable raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`).
-- **FR11.5 (Raw Note Ejection)**: Users can eject any raw note from a synthesized cluster via `[ ⤢ Move Out ]`, presenting two options:
-  1. *Move to another clubbed note* (select existing cluster or create new).
-  2. *Make it an independent note* (promotes into its own standalone synthesized note).
+- **FR11.5 (Raw Note Ejection & Re-Synthesis Guard)**:
+  - If a synthesized cluster contains only 1 note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden/disabled.
+  - For clusters with $\ge 2$ notes, users can eject any raw note via `[ ⤢ Move Out ]`:
+    1. *Move to another clubbed note*: Shows a selector of available existing clubbed notes (`#S-01`, `#S-02`, etc.). Upon confirmation, **both** the source and target clubbed notes transition to Yellow (`pending re-processing`) so their synthesized text is automatically regenerated.
+    2. *Make it an independent note*: Detaches the note and creates a standalone synthesized note; the source clubbed note turns Yellow to re-synthesize without the detached thought.
 - **FR11.6 (Manual Multi-Select)**: Users can select multiple raw notes to manually trigger a synthesis turn across selected items.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating

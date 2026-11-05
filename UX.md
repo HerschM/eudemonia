@@ -44,10 +44,11 @@ When designing, modifying, or refactoring any screen in Eudemonia, AI agents and
 | `accentAI` | `#8B5CF6` (Violet) | `#7C3AED` | AI style re-writer, LLM synthesis indicators |
 | `accentWarning` | `#F59E0B` (Amber) | `#D97706` | Missing permissions, pending background warnings |
 | `accentError` | `#EF4444` (Rose Red) | `#DC2626` | Failed queue items, retry triggers, delete destructive actions |
-| `captureCardBg` | `#16161A` (Neutral Dark) | `#FFFFFF` (Pure White) | Neutral Capture thought card (strictly NO color coding/categorization) |
-| `stateEnqueuedBg` | `#26200A` (Amber Tint) | `#FEF3C7` (Pastel Yellow) | Optimistic pending capture card background |
-| `stateSynthesisBg` | `#111827` (Slate Blue) | `#DBEAFE` (Soft Blue) | Clustered / synthesized session card background |
-| `stateFailedBg` | `#271111` (Deep Red) | `#FEE2E2` (Soft Red) | Failed processing thought card background |
+| `captureCardBg` | `#16161A` (Neutral Dark) | `#FFFFFF` (Pure White) | Default Capture card background |
+| `stateEnqueuedBg` | `#26200A` (Amber / Yellow) | `#FEF3C7` (Pastel Yellow) | Pending processing capture card background (Yellow) |
+| `stateProcessedBg` | `#111827` (Electric Blue Tint) | `#DBEAFE` (Soft Blue) | STT & language corrected capture card background (Blue) |
+| `stateSynthesizedBg` | `#0B231A` (Emerald / Mint Tint) | `#DCFCE7` (Soft Green) | Synthesis completed capture card background (Green) |
+| `stateFailedBg` | `#271111` (Deep Red) | `#FEE2E2` (Soft Red) | Failed processing thought card background (Red) |
 | `numberBadgeBg` | `rgba(255, 255, 255, 0.06)` | `rgba(0, 0, 0, 0.06)` | Daily sequence counter badge background (`#01`, `#02`) |
 | `numberBadgeText` | `#9CA3AF` (Muted Mono) | `#4B5563` | Daily sequence counter text |
 | `unreadDot` | `#60A5FA` (Electric Blue) | `#3B82F6` | Unread/unreviewed thought indicator dot |
@@ -157,7 +158,16 @@ previews/
 ### Screen Overview
 The default landing screen. Displays all captured thoughts in reverse-chronological order. 
 - **AI Processing Scope**: Strictly **Speech-to-Text (STT)** and **basic language cleanup** (grammar correction, filler word removal, punctuation) via local LLM.
-- **Visual Styling**: **Strictly NO folder tags, classification badges, or category color tints.** All cards share a uniform, neutral dark card aesthetic (`captureCardBg`).
+- **Card State Color Accents (Processing Pipeline Transparency)**:
+  - Cards do not carry folder tags (folders live under Synthesis), but indicate cognitive state via **background and border color coding**:
+    - **Yellow (`stateEnqueuedBg` / Amber `#F59E0B`)**: Pending audio queue processing / STT transcription.
+    - **Blue (`stateProcessedBg` / Electric Blue `#3B82F6`)**: Post-STT and language cleanup completed; raw thought ready for synthesis.
+    - **Green (`stateSynthesizedBg` / Emerald `#10B981`)**: Synthesis completed (this raw thought has been clubbed into a synthesized session).
+    - **Red (`stateFailedBg` / Rose `#EF4444`)**: Processing failed (with 1-tap retry button).
+- **Dual Triage Filter Bar**:
+  - Located directly above the feed:
+    - **Read / Unread Filter**: `[ All ]` • `[ Unread ]` • `[ Read ]`.
+    - **Processing State Filter**: `[ All Statuses ]` • `[ ⏳ Processing (Yellow) ]` • `[ 💬 Processed (Blue) ]` • `[ 🌿 Synthesized (Green) ]` • `[ ⚠️ Failed (Red) ]`.
 - **Daily Sequence Numbering**: Every raw note receives a daily number (`#01`, `#02`, `#03`...). The counter **resets to `#01` every day** at midnight.
 - **Permanent Numbering On Delete**: If a note is deleted, later notes **retain their assigned number** (e.g., deleting `#02` leaves `#01`, `#03`, `#04`). Gaps are intentional to preserve citation and voice audio permanence.
 - **Card Heading Layout Contract**:
@@ -166,6 +176,12 @@ The default landing screen. Displays all captured thoughts in reverse-chronologi
 - **Card Bottom Section**:
   - Formatted strictly as **Date then Time**: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
   - Followed by action triggers: `[ ✎ Edit ]` and `[ ✨ Style ▾]`.
+- **Interactive Floating Capture Trigger**:
+  - Prominent, high-contrast floating capsule hovering at the bottom center of the screen, elevated above the scrolling list.
+  - Large mic icon (`20sp`), visual `"/"` slash separator, and explicit hint text:
+    `[ 🎙️  /  Press Vol Up + Down to Capture ]`
+  - **Clickable Soft Trigger**: Tapping this floating pill starts recording immediately (providing an in-app soft trigger alternative to physical volume buttons).
+  - **Interactive Waveform & Loader**: When recording is initiated, the button dynamically transforms: the mic icon and text are replaced by a **live pulsating audio waveform / listening loader bar** inside the button itself, with elapsed timer (`00:04`). Tapping the button again stops recording, immediately dismisses the waveform, and enqueues the note as a Yellow pending card in the feed.
 - **Text Modification Options**:
   1. **Manual Edit**: Inline or bottom sheet text editor.
   2. **AI Style Re-Write**: Preset context prompts that instruct the local LLM to rewrite the thought in a chosen voice or format.
@@ -177,39 +193,48 @@ The default landing screen. Displays all captured thoughts in reverse-chronologi
 │  Eudemonia                    [ ⚡ 1 pending ]  [ ⚙ ]  │ ◄── Header & Live Queue
 ├────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────┐  │
-│  │  [ Capture (4) ]  Synthesis   Insights   Action  │  │ ◄── Stage Switcher (Capture Active)
+│  │  [ Capture (6) ]  Synthesis   Insights   Action  │  │ ◄── Stage Switcher (Capture Active)
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  TODAY — 05/11 (#01 - #04)                             │ ◄── Daily Grouping & Reset Counter
+│  FILTERS:                                              │
+│  [ All ] [ Unread ] [ Read ]                           │ ◄── Filter 1: Read/Unread Triage
+│  [ All (6) ] [ ⏳ Proc (1) ] [ 💬 Done (2) ] [ 🌿 Syn (2) ] [ ⚠️ Fail (1) ] ◄── Filter 2: State Filter
 │                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ [#04]  [ ▶ 00:08 ]  •                    [ 🗑️ ] │  │ ◄── Ordering: #, Play, Unread Dot, Delete
-│  │                                                  │  │     (Unread note: dot appears after player)
-│  │ "Need to verify whether the accessibility key    │  │ ◄── STT + Grammar Cleaned (No classification)
+│  TODAY — 05/11 (#01 - #06)                             │ ◄── Daily Grouping & Reset Counter
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🟡 Yellow Card (Pending Processing)
+│  │ [#06]  [ ▶ 00:05 ]  •                    [ 🗑️ ] │  │
+│  │ ⏳ Transcribing audio and cleaning speech...     │  │
+│  │ ──────────────────────────────────────────────── │  │
+│  │ 05/11  10:15 AM                   [ Processing ] │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🔵 Blue Card (STT + Language Cleaned)
+│  │ [#04]  [ ▶ 00:08 ]  •                    [ 🗑️ ] │  │     (Awaiting session synthesis)
+│  │ "Need to verify whether the accessibility key    │  │
 │  │  debouncer works properly when device is locked" │  │
-│  │                                                  │  │
 │  │ ──────────────────────────────────────────────── │  │
 │  │ 05/11  09:42 AM         [ ✎ Edit ] [ ✨ Style ▾] │  │ ◄── Date then Time: "DD/MM  HH:MM"
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ [#03]  [ ▶ 00:15 ]                       [ 🗑️ ] │  │ ◄── Note #03 (Read state; dot hidden;
-│  │                                                  │  │     player & number perfectly aligned)
-│  │ "The battery drain test passed with 1.8% over    │  │
-│  │  24 hours with foreground keep-alive enabled."   │  │
-│  │                                                  │  │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🟢 Green Card (Synthesized into #S-02)
+│  │ [#01]  [ ▶ 00:04 ]                       [ 🗑️ ] │  │
+│  │ "Idea about splitting raw & processed notes..."  │  │
 │  │ ──────────────────────────────────────────────── │  │
-│  │ 05/11  08:15 AM         [ ✎ Edit ] [ ✨ Style ▾] │  │ ◄── Date then Time: "05/11  08:15 AM"
+│  │ 05/11  07:10 AM  • Synthesized in #S-02          │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ [#01]  [ ▶ 00:04 ]                       [ 🗑️ ] │  │ ◄── Note #01 (Notice #02 was deleted; gap allowed)
-│  │ "Remember to pick up almond milk on the way back"│  │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🔴 Red Card (Processing Failed)
+│  │ [#02]  [ ▶ 00:02 ]                       [ 🗑️ ] │  │
+│  │ ⚠️ No speech detected in audio recording         │  │
 │  │ ──────────────────────────────────────────────── │  │
-│  │ 05/11  07:10 AM         [ ✎ Edit ] [ ✨ Style ▾] │  │ ◄── Date then Time: "05/11  07:10 AM"
+│  │ 05/11  07:40 AM                     [ ↻ Retry ]  │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│         [ 🎙️ Press Vol Up + Vol Down to Capture ]      │ ◄── Ambient Hardware Trigger Hint
+│     ┌────────────────────────────────────────────┐     │ ◄── FLOATING CLICKABLE TRIGGER (Sticky)
+│     │   🎙️   /   Press Vol Up + Down to Capture   │     │     (Tap to start recording / or use Vol keys)
+│     └────────────────────────────────────────────┘     │
+│       (When Recording: [ ⏹  |||||||||||  00:04 ])      │ ◄── Morphing listening waveform loader inside button
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -266,10 +291,13 @@ The second screen in the application. Thoughts captured in close proximity or sh
     - Session duration (e.g., `⏱️ 35m session`).
     - **Raw Notes Count Pill** (e.g. `[ 🧩 3 Raw Notes ▾ ]`): **Clickable and expandable** to inspect included raw notes.
 - **Raw Note Ejection / Reorganization**:
-  - Inside the expanded view, each origin raw note can be ejected via `[ ⤢ Move Out ]`.
-  - The UI presents two immediate choices:
-    1. **Move to another clubbed note** (picker of existing clusters or create new).
-    2. **Make it an independent note** (promotes the raw note into its own standalone synthesized note).
+  - **Single Note Guard**: If a synthesized cluster has only 1 origin note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` action is **hidden / disabled**. Ejecting the only note would leave an orphaned cluster.
+  - When a cluster has 2 or more origin notes, each origin note displays `[ ⤢ Move Out ]`.
+  - Tapping `[ ⤢ Move Out ]` opens the Reassign Raw Note sheet with two options:
+    1. **Move to another clubbed note**: Opens an interactive target picker listing existing clubbed sessions (`#S-01`, `#S-02`, etc.) with their sequence numbers and summaries.
+       - *State Transition*: When confirmed, the raw note is detached from the source cluster and appended to the target cluster. **Both the source clubbed note and target clubbed note turn Yellow (`stateEnqueuedBg` / pending re-processing)** to communicate that local LLM re-synthesis is required for both clusters.
+    2. **Make it an independent note**: Detaches the raw note into its own standalone synthesized session.
+       - *State Transition*: The source clubbed note turns Yellow (`stateEnqueuedBg`) to trigger re-synthesis, and a new independent synthesized session is created.
 
 ### Visual ASCII Wireframe
 
@@ -327,7 +355,10 @@ When tapping `[ ⤢ Move Out ]` on an origin note inside the expanded drawer:
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ 📂 Move to Another Clubbed Note                  │  │ ◄── Option 1: Attach to another session
-│  │    Choose from existing sessions or create new   │  │
+│  │    Choose target clubbed note:                   │  │
+│  │    ○ [#S-01] Work ("Prepare quarterly deliverables")│
+│  │    ○ [#S-03] Journal ("Morning reflection...")   │  │
+│  │    (Both notes turn Yellow for re-synthesis)     │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ 📄 Make It An Independent Note                   │  │ ◄── Option 2: Promote to standalone note

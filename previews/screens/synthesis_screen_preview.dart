@@ -45,12 +45,70 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
     NoteEjectionModal.show(
       context,
       rawNote: rawNote,
-      onMoveToCluster: () {
+      currentCluster: cluster,
+      availableClusters: _clusters,
+      onMoveToTargetCluster: (targetCluster) {
+        setState(() {
+          // 1. Remove from source cluster and mark source cluster as re-processing (turns yellow)
+          final sourceIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
+          if (sourceIndex != -1) {
+            final updatedNotes = List<MockCaptureNote>.from(_clusters[sourceIndex].originNotes)
+              ..removeWhere((n) => n.id == rawNote.id);
+            _clusters[sourceIndex] = _clusters[sourceIndex].copyWith(
+              originNotes: updatedNotes,
+              isReprocessing: true,
+            );
+          }
+
+          // 2. Add to target cluster and mark target cluster as re-processing (turns yellow)
+          final targetIndex = _clusters.indexWhere((c) => c.clusterId == targetCluster.clusterId);
+          if (targetIndex != -1) {
+            final updatedNotes = List<MockCaptureNote>.from(_clusters[targetIndex].originNotes)
+              ..add(rawNote);
+            _clusters[targetIndex] = _clusters[targetIndex].copyWith(
+              originNotes: updatedNotes,
+              isReprocessing: true,
+            );
+          }
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: PreviewTheme.surfaceElevated,
             content: Text(
-              'Moving [${rawNote.formattedSequence}] to target session...',
+              'Moved [${rawNote.formattedSequence}] to ${targetCluster.sequenceNumber}. Both notes marked yellow for re-synthesis.',
+              style: const TextStyle(color: PreviewTheme.textPrimary),
+            ),
+          ),
+        );
+      },
+      onMoveToCluster: () {
+        setState(() {
+          final sourceIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
+          if (sourceIndex != -1) {
+            final updatedNotes = List<MockCaptureNote>.from(_clusters[sourceIndex].originNotes)
+              ..removeWhere((n) => n.id == rawNote.id);
+            _clusters[sourceIndex] = _clusters[sourceIndex].copyWith(
+              originNotes: updatedNotes,
+              isReprocessing: true,
+            );
+          }
+          final otherIndex = _clusters.indexWhere((c) => c.clusterId != cluster.clusterId);
+          if (otherIndex != -1) {
+            final updatedNotes = List<MockCaptureNote>.from(_clusters[otherIndex].originNotes)
+              ..add(rawNote);
+            _clusters[otherIndex] = _clusters[otherIndex].copyWith(
+              originNotes: updatedNotes,
+              isReprocessing: true,
+            );
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: PreviewTheme.surfaceElevated,
+            content: Text(
+              'Moved [${rawNote.formattedSequence}] to other clubbed session. Both notes marked yellow for re-synthesis.',
               style: const TextStyle(color: PreviewTheme.textPrimary),
             ),
           ),
@@ -58,13 +116,16 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
       },
       onMakeIndependent: () {
         setState(() {
-          // Remove from origin cluster
+          // Remove from origin cluster and mark as re-processing
           final updatedOriginNotes = List<MockCaptureNote>.from(cluster.originNotes)
             ..removeWhere((n) => n.id == rawNote.id);
 
           final clusterIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
           if (clusterIndex != -1) {
-            _clusters[clusterIndex] = _clusters[clusterIndex].copyWith(originNotes: updatedOriginNotes);
+            _clusters[clusterIndex] = _clusters[clusterIndex].copyWith(
+              originNotes: updatedOriginNotes,
+              isReprocessing: true,
+            );
           }
 
           // Create new independent cluster
@@ -77,6 +138,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
             sessionEnd: rawNote.timestamp.add(const Duration(minutes: 5)),
             sessionDuration: const Duration(minutes: 5),
             originNotes: [rawNote],
+            isReprocessing: false,
           );
           _clusters.insert(0, newCluster);
         });
@@ -197,18 +259,20 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
 
   Widget _buildClusterCard(MockSynthesisCluster cluster) {
     final cleanSeq = cluster.sequenceNumber.replaceAll('#', '');
+    final isReprocessing = cluster.isReprocessing;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: PreviewTheme.cardDecoration(
-        bgColor: PreviewTheme.surface,
+        bgColor: isReprocessing ? PreviewTheme.stateEnqueuedBg : PreviewTheme.surface,
+        borderColor: isReprocessing ? PreviewTheme.stateEnqueuedBorder : PreviewTheme.borderSubtle,
       ),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Row: Cluster Sequence # + Predefined Folder Badge Dropdown + Edit
+            // Top Row: Cluster Sequence # + Predefined Folder Badge Dropdown + Edit + Optional Re-processing badge
             Wrap(
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -222,7 +286,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: PreviewTheme.accentAction.withOpacity(0.12),
+                        color: PreviewTheme.accentAction.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
                       ),
                       child: Text(
@@ -269,6 +333,33 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                         ),
                       ),
                     ),
+                    if (isReprocessing) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        key: Key('reprocessing_badge_$cleanSeq'),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                          border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
+                            SizedBox(width: 4),
+                            Text(
+                              'Re-synthesizing...',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: PreviewTheme.accentWarning,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 InkWell(
@@ -423,34 +514,36 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                                   ),
                                 ],
                               ),
-                              InkWell(
-                                key: Key('move_out_button_${rawNote.id}'),
-                                borderRadius: BorderRadius.circular(6),
-                                onTap: () => _openEjectionModal(cluster, rawNote),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: PreviewTheme.accentWarning.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: PreviewTheme.accentWarning.withOpacity(0.3)),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.open_in_new, size: 12, color: PreviewTheme.accentWarning),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Move Out',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: PreviewTheme.accentWarning,
+                              if (cluster.originNotes.length > 1) ...[
+                                InkWell(
+                                  key: Key('move_out_button_${rawNote.id}'),
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () => _openEjectionModal(cluster, rawNote),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: PreviewTheme.accentWarning.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.3)),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.open_in_new, size: 12, color: PreviewTheme.accentWarning),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Move Out',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: PreviewTheme.accentWarning,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ],

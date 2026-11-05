@@ -3,23 +3,42 @@ import '../../previews/mock_data.dart';
 
 void main() {
   group('Preview MockData Unit Tests', () {
-    test('MockData provides valid Capture raw notes with daily sequence numbers', () {
+    test('MockData provides valid Capture raw notes with daily sequence numbers and status colors', () {
       final notes = MockData.captureNotes;
       expect(notes.isNotEmpty, isTrue);
-      expect(notes.length, greaterThanOrEqualTo(3));
+      expect(notes.length, greaterThanOrEqualTo(6));
 
       // Note sequence checks
-      expect(notes[0].dailySequenceNumber, equals(4));
-      expect(notes[0].formattedSequence, equals('#04'));
-      expect(notes[0].isUnread, isTrue);
+      expect(notes[0].dailySequenceNumber, equals(6));
+      expect(notes[0].formattedSequence, equals('#06'));
+      expect(notes[0].status, equals(MockNoteStatus.pending));
 
-      expect(notes[1].dailySequenceNumber, equals(3));
-      expect(notes[1].formattedSequence, equals('#03'));
-      expect(notes[1].isUnread, isFalse);
+      expect(notes[1].dailySequenceNumber, equals(5));
+      expect(notes[1].formattedSequence, equals('#05'));
+      expect(notes[1].status, equals(MockNoteStatus.processed));
 
-      // Verify gap preservation (#02 deleted)
-      expect(notes[2].dailySequenceNumber, equals(1));
-      expect(notes[2].formattedSequence, equals('#01'));
+      expect(notes[2].dailySequenceNumber, equals(4));
+      expect(notes[2].formattedSequence, equals('#04'));
+      expect(notes[2].status, equals(MockNoteStatus.processed));
+
+      expect(notes[3].dailySequenceNumber, equals(3));
+      expect(notes[3].formattedSequence, equals('#03'));
+      expect(notes[3].status, equals(MockNoteStatus.synthesized));
+
+      expect(notes[4].dailySequenceNumber, equals(2));
+      expect(notes[4].formattedSequence, equals('#02'));
+      expect(notes[4].status, equals(MockNoteStatus.failed));
+
+      expect(notes[5].dailySequenceNumber, equals(1));
+      expect(notes[5].formattedSequence, equals('#01'));
+      expect(notes[5].status, equals(MockNoteStatus.synthesized));
+
+      // Verify all statuses are represented
+      final statuses = notes.map((n) => n.status).toSet();
+      expect(statuses, contains(MockNoteStatus.pending));
+      expect(statuses, contains(MockNoteStatus.processed));
+      expect(statuses, contains(MockNoteStatus.synthesized));
+      expect(statuses, contains(MockNoteStatus.failed));
 
       // Verify timestamp format: DD/MM  HH:MM AM/PM
       for (final note in notes) {

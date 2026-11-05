@@ -8,7 +8,7 @@ import '../../previews/screens/action_screen_preview.dart';
 
 void main() {
   group('Four-Stage Preview Screens Widget Tests', () {
-    testWidgets('CaptureScreenPreview renders with strict header order and date-time format', (tester) async {
+    testWidgets('CaptureScreenPreview renders with strict header order, status colors, dual filters and floating trigger', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -20,15 +20,17 @@ void main() {
 
       // Verify Screen renders
       expect(find.textContaining('TODAY —'), findsOneWidget);
+      expect(find.text('#06'), findsOneWidget);
+      expect(find.text('#05'), findsOneWidget);
       expect(find.text('#04'), findsOneWidget);
-      expect(find.text('#03'), findsOneWidget);
-      expect(find.text('#01'), findsOneWidget);
+
+      // Verify Status Badges (Color representation)
+      expect(find.textContaining('Transcribing audio & cleaning speech...'), findsOneWidget); // Yellow pending
 
       // Verify date-time format: DD/MM  HH:MM AM/PM
       expect(find.textContaining(RegExp(r'\d{2}/\d{2}\s\s\d{2}:\d{2}\s[AP]M')), findsWidgets);
 
       // Verify Header ordering: # Number before Play Button before Unread Dot before Delete
-      // Check for first note (#04)
       final num04Finder = find.text('#04');
       final play04Finder = find.byKey(const Key('play_button_note_4'));
       final unread04Finder = find.byKey(const Key('unread_dot_note_4'));
@@ -48,22 +50,59 @@ void main() {
       expect(playRect.left, lessThan(unreadRect.left), reason: 'Play Button must be left of Unread Dot');
       expect(unreadRect.left, lessThan(deleteRect.left), reason: 'Unread Dot must be left of Delete button');
 
-      // Note #03 is read -> unread dot should not be visible or present
-      expect(find.byKey(const Key('unread_dot_note_3')), findsNothing);
+      // Floating Trigger Button with larger mic and "/" separator
+      expect(find.byKey(const Key('floating_capture_button')), findsOneWidget);
+      expect(find.text('/'), findsOneWidget);
+      expect(find.text('Press Vol Up + Down to Capture'), findsOneWidget);
 
-      // Tapping "Style" button opens AI Style Re-Writer Sheet
-      final styleButtonFinder = find.byKey(const Key('style_button_note_4'));
-      expect(styleButtonFinder, findsOneWidget);
-      await tester.tap(styleButtonFinder);
+      // Test Floating Button Tap -> transforms into active recording with listening waveform
+      await tester.tap(find.byKey(const Key('floating_capture_button')));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const Key('floating_capture_button_active')), findsOneWidget);
+      expect(find.textContaining('Tap to Stop'), findsOneWidget);
+
+      // Tap again to stop and enqueue new yellow pending note
+      await tester.tap(find.byKey(const Key('floating_capture_button_active')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('floating_capture_button')), findsOneWidget);
+
+      // Test Dual Filter 1: Read/Unread Filter
+      await tester.tap(find.byKey(const Key('filter_read_unread')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('unread_dot_note_6')), findsOneWidget);
+
+      // Reset read filter
+      await tester.tap(find.byKey(const Key('filter_read_all')));
       await tester.pumpAndSettle();
 
-      expect(find.text('AI Style Re-Writer'), findsOneWidget);
-      expect(find.text('Concise & Direct'), findsOneWidget);
-      expect(find.text('Bullet Points'), findsOneWidget);
-      expect(find.text('Professional'), findsOneWidget);
+      // Test Dual Filter 2: Processing Status Filter
+      await tester.tap(find.byKey(const Key('filter_status_processing')));
+      await tester.pumpAndSettle();
+      expect(find.text('#06'), findsOneWidget);
+      expect(find.text('#04'), findsNothing); // Filtered out
+
+      // Filter by Synthesized (Green)
+      await tester.ensureVisible(find.byKey(const Key('filter_status_synthesized')));
+      await tester.tap(find.byKey(const Key('filter_status_synthesized')));
+      await tester.pumpAndSettle();
+      expect(find.text('#03'), findsOneWidget);
+      expect(find.textContaining('Synthesized in #S-01'), findsOneWidget);
+
+      // Filter by Failed (Red)
+      await tester.ensureVisible(find.byKey(const Key('filter_status_failed')));
+      await tester.tap(find.byKey(const Key('filter_status_failed')));
+      await tester.pumpAndSettle();
+      expect(find.text('#02'), findsOneWidget);
+      expect(find.textContaining('No speech detected in audio recording'), findsOneWidget);
+
+      // Reset status filter
+      await tester.ensureVisible(find.byKey(const Key('filter_status_all')));
+      await tester.tap(find.byKey(const Key('filter_status_all')));
+      await tester.pumpAndSettle();
     });
 
-    testWidgets('SynthesisScreenPreview renders compact folder filter dropdown and expandable origin notes', (tester) async {
+    testWidgets('SynthesisScreenPreview renders compact folder filter dropdown, single note lock, and ejection re-synthesis', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -83,24 +122,53 @@ void main() {
       // Verify predefined folder badge with reassignment
       expect(find.byKey(const Key('folder_badge_S-02')), findsOneWidget);
 
-      // Expand origin raw notes pill
+      // Expand origin raw notes pill on #S-02 (3 notes -> Move Out must be visible)
       final expandPillFinder = find.byKey(const Key('expand_origin_pill_S-02'));
       expect(expandPillFinder, findsOneWidget);
       await tester.tap(expandPillFinder);
       await tester.pumpAndSettle();
 
-      // Verify origin notes rendered inside drawer
-      expect(find.textContaining('Idea about splitting raw & processed'), findsOneWidget);
+      expect(find.byKey(const Key('move_out_button_raw_1')), findsOneWidget);
 
-      // Tap Move Out button to open ejection modal
-      final moveOutFinder = find.byKey(const Key('move_out_button_raw_1'));
-      expect(moveOutFinder, findsOneWidget);
-      await tester.tap(moveOutFinder);
+      // Collapse #S-02 so #S-01 doesn't scroll below the fold
+      await tester.tap(expandPillFinder);
+      await tester.pumpAndSettle();
+
+      // Expand origin raw notes pill on #S-01 (1 note -> Single Note Guard: Move Out must be HIDDEN)
+      final expandPillS01Finder = find.byKey(const Key('expand_origin_pill_S-01'));
+      expect(expandPillS01Finder, findsOneWidget);
+      await tester.tap(expandPillS01Finder);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('move_out_button_raw_yesterday_1')), findsNothing);
+
+      // Collapse #S-01 and re-expand #S-02 to perform Move Out
+      await tester.tap(expandPillS01Finder);
+      await tester.pumpAndSettle();
+
+      await tester.tap(expandPillFinder);
+      await tester.pumpAndSettle();
+
+      // Tap Move Out on raw_1 from #S-02 to open ejection modal
+      await tester.tap(find.byKey(const Key('move_out_button_raw_1')));
       await tester.pumpAndSettle();
 
       expect(find.text('Reassign Raw Note [#01]'), findsOneWidget);
-      expect(find.text('Move to Another Clubbed Note'), findsOneWidget);
-      expect(find.text('Make It An Independent Note'), findsOneWidget);
+      expect(find.byKey(const Key('move_to_another_clubbed_note_btn')), findsOneWidget);
+
+      // Tap Move to another clubbed note -> reveals target cluster selector
+      await tester.tap(find.byKey(const Key('move_to_another_clubbed_note_btn')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('SELECT TARGET CLUBBED NOTE'), findsOneWidget);
+      expect(find.byKey(const Key('select_target_cluster_cluster_1')), findsOneWidget);
+
+      // Select cluster_1 as target
+      await tester.tap(find.byKey(const Key('select_target_cluster_cluster_1')));
+      await tester.pumpAndSettle();
+
+      // Verify both source (#S-02) and target (#S-01) now display the yellow re-synthesizing badge!
+      expect(find.byKey(const Key('reprocessing_badge_S-02')), findsOneWidget);
     });
 
     testWidgets('InsightsScreenPreview renders sub-views and coherence breath trigger', (tester) async {

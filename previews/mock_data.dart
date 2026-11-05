@@ -13,6 +13,14 @@ String formatDateTimeCustom(DateTime dt) {
   return '$day/$month  $hourStr:$minuteStr $amPm';
 }
 
+/// Processing status of a capture note
+enum MockNoteStatus {
+  pending, // Yellow - Transcribing audio / queue worker pending
+  processed, // Blue - STT + language cleanup done; awaiting synthesis
+  synthesized, // Green - Clustered and synthesized into a session note
+  failed, // Red - Processing error
+}
+
 /// Raw Capture thought item
 class MockCaptureNote {
   final String id;
@@ -22,6 +30,9 @@ class MockCaptureNote {
   final Duration audioDuration;
   final String cleanedText;
   final bool isUnread;
+  final MockNoteStatus status;
+  final String? clusterSequence; // e.g. "#S-02" if synthesized
+  final String? failureMessage; // If failed
 
   const MockCaptureNote({
     required this.id,
@@ -31,6 +42,9 @@ class MockCaptureNote {
     required this.audioDuration,
     required this.cleanedText,
     required this.isUnread,
+    this.status = MockNoteStatus.processed,
+    this.clusterSequence,
+    this.failureMessage,
   });
 
   String get formattedSequence => '#${dailySequenceNumber.toString().padLeft(2, '0')}';
@@ -44,6 +58,9 @@ class MockCaptureNote {
   MockCaptureNote copyWith({
     String? cleanedText,
     bool? isUnread,
+    MockNoteStatus? status,
+    String? clusterSequence,
+    String? failureMessage,
   }) {
     return MockCaptureNote(
       id: id,
@@ -53,6 +70,9 @@ class MockCaptureNote {
       audioDuration: audioDuration,
       cleanedText: cleanedText ?? this.cleanedText,
       isUnread: isUnread ?? this.isUnread,
+      status: status ?? this.status,
+      clusterSequence: clusterSequence ?? this.clusterSequence,
+      failureMessage: failureMessage ?? this.failureMessage,
     );
   }
 }
@@ -68,6 +88,7 @@ class MockSynthesisCluster {
   final Duration sessionDuration;
   final List<MockCaptureNote> originNotes;
   final bool isExpanded;
+  final bool isReprocessing; // True when marked yellow for re-synthesis
 
   const MockSynthesisCluster({
     required this.clusterId,
@@ -79,7 +100,29 @@ class MockSynthesisCluster {
     required this.sessionDuration,
     required this.originNotes,
     this.isExpanded = false,
+    this.isReprocessing = false,
   });
+
+  MockSynthesisCluster copyWith({
+    String? folder,
+    String? synthesizedContent,
+    List<MockCaptureNote>? originNotes,
+    bool? isExpanded,
+    bool? isReprocessing,
+  }) {
+    return MockSynthesisCluster(
+      clusterId: clusterId,
+      sequenceNumber: sequenceNumber,
+      folder: folder ?? this.folder,
+      synthesizedContent: synthesizedContent ?? this.synthesizedContent,
+      sessionStart: sessionStart,
+      sessionEnd: sessionEnd,
+      sessionDuration: sessionDuration,
+      originNotes: originNotes ?? this.originNotes,
+      isExpanded: isExpanded ?? this.isExpanded,
+      isReprocessing: isReprocessing ?? this.isReprocessing,
+    );
+  }
 
   String get formattedTimeSpan {
     final startDay = sessionStart.day.toString().padLeft(2, '0');
@@ -99,25 +142,6 @@ class MockSynthesisCluster {
     final endAmPm = sessionEnd.hour >= 12 ? 'PM' : 'AM';
 
     return '$startDay/$startMonth  $startHStr:$startMStr $startAmPm - $endHStr:$endMStr $endAmPm';
-  }
-
-  MockSynthesisCluster copyWith({
-    String? folder,
-    String? synthesizedContent,
-    List<MockCaptureNote>? originNotes,
-    bool? isExpanded,
-  }) {
-    return MockSynthesisCluster(
-      clusterId: clusterId,
-      sequenceNumber: sequenceNumber,
-      folder: folder ?? this.folder,
-      synthesizedContent: synthesizedContent ?? this.synthesizedContent,
-      sessionStart: sessionStart,
-      sessionEnd: sessionEnd,
-      sessionDuration: sessionDuration,
-      originNotes: originNotes ?? this.originNotes,
-      isExpanded: isExpanded ?? this.isExpanded,
-    );
   }
 }
 
@@ -233,6 +257,26 @@ class MockInsightsData {
 class MockData {
   static List<MockCaptureNote> get captureNotes => [
         MockCaptureNote(
+          id: 'note_6',
+          dailySequenceNumber: 6,
+          timestamp: DateTime(2026, 11, 5, 10, 15),
+          audioFilePath: '/audio/note_6.wav',
+          audioDuration: const Duration(seconds: 5),
+          cleanedText: 'Transcribing speech and cleaning language on-device...',
+          isUnread: true,
+          status: MockNoteStatus.pending,
+        ),
+        MockCaptureNote(
+          id: 'note_5',
+          dailySequenceNumber: 5,
+          timestamp: DateTime(2026, 11, 5, 9, 58),
+          audioFilePath: '/audio/note_5.wav',
+          audioDuration: const Duration(seconds: 12),
+          cleanedText: 'Audit the battery optimization exemption whitepaper for Samsung OneUI devices.',
+          isUnread: true,
+          status: MockNoteStatus.processed,
+        ),
+        MockCaptureNote(
           id: 'note_4',
           dailySequenceNumber: 4,
           timestamp: DateTime(2026, 11, 5, 9, 42),
@@ -241,6 +285,7 @@ class MockData {
           cleanedText:
               'Need to verify whether the accessibility key debouncer works properly when device is locked.',
           isUnread: true,
+          status: MockNoteStatus.processed,
         ),
         MockCaptureNote(
           id: 'note_3',
@@ -251,8 +296,20 @@ class MockData {
           cleanedText:
               'The battery drain test passed with 1.8% over 24 hours with foreground keep-alive enabled.',
           isUnread: false,
+          status: MockNoteStatus.synthesized,
+          clusterSequence: '#S-01',
         ),
-        // Note #02 was intentionally deleted to demonstrate gap preservation
+        MockCaptureNote(
+          id: 'note_2',
+          dailySequenceNumber: 2,
+          timestamp: DateTime(2026, 11, 5, 7, 40),
+          audioFilePath: '/audio/note_2.wav',
+          audioDuration: const Duration(seconds: 2),
+          cleanedText: 'Audio recording failed: background noise only.',
+          isUnread: false,
+          status: MockNoteStatus.failed,
+          failureMessage: 'No speech detected in audio recording',
+        ),
         MockCaptureNote(
           id: 'note_1',
           dailySequenceNumber: 1,
@@ -261,6 +318,8 @@ class MockData {
           audioDuration: const Duration(seconds: 4),
           cleanedText: 'Remember to pick up almond milk on the way back.',
           isUnread: false,
+          status: MockNoteStatus.synthesized,
+          clusterSequence: '#S-02',
         ),
       ];
 

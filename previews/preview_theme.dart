@@ -16,9 +16,16 @@ class PreviewTheme {
   static const Color accentError = Color(0xFFEF4444); // Rose Red
 
   static const Color captureCardBg = Color(0xFF16161A);
-  static const Color stateEnqueuedBg = Color(0xFF26200A);
+  static const Color stateEnqueuedBg = Color(0xFF26200A); // Yellow / Amber for pending
+  static const Color stateProcessedBg = Color(0xFF111827); // Blue for STT / cleaned entry
+  static const Color stateSynthesizedBg = Color(0xFF0B231A); // Green for synthesis completed entry
+  static const Color stateFailedBg = Color(0xFF271111); // Red for failed entry
   static const Color stateSynthesisBg = Color(0xFF111827);
-  static const Color stateFailedBg = Color(0xFF271111);
+
+  static const Color stateEnqueuedBorder = Color(0x66F59E0B);
+  static const Color stateProcessedBorder = Color(0x663B82F6);
+  static const Color stateSynthesizedBorder = Color(0x6610B981);
+  static const Color stateFailedBorder = Color(0x66EF4444);
 
   static const Color numberBadgeBg = Color(0x0FFFFFFF); // rgba(255, 255, 255, 0.06)
   static const Color numberBadgeText = Color(0xFF9CA3AF);

@@ -265,6 +265,9 @@
   1. **Isolated Preview Sandbox (`previews/`)**: Built completely in `previews/` with zero production boilerplate in `lib/`, rendering typed mock data (`MockData`) with `PreviewTheme` (OLED dark design tokens).
   2. **Stage 1 — Capture (`CaptureScreenPreview`)**:
      - Raw, uncategorized stream with daily sequence numbering resetting every midnight (`#01`, `#02`...).
+     - Processing status color accents: Yellow for pending processing (`stateEnqueuedBg`), Blue for STT and language corrected entries (`stateProcessedBg`), Green for synthesis completed entries (`stateSynthesizedBg`), and Red for failed processing (`stateFailedBg`).
+     - Dual triage filters: Read/Unread filter (`All`, `Unread`, `Read`) and Processing status filter (`All`, `Processing`, `Processed`, `Synthesized`, `Failed`).
+     - Interactive floating capture capsule `[ 🎙️ / Press Vol Up + Down to Capture ]`: elevated and sticky at bottom, larger mic icon (`20sp`), visual `"/"` slash separator. Clickable in-app soft trigger that morphs to an active listening waveform / loader inside the button while recording, dismissing and enqueuing a yellow pending card on stop.
      - Strict header layout sequence to preserve consistent horizontal alignment across read and unread cards: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`.
      - Timestamp displayed as Date then Time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
      - Action controls: Manual text edit and AI Style Re-Writer modal offering 6 preset context prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*).
@@ -272,7 +275,9 @@
      - Clusters raw notes captured across a temporal session into consolidated notes (`#S-01`, `#S-02`) with duration metadata (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`).
      - Enforces strict **Single-Folder Discipline** (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
      - Replaced horizontal folder carousel with a compact **Folder Filter Dropdown** in the section header, paired with 1-tap folder reassignment dropdown on each card.
-     - Expandable origin notes pill (`[ 🧩 3 Raw Notes Included ▾ ]`) revealing source raw audio and an ejection modal (`note_ejection_preview.dart`) with options to "Move to another clubbed note" or "Make it an independent note".
+     - Expandable origin notes pill (`[ 🧩 3 Raw Notes Included ▾ ]`) revealing source raw audio.
+     - Single-note ejection guard: If a cluster has only 1 origin note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden to prevent orphaned empty clusters.
+     - `note_ejection_preview.dart` modal offering "Move to another clubbed note" (with target cluster selector showing sequence `#S-01`, etc.) vs "Make it an independent note". When a raw note is transferred to another clubbed note, **both** the source cluster and target cluster transition to Yellow (`stateEnqueuedBg` / pending re-synthesis) to signal that local LLM summaries must be regenerated.
   4. **Stage 3 — Insights (`InsightsScreenPreview`)**:
      - Segmented sub-view switcher across Emotional Climate Heatmap (7-day valence from -1.0 to +1.0 with 2-minute coherence breath exercise), Topic Density distribution, and Recurrent Thought Loops.
   5. **Stage 4 — Action (`ActionScreenPreview`)**:
