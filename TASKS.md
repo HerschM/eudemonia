@@ -504,13 +504,25 @@
 
 ## Milestone 6: UI/UX Component Sandbox & Four-Stage Interaction Mockups (Active & Priority)
 
-- [ ] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
+- [/] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
   - **Area**: `previews/screens/capture_screen_preview.dart`, `previews/screens/synthesis_screen_preview.dart`, `previews/screens/insights_screen_preview.dart`, `previews/screens/action_screen_preview.dart`, `previews/screens/style_rewriter_preview.dart`, `previews/screens/note_ejection_preview.dart`, `previews/mock_data.dart`, `previews/gallery_shell.dart`, `previews/main_preview.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture`](./PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture) and [`UX.md`](./UX.md)
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters), [`PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering`](./PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering), and [`UX.md`](./UX.md)
   - **Details**:
     1. Build isolated preview screens using typed mock data (`mock_data.dart`) with zero production boilerplate in `lib/`.
-    2. Implement `capture_screen_preview.dart`: neutral cards, daily sequence numbering (`#01`, `#02`...), header layout order `[# Number]` $\rightarrow$ `[▶ Play]` $\rightarrow$ `[• Unread]` $\rightarrow$ `[🗑️ Delete]`, `DD/MM  HH:MM AM/PM` timestamp format, manual edit trigger, and `style_rewriter_preview.dart` bottom sheet with the 6 preset context prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*).
-    3. Implement `synthesis_screen_preview.dart`: clustered session notes (`#S-01`, `#S-02`), compact Folder Filter Dropdown in header row (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`), card folder badge with 1-tap reassignment dropdown (`[ 💡 Ideas ▾ ]`), synthesis narrative, session time span and duration (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`), expandable origin raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`), and `note_ejection_preview.dart` modal offering "Move to another clubbed note" vs "Make it an independent note".
+    2. Implement `capture_screen_preview.dart`:
+       - Cognitive State Color Accents: Yellow for pending processing (`stateEnqueuedBg`), Blue for processed STT/cleaned entries (`stateProcessedBg`), Green for synthesis completed entries (`stateSynthesizedBg`), and Red for failed entries (`stateFailedBg`).
+       - Compact Dual Dropdown Filters: Triage dropdown (`[ 👁️ All Triage ▾ ]` for `All`, `Unread`, `Read`) and Processing State dropdown (`[ ⚡ All Statuses ▾ ]` for `All`, `Processing`, `Processed`, `Synthesized`, `Failed`) preserving vertical space and matching Synthesis dropdown styling.
+       - Daily sequence numbering (`#01` to `#06`...) with preserved gaps on deletion.
+       - Header layout order: `[# Number]` $\rightarrow$ `[▶ Play]` $\rightarrow$ `[• Unread]` $\rightarrow$ `[🗑️ Delete]`.
+       - Footer format: `DD/MM  HH:MM AM/PM`.
+       - Action controls: Manual text edit (`[ ✎ Edit ]`). Style re-writing is removed from Capture and hosted under Synthesis.
+       - Interactive Clickable Floating Capture Trigger: Floating capsule with prominent mic icon (`20sp`), visual `"/"` separator, and text: `[ 🎙️ / Press Vol Up + Down to Capture ]`. Clickable in-app to start recording; when active, morphs into an animated listening waveform / loader bar inside the button replacing the mic and text, and enqueues a new yellow pending card on stop with clean SnackBar feedback: `"Captured a new note [#0X]"` (free of internal debug filler).
+    3. Implement `synthesis_screen_preview.dart`:
+       - Clustered session notes (`#S-01`, `#S-02`), compact Folder Filter Dropdown in header row (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`), card folder badge with 1-tap reassignment dropdown (`[ 💡 Ideas ▾ ]`), synthesis narrative, session time span and duration.
+       - AI Style Re-Writer: Each cluster card features `[ ✨ Style ▾ ]` button. Modal shows 6 preset context prompts, highlighting currently applied style with a checkmark (`Icons.check`). Changing style flags cluster as re-processing and turns card Yellow (`stateEnqueuedBg`).
+       - Expandable origin raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`).
+       - Single Note Ejection Guard: If cluster has only 1 note (`originNotes.length <= 1`), hide/disable the `[ ⤢ Move Out ]` button.
+       - `note_ejection_preview.dart` modal offering "Move to another clubbed note" (with target cluster picker for `#S-01`, `#S-02`, etc.) vs "Make it an independent note", with clean copy free of recurring debug filler text. When moved, both source and target clubbed notes transition to Yellow for re-synthesis.
     4. Implement `insights_screen_preview.dart`: segmented sub-view switcher across Emotional Climate Heatmap (-1.0 to +1.0 valence with 2-minute coherence breath button), Topic & Work Density matrix, and Recurrent Thought Patterns detected across sessions.
     5. Implement `action_screen_preview.dart`: commitments todo list with checkboxes, urgency badges, time anchors (`05/11  02:00 PM`), and origin session links; Calendar Time-Block Preview schedule; Calendar Sync status card with push button.
     6. Connect all 4 screens into `gallery_shell.dart` and `main_preview.dart` with a top stage switcher for interactive testing.
@@ -519,18 +531,23 @@
     - **Unit Tests**:
       - File: `test/previews/preview_mock_data_test.dart`
       - Cases:
-        1. Mock data supplies valid daily sequence numbers (`#01` to `#04`).
+        1. Mock data supplies valid daily sequence numbers across multiple statuses (Yellow pending, Blue processed, Green synthesized, Red failed).
         2. Mock clusters contain valid origin raw note references.
         3. Style presets contain all 6 required prompts and labels.
     - **Widget Tests**:
       - File: `test/previews/preview_screens_test.dart`
       - Cases:
         1. All 4 preview screens render with zero framework assertions.
-        2. Capture card header ordering strictly renders `# Number` before `Play button` before `Unread dot` before `Delete`.
-        3. Capture card footer displays date then time format `DD/MM  HH:MM AM/PM`.
-        4. Synthesis screen renders compact Folder Filter Dropdown and filters clusters when a folder is selected.
-        5. Synthesis origin pill expands/collapses origin note list on tap.
-        6. Layout adapts down to 360dp narrow viewport with 0 `RenderFlex` overflows.
+        2. Capture screen renders state colors (Yellow pending, Blue processed, Green synthesized, Red failed).
+        3. Capture screen compact dual dropdown filters (Triage and Processing status) filter items accurately without chip row clutter.
+        4. Capture screen floating trigger renders with larger mic and `"/"` separator, is clickable to toggle active listening waveform state, and emits clean SnackBar copy (`Captured a new note [#0X]`).
+        5. Capture card header ordering strictly renders `# Number` before `Play button` before `Unread dot` before `Delete`, and card footer has manual edit (zero style button).
+        6. Capture card footer displays date then time format `DD/MM  HH:MM AM/PM`.
+        7. Synthesis screen cluster cards feature `[ ✨ Style ▾ ]` button; opening modal highlights active preset with checkmark, and selecting a new preset sets cluster to Yellow (`isReprocessing = true`).
+        8. Synthesis screen hides `[ Move Out ]` button when cluster has only 1 note.
+        9. Note ejection modal presents clean target selection without instructional filler messages, and sets both clusters to Yellow pending re-synthesis.
+        10. Synthesis screen renders compact Folder Filter Dropdown and filters clusters when a folder is selected.
+        11. Layout adapts down to 360dp narrow viewport with 0 `RenderFlex` overflows.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/previews/preview_screens_test.dart`
       - `~/flutter/bin/flutter run -t previews/main_preview.dart -d macos`

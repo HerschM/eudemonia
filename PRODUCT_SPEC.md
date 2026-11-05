@@ -183,8 +183,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 #### FR5: On-Device LLM Pipeline (Two-Tier Post-Processing)
 - **FR5.1**: The system must run an on-device quantized LLM (Qwen-2.5 1.5B GGUF) via `llama_cpp_dart`.
-- **FR5.2 (Tier 1 — Capture Cleanup)**: For each raw capture, the model performs grammar and language correction (capitalization, punctuation, filler word removal) ONLY. Strictly NO folder classification or color tinting is applied at this stage.
-- **FR5.3 (AI Style Re-Writer)**: Users can re-write any capture note on-demand using preset style prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*).
+- **FR5.2 (Tier 1 — Capture Cleanup)**: For each raw capture, the model performs grammar and language correction (capitalization, punctuation, filler word removal) ONLY. Strictly NO folder classification, style transformation, or color tinting is applied at this stage.
+- **FR5.3 (AI Style Re-Writer on Synthesized Notes)**: Users can re-write any synthesized note on-demand using preset style prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*). The active style is indicated with a checkmark; changing styles transitions the note to Yellow (`pending re-processing`) for local LLM re-synthesis.
 - **FR5.4 (Tier 2 — Synthesis & Single-Folder Classification)**: When notes are clustered, the LLM analyzes semantic similarity, assigns exactly one predefined folder (`Work`, `Ideas`, `Todos`, `Journal`, or fallback `Uncategorized`), and synthesizes fragments into a cohesive note. Arbitrary tag generation is strictly prohibited.
 - **FR5.5**: Output must be parsed from structured JSON format. If parsing fails, the system must fall back to a heuristic keyword classifier.
 - **FR5.6**: The system must purge the KV cache (`_llama.disposeScope()`) after every turn (`clearKvCacheEveryXTurns = 1`) to eliminate lingering RAM consumption.
@@ -204,13 +204,25 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR8.2**: The app must detect and request both Accessibility Service and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) simultaneously through an educational modal.
 - **FR8.3**: Permission status indicators across settings and alerts must use standardized **Enabled** (Green) and **Disabled** (Amber) badges.
 
-#### FR9: Capture Screen Presentation & Daily Numbering
-- **FR9.1**: Captures appear in the **Capture** stream with a neutral dark card styling (`captureCardBg`). Category folders and color tints are strictly forbidden in this view.
-- **FR9.2**: Every capture note receives a daily sequence number (`#01`, `#02`, `#03`...). The counter resets to `#01` every day at midnight.
-- **FR9.3**: Deleting a note leaves the numbering of subsequent notes intact (e.g., deleting `#02` preserves `#01`, `#03`, `#04`; gaps are explicitly allowed).
-- **FR9.4**: The card heading layout must adhere to the strict order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`. This guarantees visual horizontal alignment across read and unread notes.
-- **FR9.5**: Timestamps at the card footer must strictly display date then time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
-- **FR9.6**: Tapping `[ ✎ Edit ]` allows manual text editing; tapping `[ ✨ Style ▾ ]` opens the AI Style Re-Writer modal.
+#### FR9: Capture Screen Presentation, Status Colors & Dual Filters
+- **FR9.1 (Processing State Color Accents)**: Captures appear in the **Capture** stream with visual state color indicators (no folder category tags):
+  - **Yellow (`stateEnqueuedBg` / Amber)**: Pending audio queue processing / STT transcription.
+  - **Blue (`stateProcessedBg` / Electric Blue)**: Post-STT and language cleanup completed; awaiting session synthesis.
+  - **Green (`stateSynthesizedBg` / Emerald)**: Synthesis completed (clubbed into a synthesized session).
+  - **Red (`stateFailedBg` / Rose)**: Processing failed (with retry action).
+- **FR9.2 (Compact Dual Dropdown Filters)**:
+  - **Triage Filter Dropdown**: Dropdown filter situated above feed for `All`, `Unread`, and `Read`.
+  - **Status Filter Dropdown**: Dropdown filter situated above feed for `All Statuses`, `Processing`, `Processed`, `Synthesized`, and `Failed`.
+  - Dropdown controls preserve vertical space and ensure visual alignment with the Synthesis screen's controls.
+- **FR9.3 (Interactive Floating Capture Trigger)**:
+  - The Capture screen features an elevated floating capsule: `[ 🎙️ / Press Vol Up + Down to Capture ]` with a prominent mic icon (`20sp`) and `"/"` separator.
+  - The trigger is directly clickable in-app to start recording without physical volume buttons.
+  - While recording, the pill transforms to show an active listening loader bar / pulsating audio waveform inside the button itself with elapsed time. Tapping again stops recording, enqueuing a Yellow pending note immediately with clean SnackBar feedback: `"Captured a new note [#0X]"` (free of internal implementation or debug filler text).
+- **FR9.4**: Every capture note receives a daily sequence number (`#01`, `#02`, `#03`...). The counter resets to `#01` every day at midnight.
+- **FR9.5**: Deleting a note leaves the numbering of subsequent notes intact (e.g., deleting `#02` preserves `#01`, `#03`, `#04`; gaps are explicitly allowed).
+- **FR9.6**: The card heading layout must adhere to the strict order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`. This guarantees visual horizontal alignment across read and unread notes.
+- **FR9.7**: Timestamps at the card footer must strictly display date then time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
+- **FR9.8**: Tapping `[ ✎ Edit ]` allows manual text editing. (High-level AI Style Re-Writing is located in the Synthesis screen where final consolidated text is formed).
 
 #### FR10: Lock Screen & Notification Center Capture Trigger
 - **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
@@ -222,10 +234,13 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR11.2 (Compact Folder Filter Dropdown)**: The horizontal folder carousel is removed. The Synthesis view provides a compact folder filter dropdown (`[ 📁 Filter: All Folders ▾ ]`) situated in the section sub-header, allowing users to filter synthesized notes by predefined folder without taking up vertical screen real estate.
 - **FR11.3 (Single-Folder Badge & 1-Tap Card Reassignment)**: Each synthesized note displays its assigned folder badge (`[ 💡 Ideas ▾ ]`, `[ 💼 Work ▾ ]`). Tapping opens a quick-picker dropdown to reassign the note among the predefined folders.
 - **FR11.4**: Synthesized notes receive a sequential identifier (`#S-01`, `#S-02`), consolidated synthesis narrative, session time span (`05/11  07:10 AM - 07:45 AM`), session duration (`⏱️ 35m session`), and an expandable raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`).
-- **FR11.5 (Raw Note Ejection)**: Users can eject any raw note from a synthesized cluster via `[ ⤢ Move Out ]`, presenting two options:
-  1. *Move to another clubbed note* (select existing cluster or create new).
-  2. *Make it an independent note* (promotes into its own standalone synthesized note).
+- **FR11.5 (Raw Note Ejection & Re-Synthesis Guard)**:
+  - If a synthesized cluster contains only 1 note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden/disabled.
+  - For clusters with $\ge 2$ notes, users can eject any raw note via `[ ⤢ Move Out ]` through a clean sheet (free of debug filler instructions):
+    1. *Move to another clubbed note*: Shows a selector of available existing clubbed notes (`#S-01`, `#S-02`, etc.). Upon confirmation, **both** the source and target clubbed notes transition to Yellow (`pending re-processing`) so their synthesized text is automatically regenerated.
+    2. *Make it an independent note*: Detaches the note and creates a standalone synthesized note; the source clubbed note turns Yellow to re-synthesize without the detached thought.
 - **FR11.6 (Manual Multi-Select)**: Users can select multiple raw notes to manually trigger a synthesis turn across selected items.
+- **FR11.7 (AI Style Re-Writer)**: Synthesized notes feature an interactive `[ ✨ Style ▾ ]` action button. Tapping opens the preset style picker (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*), highlighting the currently active preset with a checkmark (`Icons.check`). Selecting a new preset flags the cluster as re-processing, transitioning its card color to Yellow (`stateEnqueuedBg`) while local LLM re-synthesis takes place.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating
 - **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
@@ -278,8 +293,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 ### A. The 4-Stage Navigation Shell
 The app shell is anchored by a persistent segmented top navigation bar across four stages:
-1. **Capture**: Unfiltered, uncolored stream of voice captures with daily numbering, audio playback, unread dots, manual editing, and AI style re-writing.
-2. **Synthesis**: Clustered session notes with a compact **Folder Filter Dropdown** (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`), 1-tap card folder reassignment, expandable origin audit drawers, and raw note ejection options.
+1. **Capture**: Unfiltered, state-coded stream of voice captures with daily numbering, audio playback, unread dots, manual editing, and compact dual dropdown filters.
+2. **Synthesis**: Clustered session notes with a compact **Folder Filter Dropdown** (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`), 1-tap card folder reassignment, on-demand AI style re-writing with active style checkmark, expandable origin audit drawers, and raw note ejection options.
 3. **Insights**: Macro-level cognitive intelligence: emotional valence heatmap, topic cognitive density treemap, and recurrent behavioral patterns.
 4. **Action**: Execution hub featuring extracted commitment checkboxes, calendar time-blocking, and external calendar sync status.
 
