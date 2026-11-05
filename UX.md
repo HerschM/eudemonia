@@ -96,11 +96,12 @@ When designing, modifying, or refactoring any screen in Eudemonia, AI agents and
 ## 3. Four-Stage Navigation Architecture & Screen Naming
 
 ### A. The Paradigm Shift: From Category Folders to Thought Maturation
-In the previous UX design, category folder pills (`Work`, `Ideas`, `Todos`, `Journal`) occupied the top bar. In the revised architecture:
-- **Top folders are completely removed**.
-- The top header features a persistent segmented navigation bar spanning the **4 stages of thought maturation**:
+In the previous UX design, category folder pills (`Work`, `Ideas`, `Todos`, `Journal`) occupied the global top bar of the home screen. In the revised architecture:
+- **Global top folders are relocated**: The app-level header now hosts the persistent 4-stage segmented bar (**`Capture`**, **`Synthesis`**, **`Insights`**, **`Action`**).
+- **Predefined Folder Taxonomy is preserved inside `Synthesis`**: The structured folder system (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`) lives directly within the **Synthesis** screen via a sleek **Folder Filter Dropdown** (e.g. `[ 📁 Filter: All Folders ▾ ]`) and card reassignment dropdowns. This eliminates heavy horizontal carousels while preserving strict Single-Folder Discipline and preventing uncontrolled, chaotic auto-tag explosion.
+- The 4 stages of thought maturation:
   1. **Capture**: Immediate, unfiltered voice captures. Speech-to-Text + grammar/filler cleanup only. Zero classification or color coding.
-  2. **Synthesis**: Clustered and classified thoughts. Disjointed thoughts recorded in a single session or semantically related are synthesized into unified notes.
+  2. **Synthesis**: Clustered and classified thoughts. Disjointed thoughts recorded in a single session or semantically related are synthesized into unified notes and assigned to one of the defined folders, with a compact folder filter dropdown.
   3. **Insights**: High-level macro views, emotion climate heatmaps, project density heatmaps, and recurring pattern dashboards.
   4. **Action**: Execution engine extracting todos, commitments, calendar time-blocks, and calendar synchronizations.
 
@@ -249,12 +250,16 @@ When the user taps `[ ✨ Style ▾ ]`, a bottom modal appears with preset conte
 
 ### Screen Overview
 The second screen in the application. Thoughts captured in close proximity or sharing strong semantic similarity are automatically clustered and synthesized into structured notes.
+- **Compact Folder Filter Dropdown (Zero Carousel Clutter)**:
+  - The heavy horizontal folder carousel is **removed** to keep the screen uncluttered and preserve vertical real estate.
+  - A compact **Folder Filter Dropdown** (`[ 📁 Filter: All Folders ▾ ]`) is positioned in the section header (similar to a read/unread triage filter), allowing users to filter synthesized notes by folder (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+  - Strict **Single-Folder Discipline**: Synthesized notes are strictly assigned to one of the predefined folders. Unconstrained auto-tagging or arbitrary tag generation is prohibited to prevent tag explosion and naming chaos.
 - **Clustering Mechanics**:
   - **Session Timestamp Proximity**: Captures occurring within a contiguous activity window (e.g., 20–45 minute morning walk, meeting, or commute).
   - **Semantic Vector Similarity**: On-device embedding / LLM similarity clustering disjointed fragments on the same topic.
 - **Clubbed Note Attributes**:
   - **Sequential Synthesis Identifier**: e.g., `#S-01`, `#S-02` (Synthesis Session #).
-  - **Topic / Domain Category Pill**: Classified into domains (e.g. `[ 💼 Work ]`, `[ 💡 Ideas ]`, `[ 🌿 Personal ]`).
+  - **Card Folder Reassignment Dropdown**: Displays assigned folder badge (e.g. `[ 💡 Ideas ▾ ]`, `[ 💼 Work ▾ ]`). Tapping opens a 1-tap quick-picker to reassign the note among the defined folders.
   - **Consolidated Synthesis**: A cohesive narrative written by the LLM merging all fragments.
   - **Footer Metadata**:
     - Creation date and time span formatted as date then times (e.g., `05/11  07:10 AM - 07:45 AM`).
@@ -276,11 +281,11 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  │   Capture (4)  [ Synthesis (2) ] Insights Action │  │ ◄── Stage Switcher (Synthesis Active)
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  SYNTHESIS SESSIONS & CLUSTERS                         │
-│                                                        │
+│  SYNTHESIS SESSIONS             [ 📁 All Folders ▾ ]   │ ◄── Compact Folder Filter Dropdown
+│                                                        │     (Clean, replaces horizontal carousel)
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ [#S-02]  [ 💡 App Ideas ]               [ ✎ Edit ]│  │ ◄── Clustered Note # + Category Badge
-│  │                                                  │  │
+│  │ [#S-02]  [ 💡 Ideas ▾ ]                  [ ✎ Edit ]│  │ ◄── Card Folder Reassignment Dropdown
+│  │                                                  │  │     (1-tap dropdown to reassign folder)
 │  │ "Consolidated architectural roadmap for local    │  │ ◄── LLM Synthesis of Morning Walk Captures
 │  │  speech clustering. Decided to separate raw      │  │
 │  │  inbox from synthesized notes to prevent clutter.│  │
@@ -301,7 +306,7 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ [#S-01]  [ 💼 Sprint Planning ]         [ ✎ Edit ]│  │
+│  │ [#S-01]  [ 💼 Work ▾ ]                   [ ✎ Edit ]│  │ ◄── Defined Folder: Work
 │  │ "Prepare quarterly deliverables before 3 PM sync"│  │
 │  │ ──────────────────────────────────────────────── │  │
 │  │ 📅 04/11  04:15 PM - 04:27 PM • ⏱️ 12m session   │  │
@@ -337,16 +342,20 @@ When tapping `[ ⤢ Move Out ]` on an origin note inside the expanded drawer:
 - **Sandbox File**: [`previews/screens/synthesis_screen_preview.dart`](file:///Users/harshmavani/Documents/Eudemonia/previews/screens/synthesis_screen_preview.dart)
 - **Production Target**: `lib/features/synthesis/presentation/synthesis_screen.dart`
 - **Key Parameters**:
+  - `String activeFolderFilter`: Selected filter from dropdown (`all`, `work`, `ideas`, `todos`, `journal`, `uncategorized`).
+  - `List<String> availableFolders`: Defined folders list (`['All Folders', 'Work', 'Ideas', 'Todos', 'Journal']`).
   - `List<SynthesisClusterItem> clusters`:
     - `String clusterId`: Unique cluster ID.
     - `String clusterSequenceNumber`: e.g. `#S-01`, `#S-02`.
-    - `String category`: e.g. `App Ideas`, `Sprint Planning`, `Personal`.
+    - `String folder`: Predefined folder (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
     - `String synthesizedContent`: Unified synthesis text.
     - `DateTime sessionStart`, `DateTime sessionEnd`: Session boundary timestamps.
     - `Duration sessionDuration`: Elapsed session length.
     - `List<RawNoteItem> originNotes`: Complete list of origin raw notes.
     - `bool isExpanded`: Controls expansion of included raw notes drawer.
   - Callbacks:
+    - `onSelectFolderFilter(folder)`: Filters synthesized sessions by folder via dropdown.
+    - `onReassignFolder(clusterId, newFolder)`: Updates folder category via 1-tap card dropdown.
     - `onToggleExpand(clusterId)`: Expands/collapses included raw notes list.
     - `onPlayRawAudio(rawNoteId)`: Plays individual audio snippet.
     - `onMoveRawNoteToCluster(rawNoteId, targetClusterId)`: Transfers raw note to another session.

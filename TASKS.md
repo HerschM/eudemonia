@@ -350,27 +350,25 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/ai_processing/model_lifecycle_manager_test.dart`
 
-- [x] **TASK-020: Language Correction & Single-Folder Classification**
+- [x] **TASK-020: Language Correction & Two-Tier Processing Foundations**
   - **Area**: `lib/features/ai_processing/note_classifier.dart`, `llm_service.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization`](./PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization) (`FR5.2 & FR5.3: Grammar cleanup, filler-word removal, strict single-folder assignment, confidence score parsing`)
-  - **Details**: Implement ChatML prompt for Qwen-2.5 1.5B GGUF with grammar cleanup, filler-word removal (*"um"*, *"like"*), strict single-folder assignment (`Work`, `Ideas`, `Todos`, `Journal`, or `Uncategorized`), and confidence score parsing.
+  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing`](./PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing) (`FR5.2: Grammar cleanup, filler-word removal, structured text cleanup`)
+  - **Details**: Implement ChatML prompt for Qwen-2.5 1.5B GGUF with grammar cleanup, filler-word removal (*"um"*, *"like"*), capitalization, and punctuation correction.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/ai_processing/note_classifier_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/note_classifier_test.dart)
       - Cases:
         1. ChatML prompt formats system, user, and assistant tokens correctly.
         2. Filler words ("um", "uh", "you know") stripped from corrected text.
-        3. Valid JSON with single folder parses into `NoteClassificationResult`.
-        4. Confidence scores parse into normalized percentages (0.0 to 1.0).
-        5. Invalid or multi-folder slash string defaults to single best folder or `Uncategorized`.
+        3. Valid JSON parses cleanly into cleaned speech result.
     - **Widget Tests**:
-      - N/A — Natural language classification logic.
+      - N/A — Natural language processing logic.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/ai_processing/note_classifier_test.dart`
 
 - [x] **TASK-021: Granular LLM Configuration & Stateless KV Cache Purging**
   - **Area**: `lib/features/ai_processing/llm_config.dart`, `llm_service.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization`](./PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization) (`FR5.4: Purge KV cache after every turn (clearKvCacheEveryXTurns = 1)`)
+  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing`](./PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing) (`FR5.6: Purge KV cache after every turn (clearKvCacheEveryXTurns = 1)`)
   - **Details**: Create `LLMConfig` defining `kvCacheMaxSize` (2048), `inputTokenLimit` (1536), and `clearKvCacheEveryXTurns` (default 1). Purge KV slot via `_llama.disposeScope()` after each turn to avoid residual RAM consumption.
   - **Verification**:
     - **Unit Tests**:
@@ -390,16 +388,14 @@
 
 - [x] **TASK-022: Heuristic Fallback Classifier**
   - **Area**: `lib/features/ai_processing/note_classifier.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization`](./PRODUCT_SPEC.md#fr5-on-device-llm-post-processing--categorization) (`FR5.3: If parsing fails or LLM is uninitialized, fall back to heuristic keyword classifier`)
+  - **Spec**: [`PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing`](./PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing) (`FR5.5: Fall back to heuristic classifier if LLM output fails to parse`)
   - **Details**: Implement keyword-based heuristic classifier used as a fallback if the LLM is uninitialized or JSON parsing fails.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/ai_processing/llm_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/llm_service_test.dart)
       - Cases:
         1. Uninitialized LLM routes text through heuristic classifier.
-        2. Meeting/project keywords classify into `Work`.
-        3. Brainstorming keywords classify into `Ideas`.
-        4. Unknown input without keywords classifies into `Uncategorized`.
+        2. Fallback handles empty or malformed strings gracefully.
     - **Widget Tests**:
       - N/A — Classification fallback logic.
     - **Integration / Command Tests**:
@@ -411,14 +407,14 @@
 
 - [x] **TASK-023: Isar Embedded Database Note Persistence**
   - **Area**: `lib/features/notes/data/note_model.dart`, `notes_repository.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr7-local-persistence`](./PRODUCT_SPEC.md#fr7-local-persistence) (`FR7.1 & FR7.2: Processed thoughts saved to Isar database; query by recency and folder`)
-  - **Details**: Create Isar `Note` schema (`id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, `originalAudioPath`) and repository with query methods.
+  - **Spec**: [`PRODUCT_SPEC.md#fr7-local-persistence`](./PRODUCT_SPEC.md#fr7-local-persistence) (`FR7.1 & FR7.2: Processed thoughts saved to Isar database; query by recency`)
+  - **Details**: Create Isar `Note` schema (`id`, `rawText`, `cleanedText`, `createdAt`, `originalAudioPath`) and repository with query methods.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/ai_processing/audio_queue_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/audio_queue_service_test.dart)
       - Cases:
-        1. Notes repository saves note object with correct text, folder, and timestamp.
-        2. Note can be retrieved by id and by folder.
+        1. Notes repository saves note object with correct text and timestamp.
+        2. Note can be retrieved by id.
     - **Widget Tests**:
       - N/A — Database repository layer.
     - **Integration / Command Tests**:
@@ -426,7 +422,7 @@
 
 - [x] **TASK-024: Real-Time Queue Badge in AppBar**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#b-core-ui-component-specifications--states`](./PRODUCT_SPEC.md#b-core-ui-component-specifications--states) (`Section 6: Pending Queue Pill (AppBar) displays X pending when count > 0; hidden when count == 0`)
+  - **Spec**: [`PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue`](./PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue) (`FR3.3: Expose real-time synchronous counts via Riverpod NotifierProvider`)
   - **Details**: Render a live `$count pending` chip with micro-spinner in the AppBar when `pendingCount > 0`. Hide when queue is empty.
   - **Verification**:
     - **Unit Tests**:
@@ -442,8 +438,8 @@
 
 - [x] **TASK-025: In-Body Processing Card**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#b-core-ui-component-specifications--states`](./PRODUCT_SPEC.md#b-core-ui-component-specifications--states) (`Section 6: In-Body Processing Banner displays Processing voice thought with active spinner above Folders`)
-  - **Details**: Render card above Folders indicating `Processing voice thought ($pendingCount pending)...` with active progress indicator while worker is active.
+  - **Spec**: [`PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture`](./PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture) (`Section 6: In-body processing card with live progress indicator`)
+  - **Details**: Render card indicating `Processing voice thought ($pendingCount pending)...` with active progress indicator while worker is active.
   - **Verification**:
     - **Unit Tests**:
       - N/A — UI presentation layer.
@@ -458,7 +454,7 @@
 
 - [x] **TASK-026: Failed Items Banner with Interactive Retry**
   - **Area**: `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#b-core-ui-component-specifications--states`](./PRODUCT_SPEC.md#b-core-ui-component-specifications--states) (`Section 6: Failed Items Retry Banner displays warning with Retry button when failedCount > 0`)
+  - **Spec**: [`PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue`](./PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue) (`FR3.4 & FR3.5: Failed items transition to failed status; retryFailed() resets back to pending`)
   - **Details**: Render warning banner when `failedCount > 0` with a **Retry** button invoking `ref.read(audioQueueServiceProvider).retryFailed()`.
   - **Verification**:
     - **Unit Tests**:
@@ -489,7 +485,7 @@
 
 - [x] **TASK-028: Rotating File Logger & In-App Telemetry Dump**
   - **Area**: `lib/core/logger/app_logger.dart`, `lib/features/settings/settings_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#b-core-ui-component-specifications--states`](./PRODUCT_SPEC.md#b-core-ui-component-specifications--states) (`Section 6: Diagnostic tools: View System Logs, Copy Diagnostic Log Dump, and Clear Logs`)
+  - **Spec**: [`PRODUCT_SPEC.md#5-scope--requirements`](./PRODUCT_SPEC.md#5-scope--requirements) (`Diagnostic logging system with 2MB rotating disk cap and in-app viewer`)
   - **Details**: Implement `AppLogger` writing triggers, transitions, and errors to `${appDocumentsDir}/logs/app_logs.txt` with a 2MB rotating cap. Add live log viewer and clipboard dump in Settings.
   - **Verification**:
     - **Unit Tests**:
@@ -506,26 +502,59 @@
 
 ---
 
-## Milestone 6: In-Scope Polish & Folder Filtering (In-Scope v1.0 Pending)
+## Milestone 6: UI/UX Component Sandbox & Four-Stage Interaction Mockups (Active & Priority)
 
-- [ ] **TASK-029: Folder-Filtered Notes Screen & Navigation**
-  - **Area**: `lib/features/home/home_screen.dart`, `lib/features/notes/`
-  - **Spec**: [`PRODUCT_SPEC.md#fr7-local-persistence`](./PRODUCT_SPEC.md#fr7-local-persistence) (`FR7.2: The notes repository must support retrieval sorted by recency and filtered by folder`) & [`PRODUCT_SPEC.md#scenario-3-feed-review--real-time-queue-observability`](./PRODUCT_SPEC.md#scenario-3-feed-review--real-time-queue-observability) (`Scenario 3: Recent thoughts appear organized with folder pills Work, Ideas, Todos, Journal`)
-  - **Details**: Implement navigation when tapping on any of the folder cards (`Ideas`, `Work`, `Journal`, `Todos`) in `HomeScreen` to display notes filtered by that selected folder, calling `notesRepository.getNotesByFolder(folder)`.
+- [ ] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
+  - **Area**: `previews/screens/capture_screen_preview.dart`, `previews/screens/synthesis_screen_preview.dart`, `previews/screens/insights_screen_preview.dart`, `previews/screens/action_screen_preview.dart`, `previews/screens/style_rewriter_preview.dart`, `previews/screens/note_ejection_preview.dart`, `previews/mock_data.dart`, `previews/gallery_shell.dart`, `previews/main_preview.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture`](./PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture) and [`UX.md`](./UX.md)
+  - **Details**:
+    1. Build isolated preview screens using typed mock data (`mock_data.dart`) with zero production boilerplate in `lib/`.
+    2. Implement `capture_screen_preview.dart`: neutral cards, daily sequence numbering (`#01`, `#02`...), header layout order `[# Number]` $\rightarrow$ `[▶ Play]` $\rightarrow$ `[• Unread]` $\rightarrow$ `[🗑️ Delete]`, `DD/MM  HH:MM AM/PM` timestamp format, manual edit trigger, and `style_rewriter_preview.dart` bottom sheet with the 6 preset context prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*).
+    3. Implement `synthesis_screen_preview.dart`: clustered session notes (`#S-01`, `#S-02`), compact Folder Filter Dropdown in header row (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`), card folder badge with 1-tap reassignment dropdown (`[ 💡 Ideas ▾ ]`), synthesis narrative, session time span and duration (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`), expandable origin raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`), and `note_ejection_preview.dart` modal offering "Move to another clubbed note" vs "Make it an independent note".
+    4. Implement `insights_screen_preview.dart`: segmented sub-view switcher across Emotional Climate Heatmap (-1.0 to +1.0 valence with 2-minute coherence breath button), Topic & Work Density matrix, and Recurrent Thought Patterns detected across sessions.
+    5. Implement `action_screen_preview.dart`: commitments todo list with checkboxes, urgency badges, time anchors (`05/11  02:00 PM`), and origin session links; Calendar Time-Block Preview schedule; Calendar Sync status card with push button.
+    6. Connect all 4 screens into `gallery_shell.dart` and `main_preview.dart` with a top stage switcher for interactive testing.
+    7. **Human Alignment & Verification Gate**: Run `flutter run -t previews/main_preview.dart` and present for user interactive review and sign-off before promoting any widgets into `lib/`.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/notes/notes_repository_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/notes_repository_test.dart)
+      - File: `test/previews/preview_mock_data_test.dart`
       - Cases:
-        1. `getNotesByFolder('Ideas')` returns only notes with folder equal to 'Ideas'.
-        2. `getNotesByFolder` returns empty list if no notes exist for folder.
+        1. Mock data supplies valid daily sequence numbers (`#01` to `#04`).
+        2. Mock clusters contain valid origin raw note references.
+        3. Style presets contain all 6 required prompts and labels.
     - **Widget Tests**:
-      - File: [`test/features/home/folder_navigation_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/folder_navigation_test.dart)
+      - File: `test/previews/preview_screens_test.dart`
       - Cases:
-        1. Tapping 'Ideas' folder card navigates to filtered screen showing 'Ideas' header.
-        2. Filtered screen displays only notes matching 'Ideas'.
-        3. Back button returns to `HomeScreen`.
+        1. All 4 preview screens render with zero framework assertions.
+        2. Capture card header ordering strictly renders `# Number` before `Play button` before `Unread dot` before `Delete`.
+        3. Capture card footer displays date then time format `DD/MM  HH:MM AM/PM`.
+        4. Synthesis screen renders compact Folder Filter Dropdown and filters clusters when a folder is selected.
+        5. Synthesis origin pill expands/collapses origin note list on tap.
+        6. Layout adapts down to 360dp narrow viewport with 0 `RenderFlex` overflows.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/home/folder_navigation_test.dart`
+      - `~/flutter/bin/flutter test test/previews/preview_screens_test.dart`
+      - `~/flutter/bin/flutter run -t previews/main_preview.dart -d macos`
+
+- [ ] **TASK-029: Four-Stage Persistent Top Navigation Bar & Screen Switcher**
+  - **Area**: `lib/features/home/home_screen.dart`, `lib/features/capture/`, `lib/features/synthesis/`, `lib/features/insights/`, `lib/features/action/`
+  - **Spec**: [`PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture`](./PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture) (`Section 6: Four-Stage Navigation Shell replacing legacy folder pills`)
+  - **Details**: Remove legacy folder pills (`All`, `Work`, `Ideas`, `Todos`, `Journal`) from the top bar. Implement a persistent segmented navigation bar (`Capture`, `Synthesis`, `Insights`, `Action`) that switches views seamlessly.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: `test/features/navigation/stage_navigation_test.dart`
+      - Cases:
+        1. Default stage is `Capture`.
+        2. Switching stages updates active stage provider state synchronously.
+    - **Widget Tests**:
+      - File: `test/features/home/stage_switcher_ui_test.dart`
+      - Cases:
+        1. Persistent top bar renders 4 stage tabs: Capture, Synthesis, Insights, Action.
+        2. Tapping Synthesis tab switches active view to Synthesis screen.
+        3. Tapping Insights tab switches active view to Insights screen.
+        4. Tapping Action tab switches active view to Action screen.
+        5. Active tab is visually highlighted.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/home/stage_switcher_ui_test.dart`
 
 - [ ] **TASK-030: Automated Capture Latency (<5ms Budget) Benchmark Verification**
   - **Area**: `test/benchmark/capture_latency_benchmark_test.dart`, `lib/features/ai_processing/batch_pipeline_service.dart`
@@ -533,7 +562,7 @@
   - **Details**: Implement automated benchmark test measuring elapsed duration from `stopRecordingAndProcess()` trigger call to queue handoff completion, asserting execution completes in under 5ms.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/benchmark/capture_latency_benchmark_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/benchmark/capture_latency_benchmark_test.dart)
+      - File: `test/benchmark/capture_latency_benchmark_test.dart`
       - Cases:
         1. Measures 100 iterations of `stopRecordingAndProcess()`.
         2. Computes P95 and asserts P95 duration is strictly < 5 milliseconds.
@@ -544,7 +573,7 @@
 
 ---
 
-## Milestone 7: Thought Lifecycle & Feed State Transparency (In-Scope Pending)
+## Milestone 7: Thought Lifecycle & Feed State Transparency (In-Scope v1.0)
 
 - [x] **TASK-031: Persistent Queue Hydration & Cold-Start State Recovery**
   - **Area**: `lib/features/ai_processing/audio_queue_service.dart`, `lib/features/home/home_screen.dart`
@@ -567,8 +596,8 @@
 
 - [x] **TASK-032: Optimistic Capture Feed Item & Audio Playback Integration**
   - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.1: Optimistically insert entry with pastel yellow background, FR9.2: Leading audio playback button`)
-  - **Details**: When a recording completes, immediately insert a placeholder note row with current timestamp, pastel yellow background (`#FEF3C7` / `#78350F`), and animated shimmer text. Replace the 3-line icon on the left with an interactive `[ ▶ Play Audio ]` button allowing immediate playback of raw PCM/WAV audio while processing.
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering) (`FR9: Immediate audio playback button adjacent to note number`)
+  - **Details**: When a recording completes, immediately insert placeholder note row with current timestamp and animated shimmer text. Include an interactive `[ ▶ Play Audio ]` button allowing immediate playback of raw PCM/WAV audio while processing.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/notes/note_lifecycle_model_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_lifecycle_model_test.dart)
@@ -578,16 +607,16 @@
     - **Widget Tests**:
       - File: [`test/features/home/feed_immediate_hydration_and_playback_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/feed_immediate_hydration_and_playback_test.dart)
       - Cases:
-        1. Enqueued audio immediately renders pastel yellow card in feed with audio playback button without restart.
-        2. Processing completion replaces enqueued placeholder with processed note without restart.
+        1. Enqueued audio immediately renders card in feed with audio playback button without restart.
+        2. Processing completion replaces enqueued placeholder with cleaned note without restart.
         3. Tapping play audio button triggers audio playback controller.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/feed_immediate_hydration_and_playback_test.dart`
 
 - [x] **TASK-033: Processed Blue & Failed Red Card States with Failure Handling**
   - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.3: Transition to soft blue upon completion, FR9.6: Failed red state with playable audio and 1-tap retry, dedicated Failed filter chip, no top banner`)
-  - **Details**: Implement dynamic card transition from Yellow to Soft Blue (`#DBEAFE` / `#1E3A8A`) upon successful STT and categorization. If inference fails, transition to Soft Red (`#FEE2E2` / `#7F1D1D`), display explicit error reason directly in the entry, preserve raw audio playback, and provide a 1-tap `Retry` button. Remove top failed banner and provide dedicated `Failed` filter chip.
+  - **Spec**: [`PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue`](./PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue) (`FR3.4: Failed item failure handling, retry trigger, preserve playable audio`)
+  - **Details**: Implement dynamic card transition upon completion. If inference fails, display explicit error reason directly in the entry, preserve raw audio playback, and provide a 1-tap `Retry` button.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/notes/note_state_transition_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_state_transition_test.dart)
@@ -598,48 +627,42 @@
     - **Widget Tests**:
       - File: [`test/features/home/feed_immediate_hydration_and_playback_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/feed_immediate_hydration_and_playback_test.dart)
       - Cases:
-        1. Processed thought card displays soft blue background and folder badge without restart.
-        2. Failed thought card displays soft red background and `Retry` button inside card with no top banner.
-        3. `Failed` filter chip isolates failed thoughts in feed.
+        1. Processed thought card displays cleaned text without restart.
+        2. Failed thought card displays `Retry` button inside card with no top banner.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/feed_immediate_hydration_and_playback_test.dart`
 
-- [x] **TASK-034: Inline Text Editing & 1-Tap Category Dropdown Reassignment**
+- [x] **TASK-034: Inline Text Editing & Manual Card Updates**
   - **Area**: `lib/features/notes/presentation/thought_card.dart`, `lib/features/notes/notes_repository.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.4: Category dropdown reassignment, FR9.5: Inline text editing`)
-  - **Details**: Add an inline editing mode or quick-sheet on thought cards allowing direct text edits saved to Isar database. Add a dropdown/picker to the category badge (`[ 💼 Work ▾ ]`) to reassign the folder in 1 tap.
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering) (`FR9.6: Manual text editing on capture cards`)
+  - **Details**: Add an inline editing mode or quick-sheet on thought cards allowing direct text edits saved to Isar database.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/notes/notes_repository_edit_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/notes_repository_edit_test.dart)
       - Cases:
         1. `updateNoteText(id, newText)` persists updated text to database.
-        2. `updateNoteFolder(id, newFolder)` persists updated folder to database.
     - **Widget Tests**:
       - File: [`test/features/home/thought_card_interaction_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/thought_card_interaction_test.dart)
       - Cases:
         1. Tapping edit icon toggles inline text editor and saves changes on submit.
-        2. Tapping category badge opens category dropdown picker.
-        3. Selecting new category invokes update callback and updates pill label.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/thought_card_interaction_test.dart`
 
-- [x] **TASK-035: Unread / Viewed Thought Status Tracking & Triage Filter**
+- [x] **TASK-035: Unread / Viewed Thought Status Tracking & Indicator Dot**
   - **Area**: `lib/features/notes/note_model.dart`, `lib/features/home/home_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation`](./PRODUCT_SPEC.md#fr9-thought-lifecycle-states--feed-presentation) (`FR9.7: isRead/isViewed flag, electric blue unread dot, unread filter chip`)
-  - **Details**: Add `isRead` boolean field to Note model (default: false). Render a subtle electric blue indicator dot (`•`) on unreviewed cards. Add an `Unread (X)` filter chip to the top carousel that isolates unread items. Tapping a card marks it as read.
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation--daily-numbering) (`FR9.4: Header layout ordering with electric blue unread dot`)
+  - **Details**: Add `isRead` boolean field to Note model (default: false). Render a subtle electric blue indicator dot (`•`) following the play button on unreviewed cards. Tapping card marks as read.
   - **Verification**:
     - **Unit Tests**:
       - File: [`test/features/notes/note_read_status_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/note_read_status_test.dart)
       - Cases:
         1. New notes are created with `isRead = false`.
         2. `markAsRead(id)` updates note in database.
-        3. `getUnreadNotes()` queries only notes where `isRead == false`.
     - **Widget Tests**:
       - File: [`test/features/home/unread_triage_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/unread_triage_test.dart)
       - Cases:
-        1. Unread cards display electric blue dot beside timestamp.
+        1. Unread cards display electric blue dot.
         2. Tapping unread card clears indicator dot.
-        3. Selecting `Unread` filter chip shows only unread notes.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/unread_triage_test.dart`
 
@@ -684,7 +707,7 @@
   - **Details**: Implement platform channel querying Android `PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`. In `AudioQueueService`, never block STT; defer heavy LLM classification into an adaptive backoff queue when device is hot (`THERMAL_STATUS_SEVERE`) or RAM <300MB, auto-resuming when cool.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/ai_processing/thermal_gated_queue_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/thermal_gated_queue_test.dart)
+      - File: `test/features/ai_processing/thermal_gated_queue_test.dart`
       - Cases:
         1. Queue executes STT transcription regardless of thermal status.
         2. Severe thermal status pauses LLM classification step and marks item cooling.
@@ -700,12 +723,12 @@
   - **Details**: Render animated sparkline charts in Settings showing real 24-hour battery consumption attributed to Eudemonia (<2.5% benchmark) and RAM lifecycle timeline showing baseline (<60MB), sequential load spikes (~1.6GB), and eviction drops.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/settings/telemetry_data_source_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/telemetry_data_source_test.dart)
+      - File: `test/features/settings/telemetry_data_source_test.dart`
       - Cases:
         1. Telemetry repository records timestamped memory samples.
         2. Computes 24h battery usage percentage from power manager stats.
     - **Widget Tests**:
-      - File: [`test/features/settings/telemetry_charts_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/telemetry_charts_ui_test.dart)
+      - File: `test/features/settings/telemetry_charts_ui_test.dart`
       - Cases:
         1. Battery sparkline renders within container bounds on 360dp screens.
         2. Memory lifecycle curve displays baseline and peak annotations.
@@ -714,15 +737,15 @@
 
 ---
 
-## Milestone 9: Thought Synthesis & Clustering Engine (In-Scope Pending)
+## Milestone 9: Synthesis, Clustering & Raw Note Ejection (In-Scope Pending)
 
-- [ ] **TASK-040: Recency & Context-Aware Auto-Clubbing Pipeline**
+- [ ] **TASK-040: Session-Proximity & Semantic Auto-Clubbing Pipeline**
   - **Area**: `lib/features/ai_processing/note_clustering_service.dart`, `lib/features/ai_processing/batch_pipeline_service.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.1: Auto-clubbing of consecutive disjoint recordings within temporal window`)
-  - **Details**: Implement clustering service that checks recent thoughts within 45 minutes for semantic continuity. If topic affinity is confirmed by on-device LLM, synthesizes a consolidated note while preserving origin sub-note IDs.
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering`](./PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering) (`FR11.1: Auto-clubbing of disjoint recordings within temporal session window`)
+  - **Details**: Implement clustering service that checks recent thoughts within 15-45 minutes for semantic continuity. If topic affinity is confirmed by on-device LLM, synthesizes a consolidated note (`#S-01`) while preserving origin raw note references.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/ai_processing/note_clustering_service_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/note_clustering_service_test.dart)
+      - File: `test/features/ai_processing/note_clustering_service_test.dart`
       - Cases:
         1. Notes outside temporal window (>45m) are not auto-clubbed.
         2. Two notes with high contextual overlap are clustered into a synthesized note.
@@ -733,17 +756,17 @@
       - `~/flutter/bin/flutter test test/features/ai_processing/note_clustering_service_test.dart`
 
 - [ ] **TASK-041: Multi-Select Mode & Manual "Club Thoughts" Action**
-  - **Area**: `lib/features/home/home_screen.dart`, `lib/features/notes/presentation/multi_select_action_bar.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.4: Manual multi-select mode with floating Club Thoughts action`)
-  - **Details**: Implement long-press selection mode on thought cards. Display circular selection checkboxes and bottom floating bar: `[ X Selected ] [ 🧩 Club Thoughts ]`. Tapping button invokes LLM synthesis turn across selected thoughts.
+  - **Area**: `lib/features/capture/presentation/multi_select_action_bar.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering`](./PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering) (`FR11: Manual multi-select mode with floating Club Thoughts action`)
+  - **Details**: Implement long-press selection mode on capture cards. Display circular selection checkboxes and bottom floating bar: `[ X Selected ] [ 🧩 Club Thoughts ]`. Tapping button invokes LLM synthesis turn across selected thoughts.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/notes/multi_select_coordinator_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/multi_select_coordinator_test.dart)
+      - File: `test/features/notes/multi_select_coordinator_test.dart`
       - Cases:
         1. Toggling note selection adds/removes ID from active selection set.
         2. Clearing selection exits selection mode.
     - **Widget Tests**:
-      - File: [`test/features/home/multi_select_action_bar_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/multi_select_action_bar_test.dart)
+      - File: `test/features/home/multi_select_action_bar_test.dart`
       - Cases:
         1. Long pressing thought card renders selection checkboxes.
         2. Floating bar displays count of selected items.
@@ -751,36 +774,37 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/home/multi_select_action_bar_test.dart`
 
-- [ ] **TASK-042: Sage Green Synthesized Thought Card & Origin Audit View**
-  - **Area**: `lib/features/notes/presentation/synthesized_thought_card.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing`](./PRODUCT_SPEC.md#fr11-thought-synthesis--clustering-clubbing) (`FR11.2: Sage green card, FR11.3: Origin audit view preserving sub-notes and audio`)
-  - **Details**: Build presentational widget for clubbed thoughts using sage green token (`#DCFCE7` / `#14532D`). Include expandable accordion displaying all origin raw thoughts, their individual timestamps, and audio playback buttons.
+- [ ] **TASK-042: Synthesis Card, Origin Audit Drawer & Raw Note Ejection**
+  - **Area**: `lib/features/synthesis/presentation/synthesis_card.dart`, `lib/features/synthesis/presentation/note_ejection_modal.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering`](./PRODUCT_SPEC.md#fr11-synthesis--session-based-clustering) (`FR11.2: Synthesis note presentation, FR11.3: Origin audit view, FR11.4: Raw note ejection`)
+  - **Details**: Build presentational widget for synthesized notes (`#S-01`, predefined folder badge `[ 💡 Ideas ▾ ]` with 1-tap reassignment dropdown, consolidated summary, session time span, duration). Include expandable raw notes count drawer (`[ 🧩 3 Raw Notes ▾ ]`). Inside expanded drawer, add `[ ⤢ Move Out ]` button presenting dialog to (1) Move to another clubbed note or (2) Make it an independent synthesized note.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/notes/synthesized_note_model_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/synthesized_note_model_test.dart)
+      - File: `test/features/synthesis/synthesis_model_test.dart`
       - Cases:
-        1. Synthesized note holds references to list of child note IDs.
-        2. Origin child notes retain original audio paths and timestamps.
+        1. Synthesized cluster holds references to list of origin raw notes.
+        2. Ejecting raw note removes reference and triggers cluster re-synthesis.
+        3. Promoting raw note to independent note creates standalone synthesized entry.
     - **Widget Tests**:
-      - File: [`test/features/notes/synthesized_thought_card_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/synthesized_thought_card_test.dart)
+      - File: `test/features/synthesis/synthesis_card_test.dart`
       - Cases:
-        1. Renders sage green background and `[ 🧩 Clubbed Note ]` badge.
-        2. Tapping origin accordion expands list of constituent thoughts.
-        3. Sub-thought audio buttons trigger respective audio playback.
+        1. Renders synthesis note with #S-01 badge, predefined folder pill, and session duration.
+        2. Tapping raw notes pill expands list of origin thoughts.
+        3. Tapping "Move Out" opens ejection modal with two distinct actions.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/notes/synthesized_thought_card_test.dart`
+      - `~/flutter/bin/flutter test test/features/synthesis/synthesis_card_test.dart`
 
 ---
 
-## Milestone 10: The Action Engine & Emotional Climate (In-Scope Pending)
+## Milestone 10: Action Engine & Insights Dashboards (In-Scope Pending)
 
 - [ ] **TASK-043: Action Item & Commitment Extraction Pipeline**
-  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `lib/features/notes/action_item_model.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments) (`FR14.1: Extract action items, due dates, urgency`)
-  - **Details**: Enhance LLM prompt schema to extract actionable commitments, detecting task description, temporal anchors (due date/time), and urgency level (Normal, High). Store extracted tasks in Isar database linked to origin note.
+  - **Area**: `lib/features/ai_processing/action_extractor.dart`, `lib/features/action/action_item_model.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--calendar-time-blocking`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--calendar-time-blocking) (`FR14.1: Extract action items, due dates, urgency`)
+  - **Details**: Enhance LLM prompt schema to extract actionable commitments during synthesis, detecting task description, temporal anchors (due date/time e.g. `05/11  02:00 PM`), and urgency level (Normal, High). Store extracted tasks in Isar database linked to origin session.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/ai_processing/action_item_extraction_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/action_item_extraction_test.dart)
+      - File: `test/features/ai_processing/action_item_extraction_test.dart`
       - Cases:
         1. Parses structured JSON response extracting task description and temporal anchor.
         2. Classifies urgent tasks with High urgency flag.
@@ -790,32 +814,32 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/ai_processing/action_item_extraction_test.dart`
 
-- [ ] **TASK-044: Action Center UI & Local Reminder Dispatch**
-  - **Area**: `lib/features/notes/presentation/action_center_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--commitments) (`FR14.2: Action center with checkboxes and local calendar/reminder intent`)
-  - **Details**: Implement Action Center screen displaying pending commitments with checkboxes, urgency tags, and origin thought links. Include 1-tap dispatch to Android system calendar/reminders via local intent.
+- [ ] **TASK-044: Action Screen UI, Calendar Time-Blocking & Calendar Sync**
+  - **Area**: `lib/features/action/presentation/action_screen.dart`, `lib/features/settings/calendar_sync_service.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr14-the-action-engine-tasks--calendar-time-blocking`](./PRODUCT_SPEC.md#fr14-the-action-engine-tasks--calendar-time-blocking) (`FR14.2: Action screen with checkboxes and calendar time-blocks, FR14.3: Calendar sync status and push`)
+  - **Details**: Implement Action screen displaying pending commitments with checkboxes, urgency tags, and origin thought links. Include visual calendar time-block timeline and 1-tap `[ 📅 Push to Calendar ]` action. Reflect calendar sync status from Settings.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/notes/action_repository_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/action_repository_test.dart)
+      - File: `test/features/action/action_repository_test.dart`
       - Cases:
         1. Toggling checkbox updates `isCompleted` in local database.
-        2. Filters pending versus completed actions.
+        2. Generates time blocks from task temporal anchors.
     - **Widget Tests**:
-      - File: [`test/features/notes/action_center_ui_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/action_center_ui_test.dart)
+      - File: `test/features/action/action_screen_test.dart`
       - Cases:
         1. Renders pending task cards with date tags and urgency chips.
         2. Tapping checkbox marks task completed with strikethrough styling.
-        3. Tapping calendar icon fires intent dispatch callback.
+        3. Calendar status card displays connected status and settings shortcut.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/notes/action_center_ui_test.dart`
+      - `~/flutter/bin/flutter test test/features/action/action_screen_test.dart`
 
 - [ ] **TASK-045: Journal Emotional Valence & Cognitive Energy Scoring**
-  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `lib/features/notes/mind_climate_model.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap`](./PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap) (`FR15.1: Valence -1.0 to +1.0 and cognitive energy scoring for Journal entries`)
-  - **Details**: In `NoteClassifier`, evaluate thoughts assigned to `Journal` category for psychological valence (-1.0 to +1.0) and cognitive energy (Low/High). Store scoring in note metadata.
+  - **Area**: `lib/features/ai_processing/note_classifier.dart`, `lib/features/insights/mind_climate_model.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr15-insights-hub-cognitive-climate--recurrent-patterns`](./PRODUCT_SPEC.md#fr15-insights-hub-cognitive-climate--recurrent-patterns) (`FR15.1: Valence -1.0 to +1.0 and cognitive energy scoring`)
+  - **Details**: Evaluate reflective thoughts for psychological valence (-1.0 to +1.0) and cognitive energy (Low/High). Store scoring in note metadata for aggregation in Insights.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/ai_processing/valence_scoring_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/valence_scoring_test.dart)
+      - File: `test/features/ai_processing/valence_scoring_test.dart`
       - Cases:
         1. Extracts valence float between -1.0 and +1.0 from structured output.
         2. Assigns `CognitiveEnergy.high` for creative breakthroughs or energized speech.
@@ -825,21 +849,21 @@
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/ai_processing/valence_scoring_test.dart`
 
-- [ ] **TASK-046: Mind Climate Heatmap Visualizer**
-  - **Area**: `lib/features/notes/presentation/mind_climate_screen.dart`
-  - **Spec**: [`PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap`](./PRODUCT_SPEC.md#fr15-the-emotional-climate--mind-heatmap) (`FR15.2: Weekly/monthly emotional transition heatmap`)
-  - **Details**: Build Mind Climate screen rendering a weekly/monthly calendar heatmap color-coded by daily emotional valence (Green = Constructive/Joy, Yellow = Neutral, Violet = Depleted/Frustrated). Include daily energy breakdown and 1-tap 2-minute Coherence Breathing button.
+- [ ] **TASK-046: Insights Hub Visualizers (Valence Heatmap, Topic Density Matrix, Recurrent Pattern Dashboard)**
+  - **Area**: `lib/features/insights/presentation/insights_screen.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr15-insights-hub-cognitive-climate--recurrent-patterns`](./PRODUCT_SPEC.md#fr15-insights-hub-cognitive-climate--recurrent-patterns) (`FR15.2: Weekly/monthly emotional transition heatmap, topic density, recurrent patterns`)
+  - **Details**: Build Insights screen with sub-view switcher across (1) Weekly/Monthly emotional valence heatmap with 2-minute Coherence Breathing button, (2) Topic cognitive load treemap, and (3) Recurrent pattern and habit loop detector.
   - **Verification**:
     - **Unit Tests**:
-      - File: [`test/features/notes/mind_climate_calculator_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/mind_climate_calculator_test.dart)
+      - File: `test/features/insights/insights_calculator_test.dart`
       - Cases:
         1. Aggregates daily thought valence into average daily score.
-        2. Identifies dominant weekly cognitive climate.
+        2. Detects recurrent keywords across disjoint sessions over time.
     - **Widget Tests**:
-      - File: [`test/features/notes/mind_climate_screen_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/mind_climate_screen_test.dart)
+      - File: `test/features/insights/insights_screen_test.dart`
       - Cases:
         1. Renders 7-day calendar row with color-coded valence chips.
-        2. Tapping a day chip displays thoughts captured on that day.
+        2. Sub-view switcher toggles between Emotion Map, Topic Density, and Recurrent Loops.
         3. Tapping Coherence Breath button triggers breathing session callback.
     - **Integration / Command Tests**:
-      - `~/flutter/bin/flutter test test/features/notes/mind_climate_screen_test.dart`
+      - `~/flutter/bin/flutter test test/features/insights/insights_screen_test.dart`
