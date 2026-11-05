@@ -259,3 +259,27 @@
   2. **Dedicated Audio Channel & FileDescriptor**: Extracted `com.eudemonia/audio_playback` with its own platform channel handler. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }` with speech `AudioAttributes`, ensuring robust audio playback without sandbox permission failures.
   3. **In-Card Failure Presentation & Responsive Failed Chip**: Removed the top error banner. Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`). Placed `Recent Thoughts` heading and an adaptive, horizontally scrollable chip row (`All`, `Unread`, `Failed`) to prevent `RenderFlex` overflows on any device viewport.
 
+### 12. Four-Stage Cognitive Maturation Architecture Sandbox & Isolated Mockups (`previews/`)
+- **Symptom / Context**: The legacy single-feed UI placed category-folder pills horizontally across the top, forcing immediate categorization and cluttering rapid raw voice capture. Furthermore, users needed a clear maturation lifecycle from disjoint raw walk captures to synthesised clusters, emotional/topic insights, and calendar/todo action items.
+- **Architecture & Mechanics**:
+  1. **Isolated Preview Sandbox (`previews/`)**: Built completely in `previews/` with zero production boilerplate in `lib/`, rendering typed mock data (`MockData`) with `PreviewTheme` (OLED dark design tokens).
+  2. **Stage 1 — Capture (`CaptureScreenPreview`)**:
+     - Raw, uncategorized stream with daily sequence numbering resetting every midnight (`#01`, `#02`...).
+     - Strict header layout sequence to preserve consistent horizontal alignment across read and unread cards: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`.
+     - Timestamp displayed as Date then Time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
+     - Action controls: Manual text edit and AI Style Re-Writer modal offering 6 preset context prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*).
+  3. **Stage 2 — Synthesis (`SynthesisScreenPreview`)**:
+     - Clusters raw notes captured across a temporal session into consolidated notes (`#S-01`, `#S-02`) with duration metadata (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`).
+     - Enforces strict **Single-Folder Discipline** (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+     - Replaced horizontal folder carousel with a compact **Folder Filter Dropdown** in the section header, paired with 1-tap folder reassignment dropdown on each card.
+     - Expandable origin notes pill (`[ 🧩 3 Raw Notes Included ▾ ]`) revealing source raw audio and an ejection modal (`note_ejection_preview.dart`) with options to "Move to another clubbed note" or "Make it an independent note".
+  4. **Stage 3 — Insights (`InsightsScreenPreview`)**:
+     - Segmented sub-view switcher across Emotional Climate Heatmap (7-day valence from -1.0 to +1.0 with 2-minute coherence breath exercise), Topic Density distribution, and Recurrent Thought Loops.
+  5. **Stage 4 — Action (`ActionScreenPreview`)**:
+     - Commitments todo list with interactive checkboxes, urgency chips (`⚡ High Urgency`), temporal anchors (`05/11  02:00 PM`), and origin cluster references.
+     - Calendar Time-Block schedule preview with `[ 📅 Push to Calendar ]` action.
+     - Calendar synchronization status card (`Device Calendar: Connected (Personal)`).
+  6. **Viewport Hardening (360dp Narrow Screens)**:
+     - Wrapped header metadata, actions, and chip rows in responsive `Wrap` and `SingleChildScrollView(scrollDirection: Axis.horizontal)` widgets.
+     - Verified with 0 `RenderFlex` overflows and 0 framework assertions under automated widget testing.
+

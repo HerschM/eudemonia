@@ -504,7 +504,7 @@
 
 ## Milestone 6: UI/UX Component Sandbox & Four-Stage Interaction Mockups (Active & Priority)
 
-- [ ] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
+- [/] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
   - **Area**: `previews/screens/capture_screen_preview.dart`, `previews/screens/synthesis_screen_preview.dart`, `previews/screens/insights_screen_preview.dart`, `previews/screens/action_screen_preview.dart`, `previews/screens/style_rewriter_preview.dart`, `previews/screens/note_ejection_preview.dart`, `previews/mock_data.dart`, `previews/gallery_shell.dart`, `previews/main_preview.dart`
   - **Spec**: [`PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture`](./PRODUCT_SPEC.md#6-user-experience-ux--four-stage-interaction-architecture) and [`UX.md`](./UX.md)
   - **Details**:
