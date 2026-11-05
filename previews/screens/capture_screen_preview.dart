@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../mock_data.dart';
 import '../preview_theme.dart';
-import 'style_rewriter_preview.dart';
 
 class CaptureScreenPreview extends StatefulWidget {
   final List<MockCaptureNote>? initialNotes;
@@ -13,14 +12,15 @@ class CaptureScreenPreview extends StatefulWidget {
   State<CaptureScreenPreview> createState() => _CaptureScreenPreviewState();
 }
 
-class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with SingleTickerProviderStateMixin {
+class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
+    with SingleTickerProviderStateMixin {
   late List<MockCaptureNote> _notes;
   String? _currentlyPlayingId;
 
-  // Filter 1: Read / Unread
+  // Filter 1: Read / Unread Dropdown
   String _readFilter = 'All'; // 'All', 'Unread', 'Read'
 
-  // Filter 2: Processing Status
+  // Filter 2: Processing Status Dropdown
   String _statusFilter = 'All'; // 'All', 'Processing', 'Processed', 'Synthesized', 'Failed'
 
   // Floating Soft Capture Button state
@@ -119,18 +119,21 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: PreviewTheme.textSecondary)),
+            child: const Text('Cancel',
+                style: TextStyle(color: PreviewTheme.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: PreviewTheme.accentAction,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
               setState(() {
                 final index = _notes.indexWhere((n) => n.id == note.id);
                 if (index != -1) {
-                  _notes[index] = _notes[index].copyWith(cleanedText: controller.text);
+                  _notes[index] =
+                      _notes[index].copyWith(cleanedText: controller.text);
                 }
               });
               Navigator.pop(context);
@@ -139,25 +142,6 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
           ),
         ],
       ),
-    );
-  }
-
-  void _openStyleRewriter(MockCaptureNote note) {
-    StyleRewriterModal.show(
-      context,
-      note: note,
-      onSelectPreset: (preset) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Applying style "${preset.name}" to ${note.formattedSequence}...',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 
@@ -171,7 +155,9 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
         _waveformController.stop();
         _waveformController.reset();
         // Enqueue new Yellow pending note at top
-        final newSeq = _notes.isEmpty ? 1 : (_notes.map((n) => n.dailySequenceNumber).reduce(math.max) + 1);
+        final newSeq = _notes.isEmpty
+            ? 1
+            : (_notes.map((n) => n.dailySequenceNumber).reduce(math.max) + 1);
         final newNote = MockCaptureNote(
           id: 'note_${DateTime.now().millisecondsSinceEpoch}',
           dailySequenceNumber: newSeq,
@@ -188,7 +174,7 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
           SnackBar(
             backgroundColor: PreviewTheme.surfaceElevated,
             content: Text(
-              'Captured new note [#0$newSeq]. Enqueued as Yellow pending note.',
+              'Captured a new note [#${newSeq.toString().padLeft(2, '0')}]',
               style: const TextStyle(color: PreviewTheme.textPrimary),
             ),
           ),
@@ -204,9 +190,12 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
           (_readFilter == 'Read' && !note.isUnread);
 
       final matchesStatus = _statusFilter == 'All' ||
-          (_statusFilter == 'Processing' && note.status == MockNoteStatus.pending) ||
-          (_statusFilter == 'Processed' && note.status == MockNoteStatus.processed) ||
-          (_statusFilter == 'Synthesized' && note.status == MockNoteStatus.synthesized) ||
+          (_statusFilter == 'Processing' &&
+              note.status == MockNoteStatus.pending) ||
+          (_statusFilter == 'Processed' &&
+              note.status == MockNoteStatus.processed) ||
+          (_statusFilter == 'Synthesized' &&
+              note.status == MockNoteStatus.synthesized) ||
           (_statusFilter == 'Failed' && note.status == MockNoteStatus.failed);
 
       return matchesRead && matchesStatus;
@@ -225,7 +214,7 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
           ListView(
             padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 96.0),
             children: [
-              // Dual Filter Bar
+              // Compact Dual Dropdown Filter Bar
               _buildFilterSection(),
               const SizedBox(height: 12),
 
@@ -266,7 +255,8 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                   alignment: Alignment.center,
                   child: const Text(
                     'No thoughts matching active filters',
-                    style: TextStyle(color: PreviewTheme.textTertiary, fontSize: 13),
+                    style: TextStyle(
+                        color: PreviewTheme.textTertiary, fontSize: 13),
                   ),
                 )
               else
@@ -291,103 +281,131 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
   }
 
   Widget _buildFilterSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
       children: [
-        // Filter 1: Read / Unread Filter
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              const Text(
-                'TRIAGE:',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
-                  color: PreviewTheme.textTertiary,
-                ),
+        // Dropdown 1: Triage Filter (All, Unread, Read)
+        Container(
+          key: const Key('capture_triage_filter_dropdown'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: PreviewTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
+            border: Border.all(color: PreviewTheme.borderSubtle),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _readFilter,
+              dropdownColor: PreviewTheme.surfaceElevated,
+              isDense: true,
+              icon: const Icon(Icons.arrow_drop_down,
+                  color: PreviewTheme.accentAction, size: 20),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: PreviewTheme.textPrimary,
               ),
-              const SizedBox(width: 8),
-              _buildFilterChip('All', _readFilter == 'All', (val) {
-                if (val) setState(() => _readFilter = 'All');
-              }, const Key('filter_read_all')),
-              const SizedBox(width: 6),
-              _buildFilterChip('Unread', _readFilter == 'Unread', (val) {
-                if (val) setState(() => _readFilter = 'Unread');
-              }, const Key('filter_read_unread')),
-              const SizedBox(width: 6),
-              _buildFilterChip('Read', _readFilter == 'Read', (val) {
-                if (val) setState(() => _readFilter = 'Read');
-              }, const Key('filter_read_read')),
-            ],
+              items: const ['All', 'Unread', 'Read'].map((triage) {
+                return DropdownMenuItem<String>(
+                  value: triage,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        triage == 'Unread'
+                            ? Icons.mark_email_unread_outlined
+                            : (triage == 'Read'
+                                ? Icons.drafts_outlined
+                                : Icons.visibility_outlined),
+                        size: 14,
+                        color: triage == _readFilter
+                            ? PreviewTheme.accentAction
+                            : PreviewTheme.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text('Triage: $triage'),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _readFilter = val);
+              },
+            ),
           ),
         ),
-        const SizedBox(height: 8),
 
-        // Filter 2: Processing Status Filter
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              const Text(
-                'STATE:',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
-                  color: PreviewTheme.textTertiary,
-                ),
+        // Dropdown 2: State Filter (All, Processing, Processed, Synthesized, Failed)
+        Container(
+          key: const Key('capture_status_filter_dropdown'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: PreviewTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
+            border: Border.all(color: PreviewTheme.borderSubtle),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _statusFilter,
+              dropdownColor: PreviewTheme.surfaceElevated,
+              isDense: true,
+              icon: const Icon(Icons.arrow_drop_down,
+                  color: PreviewTheme.accentAction, size: 20),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: PreviewTheme.textPrimary,
               ),
-              const SizedBox(width: 8),
-              _buildFilterChip('All', _statusFilter == 'All', (val) {
-                if (val) setState(() => _statusFilter = 'All');
-              }, const Key('filter_status_all')),
-              const SizedBox(width: 6),
-              _buildFilterChip('Processing', _statusFilter == 'Processing', (val) {
-                if (val) setState(() => _statusFilter = 'Processing');
-              }, const Key('filter_status_processing'), color: PreviewTheme.accentWarning),
-              const SizedBox(width: 6),
-              _buildFilterChip('Processed', _statusFilter == 'Processed', (val) {
-                if (val) setState(() => _statusFilter = 'Processed');
-              }, const Key('filter_status_processed'), color: PreviewTheme.accentAction),
-              const SizedBox(width: 6),
-              _buildFilterChip('Synthesized', _statusFilter == 'Synthesized', (val) {
-                if (val) setState(() => _statusFilter = 'Synthesized');
-              }, const Key('filter_status_synthesized'), color: PreviewTheme.accentCapture),
-              const SizedBox(width: 6),
-              _buildFilterChip('Failed', _statusFilter == 'Failed', (val) {
-                if (val) setState(() => _statusFilter = 'Failed');
-              }, const Key('filter_status_failed'), color: PreviewTheme.accentError),
-            ],
+              items: const [
+                'All',
+                'Processing',
+                'Processed',
+                'Synthesized',
+                'Failed',
+              ].map((status) {
+                Color statusColor;
+                IconData statusIcon;
+                switch (status) {
+                  case 'Processing':
+                    statusColor = PreviewTheme.accentWarning;
+                    statusIcon = Icons.hourglass_top;
+                    break;
+                  case 'Processed':
+                    statusColor = PreviewTheme.accentAction;
+                    statusIcon = Icons.chat_bubble_outline;
+                    break;
+                  case 'Synthesized':
+                    statusColor = PreviewTheme.accentCapture;
+                    statusIcon = Icons.auto_awesome;
+                    break;
+                  case 'Failed':
+                    statusColor = PreviewTheme.accentError;
+                    statusIcon = Icons.error_outline;
+                    break;
+                  default:
+                    statusColor = PreviewTheme.textSecondary;
+                    statusIcon = Icons.layers_outlined;
+                }
+                return DropdownMenuItem<String>(
+                  value: status,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(statusIcon, size: 14, color: statusColor),
+                      const SizedBox(width: 6),
+                      Text(status == 'All' ? 'Status: All' : status),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _statusFilter = val);
+              },
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildFilterChip(String label, bool isSelected, ValueChanged<bool> onSelected, Key key, {Color? color}) {
-    final activeColor = color ?? PreviewTheme.accentAction;
-    return ChoiceChip(
-      key: key,
-      label: Text(label),
-      selected: isSelected,
-      onSelected: onSelected,
-      selectedColor: activeColor.withValues(alpha: 0.2),
-      backgroundColor: PreviewTheme.surfaceElevated,
-      labelStyle: TextStyle(
-        fontSize: 11,
-        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-        color: isSelected ? activeColor : PreviewTheme.textSecondary,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
-        side: BorderSide(
-          color: isSelected ? activeColor.withValues(alpha: 0.4) : PreviewTheme.borderSubtle,
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-      visualDensity: VisualDensity.compact,
     );
   }
 
@@ -413,7 +431,8 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.stop_circle, color: PreviewTheme.accentCapture, size: 22),
+                  const Icon(Icons.stop_circle,
+                      color: PreviewTheme.accentCapture, size: 22),
                   const SizedBox(width: 10),
                   // Live Waveform Visualizer inside the button
                   _buildLiveWaveformWidget(),
@@ -441,7 +460,9 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
       shadowColor: Colors.black.withValues(alpha: 0.6),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
-        side: BorderSide(color: PreviewTheme.accentCapture.withValues(alpha: 0.45), width: 1.2),
+        side: BorderSide(
+            color: PreviewTheme.accentCapture.withValues(alpha: 0.45),
+            width: 1.2),
       ),
       child: InkWell(
         key: const Key('floating_capture_button'),
@@ -511,7 +532,7 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
   Widget _buildCaptureCard(MockCaptureNote note) {
     final isPlaying = _currentlyPlayingId == note.id;
 
-    // Point 1: Color coding by status
+    // Color coding by status
     Color cardBg;
     Color cardBorder;
     switch (note.status) {
@@ -555,10 +576,12 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                   children: [
                     // 1. # Daily Sequence Badge
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: PreviewTheme.numberBadgeBg,
-                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                        borderRadius:
+                            BorderRadius.circular(PreviewTheme.badgeRadius),
                       ),
                       child: Text(
                         note.formattedSequence,
@@ -577,7 +600,8 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                           ? PreviewTheme.accentCapture.withValues(alpha: 0.2)
                           : PreviewTheme.surfaceElevated,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
+                        borderRadius:
+                            BorderRadius.circular(PreviewTheme.pillRadius),
                         side: BorderSide(
                           color: isPlaying
                               ? PreviewTheme.accentCapture
@@ -586,10 +610,12 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                       ),
                       child: InkWell(
                         key: Key('play_button_${note.id}'),
-                        borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
+                        borderRadius:
+                            BorderRadius.circular(PreviewTheme.pillRadius),
                         onTap: () => _togglePlay(note.id),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -642,7 +668,8 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                         size: 18,
                       ),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
                       onPressed: () => _deleteNote(note.id),
                     ),
                   ],
@@ -653,21 +680,29 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                 if (note.status == MockNoteStatus.pending) ...[
                   Container(
                     key: Key('status_badge_${note.id}'),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                      border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
+                      borderRadius:
+                          BorderRadius.circular(PreviewTheme.badgeRadius),
+                      border: Border.all(
+                          color: PreviewTheme.accentWarning
+                              .withValues(alpha: 0.35)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.hourglass_top, size: 12, color: PreviewTheme.accentWarning),
+                        Icon(Icons.hourglass_top,
+                            size: 12, color: PreviewTheme.accentWarning),
                         SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             'Transcribing audio & cleaning speech...',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: PreviewTheme.accentWarning),
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: PreviewTheme.accentWarning),
                           ),
                         ),
                       ],
@@ -677,21 +712,29 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                 ] else if (note.status == MockNoteStatus.synthesized) ...[
                   Container(
                     key: Key('status_badge_${note.id}'),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: PreviewTheme.accentCapture.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                      border: Border.all(color: PreviewTheme.accentCapture.withValues(alpha: 0.35)),
+                      borderRadius:
+                          BorderRadius.circular(PreviewTheme.badgeRadius),
+                      border: Border.all(
+                          color: PreviewTheme.accentCapture
+                              .withValues(alpha: 0.35)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.check_circle_outline, size: 12, color: PreviewTheme.accentCapture),
+                        const Icon(Icons.check_circle_outline,
+                            size: 12, color: PreviewTheme.accentCapture),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             'Synthesized in ${note.clusterSequence ?? 'Session Note'}',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: PreviewTheme.accentCapture),
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: PreviewTheme.accentCapture),
                           ),
                         ),
                       ],
@@ -701,21 +744,30 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                 ] else if (note.status == MockNoteStatus.failed) ...[
                   Container(
                     key: Key('status_badge_${note.id}'),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: PreviewTheme.accentError.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                      border: Border.all(color: PreviewTheme.accentError.withValues(alpha: 0.35)),
+                      borderRadius:
+                          BorderRadius.circular(PreviewTheme.badgeRadius),
+                      border: Border.all(
+                          color: PreviewTheme.accentError
+                              .withValues(alpha: 0.35)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline, size: 12, color: PreviewTheme.accentError),
+                        const Icon(Icons.error_outline,
+                            size: 12, color: PreviewTheme.accentError),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            note.failureMessage ?? 'Speech transcription failed',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: PreviewTheme.accentError),
+                            note.failureMessage ??
+                                'Speech transcription failed',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: PreviewTheme.accentError),
                           ),
                         ),
                       ],
@@ -763,16 +815,22 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                             borderRadius: BorderRadius.circular(6),
                             onTap: () => _retryNote(note),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: PreviewTheme.accentError.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                                border: Border.all(color: PreviewTheme.accentError.withValues(alpha: 0.3)),
+                                color: PreviewTheme.accentError
+                                    .withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(
+                                    PreviewTheme.badgeRadius),
+                                border: Border.all(
+                                    color: PreviewTheme.accentError
+                                        .withValues(alpha: 0.3)),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.refresh, size: 13, color: PreviewTheme.accentError),
+                                  Icon(Icons.refresh,
+                                      size: 13, color: PreviewTheme.accentError),
                                   SizedBox(width: 4),
                                   Text(
                                     'Retry',
@@ -787,54 +845,26 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview> with Single
                             ),
                           ),
                         ] else ...[
-                          // Manual Edit Action
+                          // Manual Edit Action (Strictly manual editing in Capture; Style re-writing is in Synthesis)
                           InkWell(
                             key: Key('edit_button_${note.id}'),
                             borderRadius: BorderRadius.circular(6),
                             onTap: () => _manualEdit(note),
                             child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 4),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.edit_outlined, size: 14, color: PreviewTheme.textSecondary),
+                                  Icon(Icons.edit_outlined,
+                                      size: 14,
+                                      color: PreviewTheme.textSecondary),
                                   SizedBox(width: 4),
                                   Text(
                                     'Edit',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: PreviewTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // AI Style Re-Writer Action
-                          InkWell(
-                            key: Key('style_button_${note.id}'),
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: () => _openStyleRewriter(note),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: PreviewTheme.accentAI.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                                border: Border.all(color: PreviewTheme.accentAI.withValues(alpha: 0.24)),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.auto_awesome, size: 13, color: PreviewTheme.accentAI),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Style ▾',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: PreviewTheme.accentAI,
                                     ),
                                   ),
                                 ],

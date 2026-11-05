@@ -89,6 +89,7 @@ class MockSynthesisCluster {
   final List<MockCaptureNote> originNotes;
   final bool isExpanded;
   final bool isReprocessing; // True when marked yellow for re-synthesis
+  final String appliedStyleId; // e.g. "concise", "bullets", "professional", etc.
 
   const MockSynthesisCluster({
     required this.clusterId,
@@ -101,6 +102,7 @@ class MockSynthesisCluster {
     required this.originNotes,
     this.isExpanded = false,
     this.isReprocessing = false,
+    this.appliedStyleId = 'concise',
   });
 
   MockSynthesisCluster copyWith({
@@ -109,6 +111,7 @@ class MockSynthesisCluster {
     List<MockCaptureNote>? originNotes,
     bool? isExpanded,
     bool? isReprocessing,
+    String? appliedStyleId,
   }) {
     return MockSynthesisCluster(
       clusterId: clusterId,
@@ -121,6 +124,7 @@ class MockSynthesisCluster {
       originNotes: originNotes ?? this.originNotes,
       isExpanded: isExpanded ?? this.isExpanded,
       isReprocessing: isReprocessing ?? this.isReprocessing,
+      appliedStyleId: appliedStyleId ?? this.appliedStyleId,
     );
   }
 

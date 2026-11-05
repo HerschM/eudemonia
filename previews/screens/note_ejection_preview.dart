@@ -146,7 +146,7 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                                 ),
                                 SizedBox(height: 2),
                                 Text(
-                                  'Select a target note (both will turn yellow for re-synthesis)',
+                                  'Choose an existing session',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: PreviewTheme.textSecondary,
@@ -190,11 +190,6 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                             child: const Text('Back', style: TextStyle(fontSize: 12, color: PreviewTheme.textSecondary)),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Moving will mark both source and target notes Yellow for re-processing.',
-                        style: TextStyle(fontSize: 11, color: PreviewTheme.textSecondary),
                       ),
                       const SizedBox(height: 12),
                       ...otherClusters.map((cluster) {

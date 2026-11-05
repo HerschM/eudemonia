@@ -3,18 +3,21 @@ import '../mock_data.dart';
 import '../preview_theme.dart';
 
 class StyleRewriterModal extends StatelessWidget {
-  final MockCaptureNote note;
+  final String sequenceLabel;
+  final String selectedPresetId;
   final ValueChanged<MockStylePreset>? onSelectPreset;
 
   const StyleRewriterModal({
     super.key,
-    required this.note,
+    required this.sequenceLabel,
+    this.selectedPresetId = 'concise',
     this.onSelectPreset,
   });
 
   static Future<void> show(
     BuildContext context, {
-    required MockCaptureNote note,
+    required String sequenceLabel,
+    String selectedPresetId = 'concise',
     ValueChanged<MockStylePreset>? onSelectPreset,
   }) {
     return showModalBottomSheet(
@@ -27,7 +30,8 @@ class StyleRewriterModal extends StatelessWidget {
         ),
       ),
       builder: (context) => StyleRewriterModal(
-        note: note,
+        sequenceLabel: sequenceLabel,
+        selectedPresetId: selectedPresetId,
         onSelectPreset: onSelectPreset,
       ),
     );
@@ -47,7 +51,7 @@ class StyleRewriterModal extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: PreviewTheme.textTertiary.withOpacity(0.4),
+                  color: PreviewTheme.textTertiary.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -73,7 +77,7 @@ class StyleRewriterModal extends StatelessWidget {
                     borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
                   ),
                   child: Text(
-                    note.formattedSequence,
+                    sequenceLabel,
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -85,10 +89,10 @@ class StyleRewriterModal extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Select an on-device prompt preset to rewrite this thought:',
+              'Select an on-device prompt preset to rewrite this synthesized note:',
               style: TextStyle(
                 fontSize: 13,
-                color: PreviewTheme.textSecondary.withOpacity(0.8),
+                color: PreviewTheme.textSecondary.withValues(alpha: 0.8),
               ),
             ),
             const SizedBox(height: 16),
@@ -99,6 +103,7 @@ class StyleRewriterModal extends StatelessWidget {
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final preset = MockData.stylePresets[index];
+                  final isSelected = preset.id == selectedPresetId;
                   return Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -110,32 +115,68 @@ class StyleRewriterModal extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: PreviewTheme.surface,
+                          color: isSelected
+                              ? PreviewTheme.accentAI.withValues(alpha: 0.08)
+                              : PreviewTheme.surface,
                           borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
-                          border: Border.all(color: PreviewTheme.borderSubtle),
+                          border: Border.all(
+                            color: isSelected
+                                ? PreviewTheme.accentAI
+                                : PreviewTheme.borderSubtle,
+                            width: isSelected ? 1.5 : 1.0,
+                          ),
                         ),
                         child: Row(
                           children: [
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: PreviewTheme.accentAI.withOpacity(0.12),
+                                color: PreviewTheme.accentAI
+                                    .withValues(alpha: isSelected ? 0.2 : 0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Icon(preset.icon, color: PreviewTheme.accentAI, size: 18),
+                              child: Icon(preset.icon,
+                                  color: PreviewTheme.accentAI, size: 18),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    preset.name,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: PreviewTheme.textPrimary,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        preset.name,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: isSelected
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                          color: PreviewTheme.textPrimary,
+                                        ),
+                                      ),
+                                      if (isSelected) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: PreviewTheme.accentAI
+                                                .withValues(alpha: 0.2),
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'Active',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: PreviewTheme.accentAI,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -148,7 +189,12 @@ class StyleRewriterModal extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right, color: PreviewTheme.textTertiary, size: 18),
+                            if (isSelected)
+                              const Icon(Icons.check,
+                                  color: PreviewTheme.accentAI, size: 20)
+                            else
+                              const Icon(Icons.chevron_right,
+                                  color: PreviewTheme.textTertiary, size: 18),
                           ],
                         ),
                       ),

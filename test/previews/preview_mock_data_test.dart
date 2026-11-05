@@ -63,6 +63,7 @@ void main() {
         expect(cluster.synthesizedContent.isNotEmpty, isTrue);
         expect(cluster.formattedTimeSpan.isNotEmpty, isTrue);
         expect(cluster.sessionDuration.inMinutes, greaterThan(0));
+        expect(cluster.appliedStyleId.isNotEmpty, isTrue);
       }
     });
 

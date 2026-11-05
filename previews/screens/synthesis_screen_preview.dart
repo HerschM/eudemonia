@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../mock_data.dart';
 import '../preview_theme.dart';
 import 'note_ejection_preview.dart';
+import 'style_rewriter_preview.dart';
 
 class SynthesisScreenPreview extends StatefulWidget {
   const SynthesisScreenPreview({super.key});
@@ -76,7 +77,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
           SnackBar(
             backgroundColor: PreviewTheme.surfaceElevated,
             content: Text(
-              'Moved [${rawNote.formattedSequence}] to ${targetCluster.sequenceNumber}. Both notes marked yellow for re-synthesis.',
+              'Moved [${rawNote.formattedSequence}] to ${targetCluster.sequenceNumber}',
               style: const TextStyle(color: PreviewTheme.textPrimary),
             ),
           ),
@@ -108,7 +109,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
           SnackBar(
             backgroundColor: PreviewTheme.surfaceElevated,
             content: Text(
-              'Moved [${rawNote.formattedSequence}] to other clubbed session. Both notes marked yellow for re-synthesis.',
+              'Moved [${rawNote.formattedSequence}] to other clubbed session',
               style: const TextStyle(color: PreviewTheme.textPrimary),
             ),
           ),
@@ -156,6 +157,37 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
     );
   }
 
+  void _openStyleRewriter(MockSynthesisCluster cluster) {
+    StyleRewriterModal.show(
+      context,
+      sequenceLabel: cluster.sequenceNumber,
+      selectedPresetId: cluster.appliedStyleId,
+      onSelectPreset: (preset) {
+        setState(() {
+          final index =
+              _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
+          if (index != -1) {
+            _clusters[index] = _clusters[index].copyWith(
+              appliedStyleId: preset.id,
+              isReprocessing: true, // Turns yellow!
+            );
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: PreviewTheme.surfaceElevated,
+            content: Text(
+              'Applying style "${preset.name}" to ${cluster.sequenceNumber}...',
+              style: const TextStyle(color: PreviewTheme.textPrimary),
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredClusters = _activeFolderFilter == 'All Folders'
@@ -182,7 +214,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.0,
-                    color: PreviewTheme.textSecondary.withOpacity(0.7),
+                    color: PreviewTheme.textSecondary.withValues(alpha: 0.7),
                   ),
                 ),
                 // Compact Folder Filter Dropdown
@@ -362,26 +394,69 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                     ],
                   ],
                 ),
-                InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: () {},
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.edit_outlined, size: 14, color: PreviewTheme.textSecondary),
-                        SizedBox(width: 4),
-                        Text(
-                          'Edit',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: PreviewTheme.textSecondary,
-                          ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // AI Style Re-Writer Action
+                    InkWell(
+                      key: Key('style_button_$cleanSeq'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => _openStyleRewriter(cluster),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: PreviewTheme.accentAI.withValues(alpha: 0.12),
+                          borderRadius:
+                              BorderRadius.circular(PreviewTheme.badgeRadius),
+                          border: Border.all(
+                              color: PreviewTheme.accentAI
+                                  .withValues(alpha: 0.24)),
                         ),
-                      ],
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_awesome,
+                                size: 13, color: PreviewTheme.accentAI),
+                            SizedBox(width: 4),
+                            Text(
+                              'Style ▾',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: PreviewTheme.accentAI,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      key: Key('edit_synthesis_$cleanSeq'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () {},
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_outlined,
+                                size: 14, color: PreviewTheme.textSecondary),
+                            SizedBox(width: 4),
+                            Text(
+                              'Edit',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: PreviewTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -459,7 +534,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: PreviewTheme.background.withOpacity(0.5),
+                  color: PreviewTheme.background.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: PreviewTheme.borderSubtle),
                 ),
