@@ -14,11 +14,13 @@ class SettingsPreview extends StatefulWidget {
 class _SettingsPreviewState extends State<SettingsPreview> {
   late MockSettingsConfig _config;
   int _unprocessedBufferCount = 2;
+  late List<MockFolderManifesto> _folderManifestos;
 
   @override
   void initState() {
     super.initState();
     _config = widget.initialConfig ?? MockData.settingsConfig;
+    _folderManifestos = List.from(MockData.folderManifestos);
   }
 
   void _triggerSynthesisNow() {
@@ -54,6 +56,228 @@ class _SettingsPreviewState extends State<SettingsPreview> {
           style: TextStyle(color: PreviewTheme.accentCapture),
         ),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _openAddFolderDialog() {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: PreviewTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
+        ),
+        title: const Text(
+          'Add Custom Folder',
+          style: TextStyle(
+              color: PreviewTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Folder Name',
+              style: TextStyle(color: PreviewTheme.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              key: const Key('new_folder_name_field'),
+              controller: nameController,
+              style: const TextStyle(
+                  color: PreviewTheme.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'e.g. Eudemonia, Health, Client X',
+                hintStyle: const TextStyle(color: PreviewTheme.textTertiary),
+                filled: true,
+                fillColor: PreviewTheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide:
+                      const BorderSide(color: PreviewTheme.borderSubtle),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Semantic Description (Manifesto)',
+              style: TextStyle(color: PreviewTheme.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              key: const Key('new_folder_desc_field'),
+              controller: descController,
+              maxLines: 3,
+              style: const TextStyle(
+                  color: PreviewTheme.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                hintText:
+                    'Describe projects, apps, and keywords that belong in this folder...',
+                hintStyle: const TextStyle(color: PreviewTheme.textTertiary),
+                filled: true,
+                fillColor: PreviewTheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide:
+                      const BorderSide(color: PreviewTheme.borderSubtle),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel',
+                style: TextStyle(color: PreviewTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            key: const Key('confirm_add_folder_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PreviewTheme.accentAction,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () {
+              final name = nameController.text.trim();
+              final desc = descController.text.trim();
+              if (name.isNotEmpty) {
+                setState(() {
+                  _folderManifestos.add(
+                    MockFolderManifesto(
+                      id: 'folder_${DateTime.now().millisecondsSinceEpoch}',
+                      name: name,
+                      description: desc.isNotEmpty
+                          ? desc
+                          : 'Custom user-created domain folder.',
+                      icon: Icons.folder_outlined,
+                      noteCount: 0,
+                      autoGeneratedKeywords: desc.isNotEmpty
+                          ? desc
+                              .split(' ')
+                              .where((w) => w.length > 4)
+                              .take(4)
+                              .toList()
+                          : ['custom', 'project'],
+                    ),
+                  );
+                });
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: PreviewTheme.surfaceElevated,
+                    content: Text(
+                      'Created custom folder "$name"',
+                      style: const TextStyle(color: PreviewTheme.textPrimary),
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text('Add Folder',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openEditFolderDialog(MockFolderManifesto manifesto) {
+    final descController = TextEditingController(text: manifesto.description);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: PreviewTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
+        ),
+        title: Text(
+          'Edit Description for "${manifesto.name}"',
+          style: const TextStyle(
+              color: PreviewTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Semantic Description (Manifesto)',
+              style: TextStyle(color: PreviewTheme.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              key: const Key('edit_folder_desc_field'),
+              controller: descController,
+              maxLines: 4,
+              style: const TextStyle(
+                  color: PreviewTheme.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: PreviewTheme.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide:
+                      const BorderSide(color: PreviewTheme.borderSubtle),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel',
+                style: TextStyle(color: PreviewTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            key: const Key('confirm_edit_folder_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PreviewTheme.accentAction,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () {
+              final newDesc = descController.text.trim();
+              setState(() {
+                final idx = _folderManifestos
+                    .indexWhere((m) => m.id == manifesto.id);
+                if (idx != -1) {
+                  _folderManifestos[idx] =
+                      _folderManifestos[idx].copyWith(description: newDesc);
+                }
+              });
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: PreviewTheme.surfaceElevated,
+                  content: Text(
+                    'Updated description for "${manifesto.name}"',
+                    style: const TextStyle(color: PreviewTheme.textPrimary),
+                  ),
+                ),
+              );
+            },
+            child: const Text('Save Changes',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
@@ -309,7 +533,138 @@ class _SettingsPreviewState extends State<SettingsPreview> {
           ),
           const SizedBox(height: 20),
 
-          // Section 3: Calendar Synchronization
+          // Section 3: Folder Management & Semantic Manifestos
+          _buildSectionHeader('FOLDER MANAGEMENT & SEMANTIC MANIFESTOS'),
+          _buildCard(
+            children: [
+              Text(
+                'Folder descriptions guide on-device AI classification to accurately distinguish between projects and apps, even for abrupt thoughts.',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: PreviewTheme.textSecondary.withValues(alpha: 0.85),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ..._folderManifestos.map((manifesto) {
+                return Container(
+                  key: Key('folder_item_${manifesto.id}'),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: PreviewTheme.background.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: PreviewTheme.borderSubtle),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(manifesto.icon,
+                              size: 16, color: PreviewTheme.accentAction),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              manifesto.name,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: PreviewTheme.textPrimary,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${manifesto.noteCount} notes',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: PreviewTheme.textSecondary),
+                          ),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            key: Key('edit_manifesto_${manifesto.id}'),
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () => _openEditFolderDialog(manifesto),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 2),
+                              child: Text(
+                                'Edit',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: PreviewTheme.accentAction,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        manifesto.description,
+                        style: const TextStyle(
+                            fontSize: 12, color: PreviewTheme.textSecondary),
+                      ),
+                      if (manifesto.autoGeneratedKeywords.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: manifesto.autoGeneratedKeywords.map((kw) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: PreviewTheme.surfaceElevated,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                    color: PreviewTheme.borderSubtle),
+                              ),
+                              child: Text(
+                                '#$kw',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: PreviewTheme.textTertiary
+                                      .withValues(alpha: 0.9),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const Key('add_custom_folder_button'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: PreviewTheme.accentAction),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  icon: const Icon(Icons.add,
+                      size: 16, color: PreviewTheme.accentAction),
+                  label: const Text(
+                    'Add Custom Folder',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: PreviewTheme.accentAction),
+                  ),
+                  onPressed: _openAddFolderDialog,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Section 4: Calendar Synchronization
           _buildSectionHeader('CALENDAR SYNCHRONIZATION'),
           _buildCard(
             children: [

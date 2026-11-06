@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../mock_data.dart';
 import '../preview_theme.dart';
 import 'note_ejection_preview.dart';
+import 'note_merge_preview.dart';
 import 'style_rewriter_preview.dart';
 
 class SynthesisScreenPreview extends StatefulWidget {
@@ -194,6 +195,43 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
               style: const TextStyle(color: PreviewTheme.textPrimary),
             ),
             duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openMergeModal(MockSynthesisCluster cluster) {
+    NoteMergeModal.show(
+      context,
+      sourceCluster: cluster,
+      availableClusters: _clusters,
+      onMergeToTargetCluster: (targetCluster) {
+        setState(() {
+          final targetIndex = _clusters
+              .indexWhere((c) => c.clusterId == targetCluster.clusterId);
+          if (targetIndex != -1) {
+            final combinedNotes = List<MockCaptureNote>.from(
+                _clusters[targetIndex].originNotes)
+              ..addAll(cluster.originNotes);
+
+            _clusters[targetIndex] = _clusters[targetIndex].copyWith(
+              originNotes: combinedNotes,
+              isReprocessing: true, // Turns yellow!
+            );
+          }
+
+          // Remove source cluster from list
+          _clusters.removeWhere((c) => c.clusterId == cluster.clusterId);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: PreviewTheme.surfaceElevated,
+            content: Text(
+              'Merged [${cluster.sequenceNumber}] into ${targetCluster.sequenceNumber}',
+              style: const TextStyle(color: PreviewTheme.textPrimary),
+            ),
           ),
         );
       },
@@ -536,125 +574,155 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                           ),
                         ),
                       ),
-                      if (isReprocessing) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          key: Key('reprocessing_badge_$cleanSeq'),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                            border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
-                              SizedBox(width: 4),
-                              Text(
-                                'Re-synthesizing...',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: PreviewTheme.accentWarning,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ] else if (!cluster.isActionExtracted) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          key: Key('awaiting_action_badge_$cleanSeq'),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: PreviewTheme.accentAction.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                            border: Border.all(color: PreviewTheme.accentAction.withValues(alpha: 0.3)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.hourglass_empty, size: 12, color: PreviewTheme.accentAction),
-                              SizedBox(width: 4),
-                              Text(
-                                'Extracting Actions...',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: PreviewTheme.accentAction,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ],
                   ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // AI Style Re-Writer Action
-                    InkWell(
-                      key: Key('style_button_$cleanSeq'),
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () => _openStyleRewriter(cluster),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: PreviewTheme.accentAI.withValues(alpha: 0.12),
-                          borderRadius:
-                              BorderRadius.circular(PreviewTheme.badgeRadius),
-                          border: Border.all(
-                              color: PreviewTheme.accentAI
-                                  .withValues(alpha: 0.24)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.auto_awesome,
-                                size: 13, color: PreviewTheme.accentAI),
-                            SizedBox(width: 4),
-                            Text(
-                              'Style ▾',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: PreviewTheme.accentAI,
-                              ),
+                  if (isReprocessing) ...[
+                    Container(
+                      key: Key('reprocessing_badge_$cleanSeq'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                        border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
+                          SizedBox(width: 4),
+                          Text(
+                            'Re-synthesizing...',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: PreviewTheme.accentWarning,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      key: Key('edit_synthesis_$cleanSeq'),
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () {},
-                      child: const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.edit_outlined,
-                                size: 14, color: PreviewTheme.textSecondary),
-                            SizedBox(width: 4),
-                            Text(
-                              'Edit',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: PreviewTheme.textSecondary,
-                              ),
+                  ] else if (!cluster.isActionExtracted) ...[
+                    Container(
+                      key: Key('awaiting_action_badge_$cleanSeq'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: PreviewTheme.accentAction.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                        border: Border.all(color: PreviewTheme.accentAction.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.hourglass_empty, size: 12, color: PreviewTheme.accentAction),
+                          SizedBox(width: 4),
+                          Text(
+                            'Extracting Actions...',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: PreviewTheme.accentAction,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
-                ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      // AI Style Re-Writer Action
+                      InkWell(
+                        key: Key('style_button_$cleanSeq'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _openStyleRewriter(cluster),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: PreviewTheme.accentAI.withValues(alpha: 0.12),
+                            borderRadius:
+                                BorderRadius.circular(PreviewTheme.badgeRadius),
+                            border: Border.all(
+                                color: PreviewTheme.accentAI
+                                    .withValues(alpha: 0.24)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.auto_awesome,
+                                  size: 13, color: PreviewTheme.accentAI),
+                              SizedBox(width: 4),
+                              Text(
+                                'Style ▾',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: PreviewTheme.accentAI,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        key: Key('merge_button_$cleanSeq'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _openMergeModal(cluster),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: PreviewTheme.surfaceElevated,
+                            borderRadius:
+                                BorderRadius.circular(PreviewTheme.badgeRadius),
+                            border: Border.all(color: PreviewTheme.borderSubtle),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.merge_type,
+                                  size: 13, color: PreviewTheme.textSecondary),
+                              SizedBox(width: 4),
+                              Text(
+                                'Merge',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: PreviewTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        key: Key('edit_synthesis_$cleanSeq'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () {},
+                        child: const Padding(
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.edit_outlined,
+                                  size: 14, color: PreviewTheme.textSecondary),
+                              SizedBox(width: 4),
+                              Text(
+                                'Edit',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: PreviewTheme.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 12),

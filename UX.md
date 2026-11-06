@@ -325,7 +325,17 @@ The second screen in the application. Thoughts captured in close proximity or sh
     - Tapping opens the Style Re-Writer modal offering preset context prompts applied on-device.
     - **Active Style Checkmark**: The currently active style preset is highlighted with an explicit checkmark (`Icons.check`).
     - **Yellow Re-Processing State**: When a user selects a different style, that synthesized note is flagged for re-generation and its card color transitions to **Yellow (`stateEnqueuedBg`)** while the local LLM runs inference.
+  - **Explicit Synthesis Note Merging (`[ 🔗 Merge ]`)**:
+    - Embedded alongside Style and Edit actions on each cluster card.
+    - Tapping opens the `NoteMergeModal` listing other synthesized sessions (`#S-01`, `#S-02`, etc.) with sequence labels and content previews.
+    - Selecting a target session transfers all origin raw notes into the target cluster, removes the source cluster, and transitions the target cluster to **Yellow (`stateEnqueuedBg` / `isReprocessing = true`)** for consolidated re-synthesis with clean feedback: `"Merged #S-02 into #S-01"`.
   - **Consolidated Synthesis**: A cohesive narrative written by the LLM merging all fragments.
+  - **Active Session Horizon & 2D Domain Clustering Architecture**:
+    - **2D Routing (`Time Window ∩ Target Folder`)**: Captures within the active session window are strictly segregated by target folder. A Work thought and a Journal thought never merge together into the same cluster.
+    - **Sliding Inactivity Window ($Y=45$m)**: The session remains open and receptive to incoming notes until 45 minutes of quiet elapse.
+    - **Hard Session Ceiling ($T_{max}=2$ hours)**: Prevents runaway infinite clusters across full-day captures by automatically capping the cluster at 2 hours from its first note.
+    - **Delta Synthesis**: Integrating new notes into an active cluster passes the existing summary + delta thoughts (<300 tokens), preventing full-context re-computation.
+    - **Delta Action Extraction & Task Immutability**: Appending new notes triggers an additive action extraction pass. Existing completed and pending action items in Isar are immutable and never duplicated or reset.
   - **Footer Metadata**:
     - Creation date and time span formatted as date then times (e.g., `05/11  07:10 AM - 07:45 AM`).
     - Session duration (e.g., `⏱️ 35m session`).
@@ -357,7 +367,7 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │ ◄── 🟢 Green Card (Fully processed into Action)
-│  │ [#S-02]  •  [ 💡 Ideas ▾ ]  [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Note sequence, Unread dot, Folder, Style
+│  │ [#S-02]  •  [ 💡 Ideas ▾ ] [ ✨ Style ▾] [ 🔗 Merge ] [ ✎ Edit ] │ ◄── Sequence, Unread dot, Folder, Style, Merge, Edit
 │  │                                                  │  │
 │  │ "Consolidated architectural roadmap for local    │  │ ◄── LLM Synthesis of Morning Walk Captures
 │  │  speech clustering. Decided to separate raw      │  │
@@ -379,7 +389,7 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
 │  ┌──────────────────────────────────────────────────┐  │ ◄── 🔵 Blue Card (Awaiting Action Extraction)
-│  │ [#S-01]     [ 💼 Work ▾ ]   [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Read, Awaiting action pass
+│  │ [#S-01]     [ 💼 Work ▾ ]  [ ✨ Style ▾] [ 🔗 Merge ] [ ✎ Edit ] │ ◄── Read, Awaiting action pass
 │  │ "Prepare quarterly deliverables before 3 PM sync"│  │
 │  │ ──────────────────────────────────────────────── │  │
 │  │ 📅 04/11  04:15 PM - 04:27 PM • ⏱️ 12m session   │  │
@@ -387,9 +397,25 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  └──────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────┘
 ```
-│  │ 📅 04/11  04:15 PM - 04:27 PM • ⏱️ 12m session   │  │
-│  │ [ 🧩 1 Raw Note Included (Tap to Expand) ▼ ]     │  │
+
+### Synthesis Note Merge Modal Wireframe
+When tapping `[ 🔗 Merge ]` on any synthesis session card:
+
+```
+┌────────────────────────────────────────────────────────┐
+│               ••••  DRAG INDICATOR                     │
+│                                                        │
+│  🔗 Merge Session [#S-02]                              │
+│  Select target session to consolidate raw notes into:  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ [#S-01] 💼 Work                                  │  │ ◄── Target Session Option
+│  │ "Prepare quarterly deliverables before 3 PM sync"│  │
+│  │ ⏱️ 12m session • 1 raw note                       │  │
+│  │ [ Select to Merge ➔ ]                            │  │
 │  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  [ Cancel ]                                            │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -653,6 +679,20 @@ Controls background resilience, physical hardware button listener status, synthe
 │  Trigger after Y minutes of quiet: [ 15 mins ▾ ]       │ ◄── Session inactivity window (5–60m)
 │  Unprocessed Thoughts in Buffer:   2 notes ready       │
 │  [ ⚡ Synthesize Buffer Now ]                           │ ◄── Manual batch override
+│                                                        │
+│  FOLDER MANAGEMENT & SEMANTIC MANIFESTOS               │ ◄── Project-level contextual categorization
+│  "Folder descriptions guide on-device AI classification│
+│   to distinguish between different apps and projects." │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 💼 Work (4 notes)                                │  │
+│  │ "Flutter app development, technical architecture"│  │
+│  │ 🏷️ flutter, riverpod, isar, debouncer • [ Edit ] │  │
+│  ├──────────────────────────────────────────────────┤  │
+│  │ 💡 Ideas (2 notes)                               │  │
+│  │ "Creative concepts and startup brainstorms"      │  │
+│  │ 🏷️ voice-first, ai-hud, mobile • [ Edit ]        │  │
+│  └──────────────────────────────────────────────────┘  │
+│  [ + Add Custom Folder ]                               │ ◄── Create new custom folder
 │                                                        │
 │  CALENDAR SYNCHRONIZATION                              │
 │  Sync Action Items with Calendar:  [ Toggle ON ]       │ ◄── Calendar Sync Toggle

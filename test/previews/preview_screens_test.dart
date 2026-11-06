@@ -289,6 +289,36 @@ void main() {
 
       // Verify clean SnackBar copy
       expect(find.text('Moved [#01] to #S-01'), findsOneWidget);
+
+      // Dismiss SnackBar to clear overlay
+      ScaffoldMessenger.of(tester.element(find.byType(SynthesisScreenPreview)))
+          .hideCurrentSnackBar();
+      await tester.pumpAndSettle();
+
+      // Test Explicit Note Merging: Tap Merge button on #S-02
+      final mergeBtnS02 = find.byKey(const Key('merge_button_S-02'));
+      await tester.scrollUntilVisible(mergeBtnS02, -200);
+      await tester.pumpAndSettle();
+      expect(mergeBtnS02, findsOneWidget);
+      await tester.tap(mergeBtnS02);
+      await tester.pumpAndSettle();
+
+      // Verify NoteMergeModal opened
+      expect(find.text('Merge Session #S-02'), findsOneWidget);
+      expect(find.text('SELECT TARGET SESSION'), findsOneWidget);
+      expect(find.byKey(const Key('select_target_merge_cluster_1')),
+          findsOneWidget);
+
+      // Tap select target cluster_1 (#S-01)
+      await tester.tap(find.byKey(const Key('select_target_merge_cluster_1')));
+      await tester.pumpAndSettle();
+
+      // Verify SnackBar and State Consolidation
+      expect(find.text('Merged [#S-02] into #S-01'), findsOneWidget);
+      expect(find.text('#S-02'), findsNothing,
+          reason: '#S-02 should be consolidated into #S-01 and removed');
+      expect(find.text('#S-01'), findsOneWidget);
+      expect(find.byKey(const Key('reprocessing_badge_S-01')), findsOneWidget);
     });
 
     testWidgets(
@@ -406,6 +436,47 @@ void main() {
       expect(find.byKey(const Key('synthesis_note_threshold_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('synthesis_inactivity_minutes_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('trigger_synthesis_now_btn')), findsOneWidget);
+
+      // Verify Folder Management & Semantic Manifestos Section
+      final folderHeaderFinder =
+          find.text('FOLDER MANAGEMENT & SEMANTIC MANIFESTOS');
+      await tester.scrollUntilVisible(folderHeaderFinder, 300);
+      await tester.pumpAndSettle();
+      expect(folderHeaderFinder, findsOneWidget);
+      expect(find.byKey(const Key('folder_item_work')), findsOneWidget);
+      expect(find.byKey(const Key('folder_item_eudemonia')), findsOneWidget);
+
+      // Tap Edit on Work folder manifesto
+      final editWorkBtn = find.byKey(const Key('edit_manifesto_work'));
+      await tester.tap(editWorkBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Description for "Work"'), findsOneWidget);
+      await tester.enterText(
+          find.byKey(const Key('edit_folder_desc_field')),
+          'Client projects and technical design docs.');
+      await tester.tap(find.byKey(const Key('confirm_edit_folder_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Client projects and technical design docs.'),
+          findsOneWidget);
+
+      // Tap Add Custom Folder
+      final addFolderBtn = find.byKey(const Key('add_custom_folder_button'));
+      await tester.scrollUntilVisible(addFolderBtn, 200);
+      await tester.pumpAndSettle();
+      await tester.tap(addFolderBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('confirm_add_folder_button')), findsOneWidget);
+      expect(find.byKey(const Key('new_folder_name_field')), findsOneWidget);
+      await tester.enterText(
+          find.byKey(const Key('new_folder_name_field')), 'Health & Fitness');
+      await tester.enterText(find.byKey(const Key('new_folder_desc_field')),
+          'Workout logs, nutrition notes, running pace, and recovery.');
+      await tester.tap(find.byKey(const Key('confirm_add_folder_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Health & Fitness'), findsOneWidget);
 
       final evictBtnFinder = find.byKey(const Key('evict_models_btn'));
       await tester.scrollUntilVisible(evictBtnFinder, 300);
