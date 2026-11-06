@@ -15,6 +15,8 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
   late List<MockSynthesisCluster> _clusters;
   String _activeFolderFilter = 'All Folders';
   final List<String> _folders = const ['All Folders', 'Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized'];
+  String _readFilter = 'All';
+  int _pendingRawNotesToCluster = 2;
 
   @override
   void initState() {
@@ -22,7 +24,17 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
     _clusters = List.from(MockData.synthesisClusters);
   }
 
+  void _markClusterAsRead(String clusterId) {
+    setState(() {
+      final index = _clusters.indexWhere((c) => c.clusterId == clusterId);
+      if (index != -1 && _clusters[index].isUnread) {
+        _clusters[index] = _clusters[index].copyWith(isUnread: false);
+      }
+    });
+  }
+
   void _toggleExpand(String clusterId) {
+    _markClusterAsRead(clusterId);
     setState(() {
       final index = _clusters.indexWhere((c) => c.clusterId == clusterId);
       if (index != -1) {
@@ -190,16 +202,22 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredClusters = _activeFolderFilter == 'All Folders'
+    final folderFiltered = _activeFolderFilter == 'All Folders'
         ? _clusters
         : _clusters.where((c) => c.folder.toLowerCase() == _activeFolderFilter.toLowerCase()).toList();
+
+    final filteredClusters = folderFiltered.where((c) {
+      if (_readFilter == 'Unread') return c.isUnread;
+      if (_readFilter == 'Read') return !c.isUnread;
+      return true;
+    }).toList();
 
     return Container(
       color: PreviewTheme.background,
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         children: [
-          // Sub-Header Row: Section Title + Compact Folder Filter Dropdown
+          // Sub-Header Row: Section Title + Compact Triage & Folder Filter Dropdowns
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Wrap(
@@ -217,58 +235,184 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                     color: PreviewTheme.textSecondary.withValues(alpha: 0.7),
                   ),
                 ),
-                // Compact Folder Filter Dropdown
-                Container(
-                  key: const Key('synthesis_folder_filter_dropdown'),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: PreviewTheme.surfaceElevated,
-                    borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
-                    border: Border.all(color: PreviewTheme.borderSubtle),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _activeFolderFilter,
-                      dropdownColor: PreviewTheme.surfaceElevated,
-                      isDense: true,
-                      icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.accentAction, size: 20),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    // Compact Triage Filter Dropdown (All, Unread, Read)
+                    Container(
+                      key: const Key('synthesis_triage_filter_dropdown'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: PreviewTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
+                        border: Border.all(color: PreviewTheme.borderSubtle),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _readFilter,
+                          dropdownColor: PreviewTheme.surfaceElevated,
+                          isDense: true,
+                          icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.accentAction, size: 20),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: PreviewTheme.textPrimary,
+                          ),
+                          items: const ['All', 'Unread', 'Read'].map((triage) {
+                            return DropdownMenuItem<String>(
+                              value: triage,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    triage == 'Unread'
+                                        ? Icons.mark_email_unread_outlined
+                                        : (triage == 'Read' ? Icons.mark_email_read_outlined : Icons.remove_red_eye_outlined),
+                                    size: 14,
+                                    color: triage == _readFilter
+                                        ? PreviewTheme.accentAction
+                                        : PreviewTheme.textSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(triage == 'All' ? 'All Triage' : triage),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (newVal) {
+                            if (newVal != null) {
+                              setState(() {
+                                _readFilter = newVal;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                    // Compact Folder Filter Dropdown
+                    Container(
+                      key: const Key('synthesis_folder_filter_dropdown'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: PreviewTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
+                        border: Border.all(color: PreviewTheme.borderSubtle),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _activeFolderFilter,
+                          dropdownColor: PreviewTheme.surfaceElevated,
+                          isDense: true,
+                          icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.accentAction, size: 20),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: PreviewTheme.textPrimary,
+                          ),
+                          items: _folders.map((folder) {
+                            return DropdownMenuItem<String>(
+                              value: folder,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.folder_outlined,
+                                    size: 14,
+                                    color: folder == _activeFolderFilter
+                                        ? PreviewTheme.accentAction
+                                        : PreviewTheme.textSecondary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(folder),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (newVal) {
+                            if (newVal != null) {
+                              setState(() {
+                                _activeFolderFilter = newVal;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Pending Batch Synthesis Banner
+          if (_pendingRawNotesToCluster > 0) ...[
+            Container(
+              key: const Key('pending_synthesis_batch_banner'),
+              margin: const EdgeInsets.only(top: 4, bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: PreviewTheme.accentAI.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
+                border: Border.all(color: PreviewTheme.accentAI.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.extension_outlined, size: 16, color: PreviewTheme.accentAI),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '🧩 $_pendingRawNotesToCluster raw thoughts ready to cluster',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: PreviewTheme.textPrimary,
                       ),
-                      items: _folders.map((folder) {
-                        return DropdownMenuItem<String>(
-                          value: folder,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.folder_outlined,
-                                size: 14,
-                                color: folder == _activeFolderFilter
-                                    ? PreviewTheme.accentAction
-                                    : PreviewTheme.textSecondary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(folder),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (newVal) {
-                        if (newVal != null) {
-                          setState(() {
-                            _activeFolderFilter = newVal;
-                          });
-                        }
-                      },
                     ),
                   ),
-                ),
-              ],
+                  InkWell(
+                    key: const Key('synthesize_now_banner_button'),
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () {
+                      setState(() {
+                        _pendingRawNotesToCluster = 0;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          backgroundColor: PreviewTheme.surfaceElevated,
+                          content: Text(
+                            'Triggered on-demand synthesis clustering.',
+                            style: TextStyle(color: PreviewTheme.textPrimary),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: PreviewTheme.accentAction,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bolt, size: 13, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'Synthesize Now',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 6),
           // Clusters Feed
           if (filteredClusters.isEmpty) ...[
@@ -293,107 +437,160 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
     final cleanSeq = cluster.sequenceNumber.replaceAll('#', '');
     final isReprocessing = cluster.isReprocessing;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: PreviewTheme.cardDecoration(
-        bgColor: isReprocessing ? PreviewTheme.stateEnqueuedBg : PreviewTheme.surface,
-        borderColor: isReprocessing ? PreviewTheme.stateEnqueuedBorder : PreviewTheme.borderSubtle,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Row: Cluster Sequence # + Predefined Folder Badge Dropdown + Edit + Optional Re-processing badge
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Cluster Sequence # (e.g. #S-02)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.accentAction.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                      ),
-                      child: Text(
-                        cluster.sequenceNumber,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: PreviewTheme.accentAction,
+    final Color cardBg;
+    final Color cardBorder;
+    if (isReprocessing) {
+      cardBg = PreviewTheme.stateEnqueuedBg;
+      cardBorder = PreviewTheme.stateEnqueuedBorder;
+    } else if (!cluster.isActionExtracted) {
+      cardBg = PreviewTheme.stateProcessedBg;
+      cardBorder = PreviewTheme.stateProcessedBorder;
+    } else {
+      cardBg = PreviewTheme.stateSynthesizedBg;
+      cardBorder = PreviewTheme.stateSynthesizedBorder;
+    }
+
+    return GestureDetector(
+      onTap: () => _markClusterAsRead(cluster.clusterId),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: PreviewTheme.cardDecoration(
+          bgColor: cardBg,
+          borderColor: cardBorder,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Row: Cluster Sequence # + Predefined Folder Badge Dropdown + Edit + Optional Re-processing badge
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (cluster.isUnread) ...[
+                        Container(
+                          key: Key('unread_dot_$cleanSeq'),
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: const BoxDecoration(
+                            color: PreviewTheme.accentAction,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Predefined Folder Badge with 1-Tap Reassignment Dropdown
-                    Container(
-                      key: Key('folder_badge_$cleanSeq'),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.surfaceElevated,
-                        borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
-                        border: Border.all(color: PreviewTheme.borderSubtle),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: cluster.folder,
-                          dropdownColor: PreviewTheme.surfaceElevated,
-                          isDense: true,
-                          icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.textSecondary, size: 16),
+                      ],
+                      // Cluster Sequence # (e.g. #S-02)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: PreviewTheme.accentAction.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                        ),
+                        child: Text(
+                          cluster.sequenceNumber,
                           style: const TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: PreviewTheme.textPrimary,
+                            fontWeight: FontWeight.w700,
+                            color: PreviewTheme.accentAction,
                           ),
-                          items: const ['Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized'].map((folder) {
-                            return DropdownMenuItem<String>(
-                              value: folder,
-                              child: Text(folder),
-                            );
-                          }).toList(),
-                          onChanged: (newFolder) {
-                            if (newFolder != null) {
-                              _reassignFolder(cluster, newFolder);
-                            }
-                          },
                         ),
                       ),
-                    ),
-                    if (isReprocessing) ...[
                       const SizedBox(width: 8),
+                      // Predefined Folder Badge with 1-Tap Reassignment Dropdown
                       Container(
-                        key: Key('reprocessing_badge_$cleanSeq'),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        key: Key('folder_badge_$cleanSeq'),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                          border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
+                          color: PreviewTheme.surfaceElevated,
+                          borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
+                          border: Border.all(color: PreviewTheme.borderSubtle),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
-                            SizedBox(width: 4),
-                            Text(
-                              'Re-synthesizing...',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: PreviewTheme.accentWarning,
-                              ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: cluster.folder,
+                            dropdownColor: PreviewTheme.surfaceElevated,
+                            isDense: true,
+                            icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.textSecondary, size: 16),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: PreviewTheme.textPrimary,
                             ),
-                          ],
+                            items: const ['Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized'].map((folder) {
+                              return DropdownMenuItem<String>(
+                                value: folder,
+                                child: Text(folder),
+                              );
+                            }).toList(),
+                            onChanged: (newFolder) {
+                              if (newFolder != null) {
+                                _reassignFolder(cluster, newFolder);
+                              }
+                            },
+                          ),
                         ),
                       ),
+                      if (isReprocessing) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          key: Key('reprocessing_badge_$cleanSeq'),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                            border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
+                              SizedBox(width: 4),
+                              Text(
+                                'Re-synthesizing...',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: PreviewTheme.accentWarning,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (!cluster.isActionExtracted) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          key: Key('awaiting_action_badge_$cleanSeq'),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: PreviewTheme.accentAction.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
+                            border: Border.all(color: PreviewTheme.accentAction.withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.hourglass_empty, size: 12, color: PreviewTheme.accentAction),
+                              SizedBox(width: 4),
+                              Text(
+                                'Extracting Actions...',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: PreviewTheme.accentAction,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
+                  ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -631,6 +828,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

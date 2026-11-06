@@ -241,6 +241,17 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
     2. *Make it an independent note*: Detaches the note and creates a standalone synthesized note; the source clubbed note turns Yellow to re-synthesize without the detached thought.
 - **FR11.6 (Manual Multi-Select)**: Users can select multiple raw notes to manually trigger a synthesis turn across selected items.
 - **FR11.7 (AI Style Re-Writer)**: Synthesized notes feature an interactive `[ ✨ Style ▾ ]` action button. Tapping opens the preset style picker (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*), highlighting the currently active preset with a checkmark (`Icons.check`). Selecting a new preset flags the cluster as re-processing, transitioning its card color to Yellow (`stateEnqueuedBg`) while local LLM re-synthesis takes place.
+- **FR11.8 (Configurable Synthesis Trigger & Batching Safeguards)**: To prevent continuous on-device LLM inference from draining mobile battery and spiking device thermals, synthesis clustering runs in adaptive batches:
+  1. *Note Accumulation Threshold*: Automatically triggers synthesis when $X$ unprocessed capture notes accumulate (configurable in settings: 1–10 notes, default 3).
+  2. *Session Inactivity Window*: Automatically triggers synthesis when $Y$ minutes elapse without new captures while unprocessed thoughts exist in the queue (configurable in settings: 5–60 minutes, default 15 minutes).
+  3. *Manual Override*: Users can bypass automatic thresholds and trigger immediate on-demand synthesis at any time via `[ ⚡ Synthesize Now ]` in the Pipeline HUD and Synthesis feed.
+- **FR11.9 (Synthesis Tri-Color Maturation & Action Extraction Pass)**: Synthesis cluster cards visually signal lifecycle maturation:
+  - **Yellow (`stateEnqueuedBg`)**: Re-synthesizing in progress.
+  - **Blue (`stateProcessedBg`)**: Synthesized narrative ready; awaiting action-item extraction pass.
+  - **Green (`stateSynthesizedBg`)**: Action extraction pass completed (closed and promoted to Action tab). Note: Reflective or journal notes with 0 action items turn Green upon extraction pass completion, confirming the thought is fully processed.
+- **FR11.10 (Synthesis Triage & Unread Tracking)**:
+  - Synthesis cluster cards display an electric blue unread indicator dot (`• Unread`) when newly clustered.
+  - The Synthesis screen sub-header provides an `[ 👁️ All Triage ▾ ]` dropdown (`All`, `Unread`, `Read`) alongside `[ 📁 All Folders ▾ ]` to filter new vs reviewed synthesized sessions.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating
 - **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
@@ -292,18 +303,21 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 > For the exhaustive design token dictionary, component sandbox architecture (`previews/`), ASCII wireframes, and component contracts for every screen, refer to [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
 
 ### A. The 4-Stage Navigation Shell
-The app shell is anchored by a persistent segmented top navigation bar across four stages:
+The app shell separates machine pipeline tasks from human consumption:
+- **Global Header**: Features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` or `[ 🌿 In Sync ▾ ]`), opening the Pipeline HUD with stage breakdowns and `[ ⚡ Synthesize Now ]` manual override.
+- **Segmented Bar**: Stage tabs display numbers strictly for **unconsumed human value** with zero-suppression (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`).
 1. **Capture**: Unfiltered, state-coded stream of voice captures with daily numbering, audio playback, unread dots, manual editing, and compact dual dropdown filters.
-2. **Synthesis**: Clustered session notes with a compact **Folder Filter Dropdown** (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`), 1-tap card folder reassignment, on-demand AI style re-writing with active style checkmark, expandable origin audit drawers, and raw note ejection options.
+2. **Synthesis**: Clustered session notes with dual dropdown filters (`[ 👁️ All Triage ▾ ]` and `[ 📁 All Folders ▾ ]`), tri-color card states (Yellow, Blue, Green), unread dots, on-demand AI style re-writing, and configurable batching settings ($X$ notes / $Y$ minutes).
 3. **Insights**: Macro-level cognitive intelligence: emotional valence heatmap, topic cognitive density treemap, and recurrent behavioral patterns.
 4. **Action**: Execution hub featuring extracted commitment checkboxes, calendar time-blocking, and external calendar sync status.
 
 ### B. Isolated Component Sandbox (`previews/`)
 All visual prototypes and UI design iterations are built in `previews/screens/` and verified with mock datasets before promotion into `lib/features/`:
 - `capture_screen_preview.dart` (Screen 1)
-- `synthesis_screen_preview.dart` (Screen 2: with Folder Filter Dropdown)
+- `synthesis_screen_preview.dart` (Screen 2: with Dual Dropdown Filters & Tri-Color Cards)
 - `insights_screen_preview.dart` (Screen 3)
 - `action_screen_preview.dart` (Screen 4)
+- `settings_preview.dart` (Screen 6: Hardware permissions, Synthesis batching thresholds, Calendar sync, Diagnostics)
 - `capture_hud_preview.dart` (Instant Audio Capture HUD <5ms)
 - `style_rewriter_preview.dart` (AI Style Re-Writer Context Prompts)
 - `note_ejection_preview.dart` (Disaggregate & Eject Raw Note Modal)

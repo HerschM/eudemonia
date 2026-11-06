@@ -76,7 +76,7 @@ class _ActionScreenPreviewState extends State<ActionScreenPreview> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
                   decoration: BoxDecoration(
-                    color: PreviewTheme.accentAction.withOpacity(0.18),
+                    color: PreviewTheme.accentAction.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
                   ),
                   child: Text(
@@ -197,14 +197,14 @@ class _ActionScreenPreviewState extends State<ActionScreenPreview> {
       padding: const EdgeInsets.all(14.0),
       decoration: PreviewTheme.cardDecoration(
         bgColor: PreviewTheme.surface,
-        borderColor: PreviewTheme.accentAction.withOpacity(0.25),
+        borderColor: PreviewTheme.accentAction.withValues(alpha: 0.25),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10.0),
             decoration: BoxDecoration(
-              color: PreviewTheme.accentAction.withOpacity(0.15),
+              color: PreviewTheme.accentAction.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -261,8 +261,8 @@ class _ActionScreenPreviewState extends State<ActionScreenPreview> {
       margin: const EdgeInsets.only(bottom: 10.0),
       padding: const EdgeInsets.all(14.0),
       decoration: PreviewTheme.cardDecoration(
-        bgColor: item.isCompleted ? PreviewTheme.surface.withOpacity(0.5) : PreviewTheme.surface,
-        borderColor: isUrgent ? PreviewTheme.accentWarning.withOpacity(0.3) : PreviewTheme.borderSubtle,
+        bgColor: item.isCompleted ? PreviewTheme.surface.withValues(alpha: 0.5) : PreviewTheme.surface,
+        borderColor: isUrgent ? PreviewTheme.accentWarning.withValues(alpha: 0.3) : PreviewTheme.borderSubtle,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,7 +320,7 @@ class _ActionScreenPreviewState extends State<ActionScreenPreview> {
                   padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 3.0),
                   decoration: BoxDecoration(
                     color: isUrgent
-                        ? PreviewTheme.accentWarning.withOpacity(0.18)
+                        ? PreviewTheme.accentWarning.withValues(alpha: 0.18)
                         : PreviewTheme.surfaceElevated,
                     borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
                   ),
@@ -381,14 +381,14 @@ class _ActionScreenPreviewState extends State<ActionScreenPreview> {
       padding: const EdgeInsets.all(14.0),
       decoration: PreviewTheme.cardDecoration(
         bgColor: PreviewTheme.surface,
-        borderColor: PreviewTheme.accentAction.withOpacity(0.3),
+        borderColor: PreviewTheme.accentAction.withValues(alpha: 0.3),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
             decoration: BoxDecoration(
-              color: PreviewTheme.accentAction.withOpacity(0.15),
+              color: PreviewTheme.accentAction.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
             ),
             child: Column(

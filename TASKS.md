@@ -504,12 +504,16 @@
 
 ## Milestone 6: UI/UX Component Sandbox & Four-Stage Interaction Mockups (Active & Priority)
 
-- [/] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action)**
-  - **Area**: `previews/screens/capture_screen_preview.dart`, `previews/screens/synthesis_screen_preview.dart`, `previews/screens/insights_screen_preview.dart`, `previews/screens/action_screen_preview.dart`, `previews/screens/style_rewriter_preview.dart`, `previews/screens/note_ejection_preview.dart`, `previews/mock_data.dart`, `previews/gallery_shell.dart`, `previews/main_preview.dart`
+- [x] **TASK-047: Four-Stage Screen Mockups & Interactive Preview Sandbox (Capture, Synthesis, Insights, Action, Settings & Pipeline HUD)**
+  - **Area**: `previews/screens/capture_screen_preview.dart`, `previews/screens/synthesis_screen_preview.dart`, `previews/screens/insights_screen_preview.dart`, `previews/screens/action_screen_preview.dart`, `previews/screens/settings_preview.dart`, `previews/screens/style_rewriter_preview.dart`, `previews/screens/note_ejection_preview.dart`, `previews/mock_data.dart`, `previews/gallery_shell.dart`, `previews/main_preview.dart`
   - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters), [`PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering`](./PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering), and [`UX.md`](./UX.md)
   - **Details**:
     1. Build isolated preview screens using typed mock data (`mock_data.dart`) with zero production boilerplate in `lib/`.
-    2. Implement `capture_screen_preview.dart`:
+    2. Implement `gallery_shell.dart` navigation & mind pipeline HUD:
+       - Top AI Pipeline Status Pill: `[ ⚡ X in Pipeline ▾ ]` / `[ 🌿 In Sync ▾ ]`. Tapping opens the interactive **Pipeline HUD Modal** breaking down machine work (Capture STT queue, Synthesis batch queue with `[ ⚡ Synthesize Now ]`, Insights daily refresh countdown, and Action extraction state).
+       - Top Settings action button opening `settings_preview.dart`.
+       - Stage tab bar displaying numbers strictly for **unconsumed human value** with zero-suppression (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`; omitting `(0)` when count is zero).
+    3. Implement `capture_screen_preview.dart`:
        - Cognitive State Color Accents: Yellow for pending processing (`stateEnqueuedBg`), Blue for processed STT/cleaned entries (`stateProcessedBg`), Green for synthesis completed entries (`stateSynthesizedBg`), and Red for failed entries (`stateFailedBg`).
        - Compact Dual Dropdown Filters: Triage dropdown (`[ 👁️ All Triage ▾ ]` for `All`, `Unread`, `Read`) and Processing State dropdown (`[ ⚡ All Statuses ▾ ]` for `All`, `Processing`, `Processed`, `Synthesized`, `Failed`) preserving vertical space and matching Synthesis dropdown styling.
        - Daily sequence numbering (`#01` to `#06`...) with preserved gaps on deletion.
@@ -517,37 +521,47 @@
        - Footer format: `DD/MM  HH:MM AM/PM`.
        - Action controls: Manual text edit (`[ ✎ Edit ]`). Style re-writing is removed from Capture and hosted under Synthesis.
        - Interactive Clickable Floating Capture Trigger: Floating capsule with prominent mic icon (`20sp`), visual `"/"` separator, and text: `[ 🎙️ / Press Vol Up + Down to Capture ]`. Clickable in-app to start recording; when active, morphs into an animated listening waveform / loader bar inside the button replacing the mic and text, and enqueues a new yellow pending card on stop with clean SnackBar feedback: `"Captured a new note [#0X]"` (free of internal debug filler).
-    3. Implement `synthesis_screen_preview.dart`:
-       - Clustered session notes (`#S-01`, `#S-02`), compact Folder Filter Dropdown in header row (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`), card folder badge with 1-tap reassignment dropdown (`[ 💡 Ideas ▾ ]`), synthesis narrative, session time span and duration.
+    4. Implement `synthesis_screen_preview.dart`:
+       - Dual compact dropdown filters: `[ 👁️ All Triage ▾ ]` (`All`, `Unread`, `Read`) and `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+       - Unread indicator dot (`• Unread`) on newly clustered cards, cleared on user interaction.
+       - Tri-color card states: Yellow (`stateEnqueuedBg` / re-synthesizing), Blue (`stateProcessedBg` / awaiting action extraction), Green (`stateSynthesizedBg` / action extraction pass completed).
+       - Pending batch synthesis banner: `[ 🧩 X raw thoughts ready to cluster • [ ⚡ Synthesize Now ] ]`.
+       - Clustered session notes (`#S-01`, `#S-02`), card folder badge with 1-tap reassignment dropdown (`[ 💡 Ideas ▾ ]`), synthesis narrative, session time span and duration.
        - AI Style Re-Writer: Each cluster card features `[ ✨ Style ▾ ]` button. Modal shows 6 preset context prompts, highlighting currently applied style with a checkmark (`Icons.check`). Changing style flags cluster as re-processing and turns card Yellow (`stateEnqueuedBg`).
        - Expandable origin raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`).
        - Single Note Ejection Guard: If cluster has only 1 note (`originNotes.length <= 1`), hide/disable the `[ ⤢ Move Out ]` button.
        - `note_ejection_preview.dart` modal offering "Move to another clubbed note" (with target cluster picker for `#S-01`, `#S-02`, etc.) vs "Make it an independent note", with clean copy free of recurring debug filler text. When moved, both source and target clubbed notes transition to Yellow for re-synthesis.
-    4. Implement `insights_screen_preview.dart`: segmented sub-view switcher across Emotional Climate Heatmap (-1.0 to +1.0 valence with 2-minute coherence breath button), Topic & Work Density matrix, and Recurrent Thought Patterns detected across sessions.
-    5. Implement `action_screen_preview.dart`: commitments todo list with checkboxes, urgency badges, time anchors (`05/11  02:00 PM`), and origin session links; Calendar Time-Block Preview schedule; Calendar Sync status card with push button.
-    6. Connect all 4 screens into `gallery_shell.dart` and `main_preview.dart` with a top stage switcher for interactive testing.
-    7. **Human Alignment & Verification Gate**: Run `flutter run -t previews/main_preview.dart` and present for user interactive review and sign-off before promoting any widgets into `lib/`.
+    5. Implement `settings_preview.dart`:
+       - Background permissions (Accessibility Service, Battery Optimization).
+       - Automatic Synthesis Trigger & Batching Settings: $X$ capture message threshold (1–10 notes, default 3), $Y$ minutes inactivity threshold (5–60 mins, default 15), and `[ ⚡ Synthesize Buffer Now ]` override.
+       - Calendar Sync controls, RAM telemetry & manual model eviction, and rotating diagnostic log console.
+    6. Implement `insights_screen_preview.dart`: segmented sub-view switcher across Emotional Climate Heatmap (-1.0 to +1.0 valence with 2-minute coherence breath button), Topic & Work Density matrix, and Recurrent Thought Patterns detected across sessions.
+    7. Implement `action_screen_preview.dart`: commitments todo list with checkboxes, urgency badges, time anchors (`05/11  02:00 PM`), and origin session links; Calendar Time-Block Preview schedule; Calendar Sync status card with push button.
+    8. Connect all 4 screens, Settings, and Pipeline HUD into `gallery_shell.dart` and `main_preview.dart` with a top stage switcher for interactive testing.
+    9. **Human Alignment & Verification Gate**: Run `flutter run -t previews/main_preview.dart` and present for user interactive review and sign-off before promoting any widgets into `lib/`.
   - **Verification**:
     - **Unit Tests**:
       - File: `test/previews/preview_mock_data_test.dart`
       - Cases:
         1. Mock data supplies valid daily sequence numbers across multiple statuses (Yellow pending, Blue processed, Green synthesized, Red failed).
-        2. Mock clusters contain valid origin raw note references.
+        2. Mock clusters contain valid origin raw note references, unread state, and tri-color maturation statuses.
         3. Style presets contain all 6 required prompts and labels.
+        4. Settings mock configuration supplies valid synthesis batching thresholds ($X$ count, $Y$ minutes).
     - **Widget Tests**:
       - File: `test/previews/preview_screens_test.dart`
       - Cases:
-        1. All 4 preview screens render with zero framework assertions.
-        2. Capture screen renders state colors (Yellow pending, Blue processed, Green synthesized, Red failed).
-        3. Capture screen compact dual dropdown filters (Triage and Processing status) filter items accurately without chip row clutter.
-        4. Capture screen floating trigger renders with larger mic and `"/"` separator, is clickable to toggle active listening waveform state, and emits clean SnackBar copy (`Captured a new note [#0X]`).
-        5. Capture card header ordering strictly renders `# Number` before `Play button` before `Unread dot` before `Delete`, and card footer has manual edit (zero style button).
-        6. Capture card footer displays date then time format `DD/MM  HH:MM AM/PM`.
-        7. Synthesis screen cluster cards feature `[ ✨ Style ▾ ]` button; opening modal highlights active preset with checkmark, and selecting a new preset sets cluster to Yellow (`isReprocessing = true`).
-        8. Synthesis screen hides `[ Move Out ]` button when cluster has only 1 note.
-        9. Note ejection modal presents clean target selection without instructional filler messages, and sets both clusters to Yellow pending re-synthesis.
-        10. Synthesis screen renders compact Folder Filter Dropdown and filters clusters when a folder is selected.
-        11. Layout adapts down to 360dp narrow viewport with 0 `RenderFlex` overflows.
+        1. All preview screens render with zero framework assertions.
+        2. Top bar AI pipeline pill is interactive and opens Pipeline HUD modal detailing stage status and `[ ⚡ Synthesize Now ]`.
+        3. Stage tab bar displays zero-suppressed numbers for unconsumed human value (`Capture (2)`, `Synthesis (1)`, `Action (3)`).
+        4. Capture screen compact dual dropdown filters (Triage and Processing status) filter items accurately without chip row clutter.
+        5. Capture screen floating trigger renders with larger mic and `"/"` separator, is clickable to toggle active listening waveform state, and emits clean SnackBar copy (`Captured a new note [#0X]`).
+        6. Capture card header ordering strictly renders `# Number` before `Play button` before `Unread dot` before `Delete`, and card footer has manual edit (zero style button).
+        7. Synthesis screen renders dual dropdown filters (`[ 👁️ All Triage ▾ ]` and `[ 📁 All Folders ▾ ]`), unread dots, and tri-color card states (Yellow, Blue, Green).
+        8. Synthesis screen cluster cards feature `[ ✨ Style ▾ ]` button; opening modal highlights active preset with checkmark, and selecting a new preset sets cluster to Yellow (`isReprocessing = true`).
+        9. Synthesis screen hides `[ Move Out ]` button when cluster has only 1 note.
+        10. Note ejection modal presents clean target selection without instructional filler messages, and sets both clusters to Yellow pending re-synthesis.
+        11. Settings screen renders background permissions, synthesis batching thresholds slider/dropdowns, and calendar sync controls with 0 overflows.
+        12. Layout adapts down to 360dp narrow viewport with 0 `RenderFlex` overflows.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/previews/preview_screens_test.dart`
       - `~/flutter/bin/flutter run -t previews/main_preview.dart -d macos`

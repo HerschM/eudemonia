@@ -120,6 +120,53 @@ void main() {
         expect(pattern.frequencyCount, greaterThan(1));
       }
     });
+
+    test('MockData provides AI Pipeline status telemetry across stages', () {
+      final pipeline = MockData.pipelineStatus;
+      expect(pipeline.captureTranscribingCount, equals(1));
+      expect(pipeline.synthesisReadyCount, equals(2));
+      expect(pipeline.actionPendingCount, equals(0));
+      expect(pipeline.totalPending, equals(3));
+      expect(pipeline.hasActiveJobs, isTrue);
+      expect(pipeline.insightsNextRefresh, equals('14h'));
+
+      final idlePipeline = const MockPipelineStatus(
+        captureTranscribingCount: 0,
+        synthesisReadyCount: 0,
+        actionPendingCount: 0,
+      );
+      expect(idlePipeline.totalPending, equals(0));
+      expect(idlePipeline.hasActiveJobs, isFalse);
+    });
+
+    test('MockData provides Settings and Batching Configuration thresholds', () {
+      final settings = MockData.settingsConfig;
+      expect(settings.isAccessibilityGranted, isTrue);
+      expect(settings.isBatteryExemptGranted, isTrue);
+      expect(settings.isForegroundKeepAlive, isTrue);
+      expect(settings.synthesisNoteThreshold, equals(3));
+      expect(settings.synthesisInactivityMinutes, equals(15));
+      expect(settings.isCalendarSyncEnabled, isTrue);
+      expect(settings.calendarProvider, equals('Google Calendar'));
+      expect(settings.targetCalendar, equals('Personal (Default)'));
+      expect(settings.autoSyncOnExtract, isTrue);
+      expect(settings.thermalHeadroomPercent, equals(84));
+      expect(settings.ramFootprint, equals('1.58 GB'));
+      expect(settings.evictionCountdownSeconds, equals(164));
+    });
+
+    test('MockSynthesisCluster tracks unread indicator and action extraction completion', () {
+      final clusters = MockData.synthesisClusters;
+      expect(clusters.length, greaterThanOrEqualTo(2));
+
+      // First cluster (#S-02) is unread and action extraction is complete (green)
+      expect(clusters[0].isUnread, isTrue);
+      expect(clusters[0].isActionExtracted, isTrue);
+
+      // Second cluster (#S-01) is read and awaiting action extraction pass (blue)
+      expect(clusters[1].isUnread, isFalse);
+      expect(clusters[1].isActionExtracted, isFalse);
+    });
   });
 }
 

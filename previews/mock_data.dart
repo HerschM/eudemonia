@@ -90,6 +90,8 @@ class MockSynthesisCluster {
   final bool isExpanded;
   final bool isReprocessing; // True when marked yellow for re-synthesis
   final String appliedStyleId; // e.g. "concise", "bullets", "professional", etc.
+  final bool isUnread; // Toggles electric blue unread indicator dot
+  final bool isActionExtracted; // True when action extraction pass completed (Green)
 
   const MockSynthesisCluster({
     required this.clusterId,
@@ -103,6 +105,8 @@ class MockSynthesisCluster {
     this.isExpanded = false,
     this.isReprocessing = false,
     this.appliedStyleId = 'concise',
+    this.isUnread = false,
+    this.isActionExtracted = true,
   });
 
   MockSynthesisCluster copyWith({
@@ -112,6 +116,8 @@ class MockSynthesisCluster {
     bool? isExpanded,
     bool? isReprocessing,
     String? appliedStyleId,
+    bool? isUnread,
+    bool? isActionExtracted,
   }) {
     return MockSynthesisCluster(
       clusterId: clusterId,
@@ -125,6 +131,8 @@ class MockSynthesisCluster {
       isExpanded: isExpanded ?? this.isExpanded,
       isReprocessing: isReprocessing ?? this.isReprocessing,
       appliedStyleId: appliedStyleId ?? this.appliedStyleId,
+      isUnread: isUnread ?? this.isUnread,
+      isActionExtracted: isActionExtracted ?? this.isActionExtracted,
     );
   }
 
@@ -257,6 +265,93 @@ class MockInsightsData {
   });
 }
 
+/// Pipeline status package for top bar and HUD modal
+class MockPipelineStatus {
+  final int captureTranscribingCount;
+  final int synthesisReadyCount;
+  final String insightsNextRefresh;
+  final int actionPendingCount;
+
+  const MockPipelineStatus({
+    this.captureTranscribingCount = 1,
+    this.synthesisReadyCount = 2,
+    this.insightsNextRefresh = '14h',
+    this.actionPendingCount = 0,
+  });
+
+  int get totalPending =>
+      captureTranscribingCount + synthesisReadyCount + actionPendingCount;
+  bool get hasActiveJobs => totalPending > 0;
+}
+
+/// Settings and batching configuration
+class MockSettingsConfig {
+  final bool isAccessibilityGranted;
+  final bool isBatteryExemptGranted;
+  final bool isForegroundKeepAlive;
+  final int synthesisNoteThreshold; // X captures (default 3)
+  final int synthesisInactivityMinutes; // Y minutes quiet (default 15)
+  final bool isCalendarSyncEnabled;
+  final String calendarProvider;
+  final String targetCalendar;
+  final bool autoSyncOnExtract;
+  final bool keepRawWav;
+  final int thermalHeadroomPercent;
+  final String ramFootprint;
+  final int evictionCountdownSeconds;
+
+  const MockSettingsConfig({
+    this.isAccessibilityGranted = true,
+    this.isBatteryExemptGranted = true,
+    this.isForegroundKeepAlive = true,
+    this.synthesisNoteThreshold = 3,
+    this.synthesisInactivityMinutes = 15,
+    this.isCalendarSyncEnabled = true,
+    this.calendarProvider = 'Google Calendar',
+    this.targetCalendar = 'Personal (Default)',
+    this.autoSyncOnExtract = true,
+    this.keepRawWav = true,
+    this.thermalHeadroomPercent = 84,
+    this.ramFootprint = '1.58 GB',
+    this.evictionCountdownSeconds = 164,
+  });
+
+  MockSettingsConfig copyWith({
+    bool? isAccessibilityGranted,
+    bool? isBatteryExemptGranted,
+    bool? isForegroundKeepAlive,
+    int? synthesisNoteThreshold,
+    int? synthesisInactivityMinutes,
+    bool? isCalendarSyncEnabled,
+    String? calendarProvider,
+    String? targetCalendar,
+    bool? autoSyncOnExtract,
+    bool? keepRawWav,
+  }) {
+    return MockSettingsConfig(
+      isAccessibilityGranted:
+          isAccessibilityGranted ?? this.isAccessibilityGranted,
+      isBatteryExemptGranted:
+          isBatteryExemptGranted ?? this.isBatteryExemptGranted,
+      isForegroundKeepAlive:
+          isForegroundKeepAlive ?? this.isForegroundKeepAlive,
+      synthesisNoteThreshold:
+          synthesisNoteThreshold ?? this.synthesisNoteThreshold,
+      synthesisInactivityMinutes:
+          synthesisInactivityMinutes ?? this.synthesisInactivityMinutes,
+      isCalendarSyncEnabled:
+          isCalendarSyncEnabled ?? this.isCalendarSyncEnabled,
+      calendarProvider: calendarProvider ?? this.calendarProvider,
+      targetCalendar: targetCalendar ?? this.targetCalendar,
+      autoSyncOnExtract: autoSyncOnExtract ?? this.autoSyncOnExtract,
+      keepRawWav: keepRawWav ?? this.keepRawWav,
+      thermalHeadroomPercent: thermalHeadroomPercent,
+      ramFootprint: ramFootprint,
+      evictionCountdownSeconds: evictionCountdownSeconds,
+    );
+  }
+}
+
 /// Central MockData container with typed fixture datasets
 class MockData {
   static List<MockCaptureNote> get captureNotes => [
@@ -367,6 +462,8 @@ class MockData {
             ),
           ],
           isExpanded: false,
+          isUnread: true,
+          isActionExtracted: true,
         ),
         MockSynthesisCluster(
           clusterId: 'cluster_1',
@@ -389,8 +486,14 @@ class MockData {
             ),
           ],
           isExpanded: false,
+          isUnread: false,
+          isActionExtracted: false,
         ),
       ];
+
+  static MockPipelineStatus get pipelineStatus => const MockPipelineStatus();
+
+  static MockSettingsConfig get settingsConfig => const MockSettingsConfig();
 
   static List<MockStylePreset> get stylePresets => const [
         MockStylePreset(

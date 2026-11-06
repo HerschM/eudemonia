@@ -137,7 +137,7 @@ void main() {
     });
 
     testWidgets(
-        'SynthesisScreenPreview renders compact folder filter, style re-writer with active checkmark, single note lock, and ejection',
+        'SynthesisScreenPreview renders compact folder filter, triage filter, tri-color cards, batch banner, style re-writer, single note lock, and ejection',
         (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
@@ -148,13 +148,51 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Verify compact folder filter dropdown is present
+      // Verify compact folder and triage filter dropdowns are present
       expect(find.byKey(const Key('synthesis_folder_filter_dropdown')),
+          findsOneWidget);
+      expect(find.byKey(const Key('synthesis_triage_filter_dropdown')),
+          findsOneWidget);
+
+      // Verify pending batch synthesis banner is visible
+      expect(find.byKey(const Key('pending_synthesis_batch_banner')),
+          findsOneWidget);
+      expect(find.textContaining('2 raw thoughts ready to cluster'),
           findsOneWidget);
 
       // Verify synthesized notes
       expect(find.text('#S-02'), findsOneWidget);
       expect(find.text('#S-01'), findsOneWidget);
+
+      // Verify tri-color cards & unread dot on #S-02
+      expect(find.byKey(const Key('unread_dot_S-02')), findsOneWidget);
+      expect(find.byKey(const Key('awaiting_action_badge_S-01')), findsOneWidget);
+
+      // Tap #S-02 to mark as read
+      await tester.tap(find.text('#S-02'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('unread_dot_S-02')), findsNothing);
+
+      // Test Triage Dropdown Filter (All, Unread, Read)
+      await tester.tap(find.byKey(const Key('synthesis_triage_filter_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Read').last);
+      await tester.pumpAndSettle();
+      expect(find.text('#S-01'), findsOneWidget);
+      expect(find.text('#S-02'), findsOneWidget); // marked read above
+
+      await tester.tap(find.byKey(const Key('synthesis_triage_filter_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All Triage').last);
+      await tester.pumpAndSettle();
+
+      // Tap Synthesize Now button on the batch banner
+      final bannerBtn = find.byKey(const Key('synthesize_now_banner_button'));
+      expect(bannerBtn, findsOneWidget);
+      await tester.tap(bannerBtn);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsNothing);
+      expect(find.text('Triggered on-demand synthesis clustering.'), findsOneWidget);
 
       // Verify predefined folder badge with reassignment
       expect(find.byKey(const Key('folder_badge_S-02')), findsOneWidget);
@@ -199,6 +237,8 @@ void main() {
       final expandPillS01Finder =
           find.byKey(const Key('expand_origin_pill_S-01'));
       expect(expandPillS01Finder, findsOneWidget);
+      await tester.ensureVisible(expandPillS01Finder);
+      await tester.pumpAndSettle();
       await tester.tap(expandPillS01Finder);
       await tester.pumpAndSettle();
 
@@ -206,14 +246,18 @@ void main() {
           findsNothing);
 
       // Collapse #S-01 and re-expand #S-02 to perform Move Out
+      await tester.ensureVisible(expandPillS01Finder);
       await tester.tap(expandPillS01Finder);
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(expandPillFinder);
       await tester.tap(expandPillFinder);
       await tester.pumpAndSettle();
 
       // Tap Move Out on raw_1 from #S-02 to open ejection modal
-      await tester.tap(find.byKey(const Key('move_out_button_raw_1')));
+      final moveOutRaw1Finder = find.byKey(const Key('move_out_button_raw_1'));
+      await tester.ensureVisible(moveOutRaw1Finder);
+      await tester.tap(moveOutRaw1Finder);
       await tester.pumpAndSettle();
 
       expect(find.text('Reassign Raw Note [#01]'), findsOneWidget);
@@ -306,7 +350,7 @@ void main() {
     });
 
     testWidgets(
-        'GalleryShell switches across all 4 stages on 360dp viewport with 0 overflows',
+        'GalleryShell switches across all 4 stages with zero-suppression tabs, AI pipeline HUD modal, and settings preview on 360dp viewport with 0 overflows',
         (tester) async {
       tester.view.physicalSize = const Size(360 * 2, 800 * 2);
       tester.view.devicePixelRatio = 2.0;
@@ -319,24 +363,74 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Stage tabs visible
-      expect(find.text('Capture'), findsOneWidget);
-      expect(find.text('Synthesis'), findsOneWidget);
-      expect(find.text('Insights'), findsOneWidget);
-      expect(find.text('Action'), findsOneWidget);
+      // Zero-suppression stage tabs visible with human unconsumed value numbers
+      expect(find.text('Capture (2)'), findsOneWidget);
+      expect(find.text('Synthesis (1)'), findsOneWidget);
+      expect(find.text('Insights (1)'), findsOneWidget);
+      expect(find.text('Action (3)'), findsOneWidget);
 
-      // Switch to Synthesis
-      await tester.tap(find.text('Synthesis'));
+      // Top AI pipeline pill is visible and interactive
+      final pipelinePill = find.byKey(const Key('top_ai_pipeline_pill'));
+      expect(pipelinePill, findsOneWidget);
+      expect(find.textContaining('3 in Pipeline'), findsOneWidget);
+
+      // Tap Top AI pipeline pill to open HUD modal
+      await tester.tap(pipelinePill);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Mind Pipeline Status'), findsOneWidget);
+      expect(find.textContaining('audio recording transcribing'), findsOneWidget);
+      expect(find.textContaining('raw thoughts ready to cluster'), findsOneWidget);
+      expect(find.textContaining('Next daily refresh in 14h'), findsOneWidget);
+      expect(find.textContaining('All action commitments extracted'), findsOneWidget);
+
+      // Tap Synthesize Now in Pipeline HUD Modal
+      final hudSynthesizeBtn = find.byKey(const Key('hud_synthesize_now_button'));
+      expect(hudSynthesizeBtn, findsOneWidget);
+      await tester.tap(hudSynthesizeBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Synthesized 2 raw thoughts'), findsOneWidget);
+      // Status is updated to 1 in pipeline (capture note transcribing remains)
+      expect(find.textContaining('1 in Pipeline'), findsOneWidget);
+
+      // Tap Settings gear button to open Settings & Diagnostics preview screen
+      final settingsGear = find.byKey(const Key('settings_gear_button'));
+      expect(settingsGear, findsOneWidget);
+      await tester.tap(settingsGear);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Settings & Diagnostics'), findsOneWidget);
+      expect(find.text('Accessibility Interceptor'), findsOneWidget);
+      expect(find.text('ENABLED'), findsWidgets);
+      expect(find.byKey(const Key('synthesis_note_threshold_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('synthesis_inactivity_minutes_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('trigger_synthesis_now_btn')), findsOneWidget);
+
+      final evictBtnFinder = find.byKey(const Key('evict_models_btn'));
+      await tester.scrollUntilVisible(evictBtnFinder, 300);
+      await tester.pumpAndSettle();
+      expect(evictBtnFinder, findsOneWidget);
+      expect(find.text('1.58 GB'), findsOneWidget);
+
+      // Tap back button from Settings
+      await tester.scrollUntilVisible(find.byKey(const Key('settings_back_button')), -300);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_back_button')));
+      await tester.pumpAndSettle();
+
+      // Back in GalleryShell - switch to Synthesis (unread count was incremented to 2 after HUD synthesis)
+      await tester.tap(find.text('Synthesis (2)'));
       await tester.pumpAndSettle();
       expect(find.text('#S-02'), findsOneWidget);
 
       // Switch to Insights
-      await tester.tap(find.text('Insights'));
+      await tester.tap(find.text('Insights (1)'));
       await tester.pumpAndSettle();
       expect(find.text('Emotion Map'), findsOneWidget);
 
       // Switch to Action
-      await tester.tap(find.text('Action'));
+      await tester.tap(find.text('Action (3)'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Device Calendar'), findsOneWidget);
     });

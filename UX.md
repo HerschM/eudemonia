@@ -119,15 +119,47 @@ $$\mathbf{Capture} \longrightarrow \mathbf{Synthesis} \longrightarrow \mathbf{In
 | **Stage 3** | **Insights** | Reflects macro-level intelligence: emotional climate heatmaps, cognitive energy distribution, topic load, and recurrent habit loops. |
 | **Stage 4** | **Action** | Conveys clear execution momentum: extracting commitments into actionable todos, calendar time-blocking, and external calendar synchronization. |
 
-### C. Top Persistent Navigation Bar Wireframe
+### C. Top Persistent Navigation Bar & Mind Pipeline Architecture
+
+The global top navigation shell clearly separates **AI Machine Processing** from **Human Cognitive Consumption**:
+
+1. **Top AI Status Pill (`[ ⚡ X in Pipeline ▾ ]` / `[ 🌿 In Sync ▾ ]`)**:
+   - Represents the aggregate state of the on-device AI pipeline.
+   - When jobs are active or queued: Vibrant amber/cyan pill with bolt icon: `[ ⚡ 3 in Pipeline ▾ ]`.
+   - When pipeline is fully caught up: Subtle emerald pill: `[ 🌿 In Sync ▾ ]`.
+   - **Interactive Pipeline HUD (Tap to Open)**: Tapping this pill opens an interactive modal sheet detailing machine tasks across all 4 stages:
+     - **Capture**: Audio files currently awaiting STT & grammar cleanup (`#06 transcribing`).
+     - **Synthesis**: Blue capture notes ready to cluster (`2 raw thoughts ready`) + manual `[ ⚡ Synthesize Now ]` button.
+     - **Insights**: Periodic refresh countdown (`Next daily refresh in 14h`).
+     - **Action**: Synthesized notes awaiting action extraction (`All current sessions extracted`).
+
+2. **Tab Headers with Zero-Suppression Numbers (Human Attention Currency)**:
+   - Numbers on tabs strictly denote **unconsumed human value** (unread items or open commitments), eliminating ambiguous dots:
+     - `Capture`: Unread raw thoughts (e.g. `Capture (2)`).
+     - `Synthesis`: Unread synthesized notes (e.g. `Synthesis (1)`).
+     - `Insights`: Unreviewed behavioral pattern alerts or mood shifts (e.g. `Insights (1)`).
+     - `Action`: Incomplete / open to-do commitments (e.g. `Action (3)`).
+   - **Zero-Suppression Contract**: When a stage has `0` unread/pending items, **the number is omitted entirely** (e.g. `Synthesis` instead of `Synthesis (0)`). This prevents visual clutter and draws the user's eye only to stages requiring attention.
+
+### Visual ASCII Wireframe
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  Eudemonia                    [ ⚡ 2 pending ]  [ ⚙ ]  │ ◄── Logo + Queue Indicator + Settings
+│  Eudemonia               [ ⚡ 3 in Pipeline ▾ ]  [ ⚙ ]  │ ◄── Logo + AI Pipeline Pill + Settings
 ├────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────┐  │ ◄── Persistent 4-Stage Segmented Bar
-│  │  [ Capture (4) ]  Synthesis   Insights   Action  │  │     (Active tab highlighted with
-│  └──────────────────────────────────────────────────┘  │      subtle border & bold label)
+│  │ [Capture (2)] Synthesis (1) Insights (1) Action(3│  │     (Numbers = Unconsumed Value only;
+│  └──────────────────────────────────────────────────┘  │      0-count stages show clean label)
+│                                                        │
+│  (Tapping [ ⚡ 3 in Pipeline ▾ ] opens Pipeline HUD:)   │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ 🧠 AI PIPELINE STATUS                     [ ✕ ]  │  │
+│  │ • Capture:   1 audio transcribing (#06)          │  │
+│  │ • Synthesis: 2 blue notes ready to cluster       │  │
+│  │              [ ⚡ Synthesize Now ]                │  │ ◄── Instant manual override
+│  │ • Insights:  Next daily refresh in 14h           │  │ ◄── Periodic compute protection
+│  │ • Action:    All current notes extracted         │  │
+│  └──────────────────────────────────────────────────┘  │
 ```
 
 ---
@@ -264,10 +296,24 @@ The default landing screen. Displays all captured thoughts in reverse-chronologi
 
 ### Screen Overview
 The second screen in the application. Thoughts captured in close proximity or sharing strong semantic similarity are automatically clustered and synthesized into structured notes.
-- **Compact Folder Filter Dropdown (Zero Carousel Clutter)**:
-  - The heavy horizontal folder carousel is **removed** to keep the screen uncluttered and preserve vertical real estate.
-  - A compact **Folder Filter Dropdown** (`[ 📁 Filter: All Folders ▾ ]`) is positioned in the section header (similar to a read/unread triage filter), allowing users to filter synthesized notes by folder (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+- **Compact Dual Dropdown Filter Bar**:
+  - Located directly in the sub-header row, mirroring Capture's ergonomics:
+    - **Triage Filter Dropdown**: `[ 👁️ All Triage ▾ ]` (`All`, `Unread`, `Read`). Filters new vs reviewed synthesized sessions.
+    - **Folder Filter Dropdown**: `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
   - Strict **Single-Folder Discipline**: Synthesized notes are strictly assigned to one of the predefined folders. Unconstrained auto-tagging or arbitrary tag generation is prohibited to prevent tag explosion and naming chaos.
+- **Card State Color Accents (Pipeline Maturation Transparency)**:
+  - Synthesis cluster cards reflect lifecycle state via border and background color accents:
+    - **Yellow (`stateEnqueuedBg` / Amber `#F59E0B`)**: Currently re-synthesizing / regenerating (e.g. after style change or raw note ejection).
+    - **Blue (`stateProcessedBg` / Electric Blue `#3B82F6`)**: Synthesized narrative ready; action extraction pass queued / pending.
+    - **Green (`stateSynthesizedBg` / Emerald `#10B981`)**: Action extraction pass completed (promoted to Action stage).
+      > [!IMPORTANT]
+      > **The Zero-Action Rule**: Green represents **Action Extraction Pass Completed**, not "has tasks". If a reflective or journal entry yields 0 action items, it still turns Green once the LLM extraction pass concludes, confirming the thought is fully processed and closed.
+- **Unread Indicator Dot (`• Unread`)**:
+  - Each cluster card hosts an electric blue unread dot when newly synthesized. Tapping or inspecting the card marks it as read, decrementing the `Synthesis (X)` header count.
+- **Pending Batch Synthesis Banner & Manual Override**:
+  - When unprocessed Blue capture notes exist in the queue, a quiet banner appears above the cluster list:
+    `[ 🧩 3 raw thoughts ready to cluster • [ ⚡ Synthesize Now ] ]`
+  - Allows users to bypass the automatic batch threshold ($X$ capture messages or $Y$ minutes of quiet) to cluster thoughts on demand immediately.
 - **Clustering Mechanics**:
   - **Session Timestamp Proximity**: Captures occurring within a contiguous activity window (e.g., 20–45 minute morning walk, meeting, or commute).
   - **Semantic Vector Similarity**: On-device embedding / LLM similarity clustering disjointed fragments on the same topic.
@@ -297,17 +343,22 @@ The second screen in the application. Thoughts captured in close proximity or sh
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  Eudemonia                    [ ⚡ All Synced ] [ ⚙ ]  │
+│  Eudemonia               [ ⚡ 3 in Pipeline ▾ ]  [ ⚙ ]  │
 ├────────────────────────────────────────────────────────┤
 │  ┌──────────────────────────────────────────────────┐  │
-│  │   Capture (4)  [ Synthesis (2) ] Insights Action │  │ ◄── Stage Switcher (Synthesis Active)
+│  │   Capture (2)  [ Synthesis (1) ] Insights Action │  │ ◄── Stage Switcher (Synthesis Active)
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  SYNTHESIS SESSIONS             [ 📁 All Folders ▾ ]   │ ◄── Compact Folder Filter Dropdown
-│                                                        │     (Clean, replaces horizontal carousel)
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ [#S-02]  [ 💡 Ideas ▾ ]     [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Style Re-Writer & Manual Edit
-│  │                                                  │  │     (1-tap dropdown to reassign folder)
+│  FILTERS:                                              │
+│  [ 👁️ All Triage ▾ ]    [ 📁 All Folders ▾ ]           │ ◄── Compact Dual Dropdowns (Triage + Folder)
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── Pending Batch Banner with Override
+│  │ 🧩 2 raw thoughts ready to cluster  [Synthesize] │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                        │
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🟢 Green Card (Fully processed into Action)
+│  │ [#S-02]  •  [ 💡 Ideas ▾ ]  [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Note sequence, Unread dot, Folder, Style
+│  │                                                  │  │
 │  │ "Consolidated architectural roadmap for local    │  │ ◄── LLM Synthesis of Morning Walk Captures
 │  │  speech clustering. Decided to separate raw      │  │
 │  │  inbox from synthesized notes to prevent clutter.│  │
@@ -327,10 +378,15 @@ The second screen in the application. Thoughts captured in close proximity or sh
 │  │ └──────────────────────────────────────────────┘ │  │
 │  └──────────────────────────────────────────────────┘  │
 │                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ [#S-01]  [ 💼 Work ▾ ]      [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Defined Folder: Work
+│  ┌──────────────────────────────────────────────────┐  │ ◄── 🔵 Blue Card (Awaiting Action Extraction)
+│  │ [#S-01]     [ 💼 Work ▾ ]   [ ✨ Style ▾] [ ✎ Edit ]│  │ ◄── Read, Awaiting action pass
 │  │ "Prepare quarterly deliverables before 3 PM sync"│  │
 │  │ ──────────────────────────────────────────────── │  │
+│  │ 📅 04/11  04:15 PM - 04:27 PM • ⏱️ 12m session   │  │
+│  │ [ 🧩 1 Raw Note Included (Tap to Expand) ▼ ]     │  │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
+```
 │  │ 📅 04/11  04:15 PM - 04:27 PM • ⏱️ 12m session   │  │
 │  │ [ 🧩 1 Raw Note Included (Tap to Expand) ▼ ]     │  │
 │  └──────────────────────────────────────────────────┘  │
@@ -579,7 +635,7 @@ Triggered instantaneously (<5ms) upon dual-volume button hardware press or lock 
 ## 10. Screen 6: Settings, Calendar Sync & Diagnostics Console
 
 ### Screen Overview
-Controls background resilience, physical hardware button listener status, calendar synchronization setup, audio retention policies, model lifecycle memory telemetry, and real-time rotating diagnostic logs.
+Controls background resilience, physical hardware button listener status, synthesis batching thresholds, calendar synchronization setup, audio retention policies, model lifecycle memory telemetry, and real-time rotating diagnostic logs.
 
 ### Visual ASCII Wireframe
 
@@ -591,6 +647,12 @@ Controls background resilience, physical hardware button listener status, calend
 │  Accessibility Interceptor:        [ ENABLED (Green) ] │ ◄── Hardware button listener
 │  Battery Optimization Exemption:   [ ENABLED (Green) ] │ ◄── Prevent OS Doze
 │  Keep Alive Foreground Service:    [ Toggle ON ]       │
+│                                                        │
+│  AUTOMATIC SYNTHESIS TRIGGER & BATCHING                │ ◄── Mobile Compute & Battery Safeguards
+│  Trigger after X captures:         [ 3 notes ▾ ]       │ ◄── Accumulation threshold (1–10)
+│  Trigger after Y minutes of quiet: [ 15 mins ▾ ]       │ ◄── Session inactivity window (5–60m)
+│  Unprocessed Thoughts in Buffer:   2 notes ready       │
+│  [ ⚡ Synthesize Buffer Now ]                           │ ◄── Manual batch override
 │                                                        │
 │  CALENDAR SYNCHRONIZATION                              │
 │  Sync Action Items with Calendar:  [ Toggle ON ]       │ ◄── Calendar Sync Toggle
@@ -620,11 +682,14 @@ Controls background resilience, physical hardware button listener status, calend
 - **Key Parameters**:
   - `bool isAccessibilityGranted`: Controls Accessibility status badge.
   - `bool isBatteryExemptGranted`: Controls Battery Exemption status badge.
+  - `int synthesisNoteThreshold`: Accumulated note count trigger (default: 3).
+  - `int synthesisInactivityMinutes`: Inactivity timeout trigger (default: 15).
+  - `int unprocessedCaptureCount`: Number of capture notes ready for synthesis.
   - `bool isCalendarSyncEnabled`: Controls calendar sync master toggle.
   - `String selectedCalendarProvider`: e.g. "Google Calendar", "Device Local Calendar".
   - `String modelLifecycleState`: `Unloaded`, `Loading`, or `Ready`.
   - `String activeRamFootprint`: e.g. `< 60 MB` (idle) or `~1.58 GB` (active).
-  - Callbacks: `onToggleCalendarSync`, `onSelectCalendarProvider`, `onEvictModels`, `onViewLogs`.
+  - Callbacks: `onToggleCalendarSync`, `onSelectCalendarProvider`, `onUpdateSynthesisThresholds`, `onTriggerSynthesisNow`, `onEvictModels`, `onViewLogs`.
 
 ---
 

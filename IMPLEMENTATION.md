@@ -263,7 +263,12 @@
 - **Symptom / Context**: The legacy single-feed UI placed category-folder pills horizontally across the top, forcing immediate categorization and cluttering rapid raw voice capture. Furthermore, users needed a clear maturation lifecycle from disjoint raw walk captures to synthesised clusters, emotional/topic insights, and calendar/todo action items.
 - **Architecture & Mechanics**:
   1. **Isolated Preview Sandbox (`previews/`)**: Built completely in `previews/` with zero production boilerplate in `lib/`, rendering typed mock data (`MockData`) with `PreviewTheme` (OLED dark design tokens).
-  2. **Stage 1 — Capture (`CaptureScreenPreview`)**:
+  2. **Shell Navigation & Mind Pipeline HUD (`GalleryShell`)**:
+     - Separates machine processing from human attention:
+       - **Global Header**: Features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` / `[ 🌿 In Sync ▾ ]`). Tapping opens the **Pipeline HUD Modal** detailing jobs across all 4 stages (Capture STT, Synthesis clustering queue with `[ ⚡ Synthesize Now ]`, Insights daily refresh timer, Action extraction state).
+       - **Settings Action**: Top gear icon navigates directly to `SettingsPreview`.
+       - **Stage Tab Bar**: Displays numbers strictly for **unconsumed human value** with zero-suppression (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`). If a stage has 0 unconsumed items, the number is cleanly omitted.
+  3. **Stage 1 — Capture (`CaptureScreenPreview`)**:
      - Raw, uncategorized stream with daily sequence numbering resetting every midnight (`#01`, `#02`...).
      - Processing status color accents: Yellow for pending processing (`stateEnqueuedBg`), Blue for STT and language corrected entries (`stateProcessedBg`), Green for synthesis completed entries (`stateSynthesizedBg`), and Red for failed processing (`stateFailedBg`).
      - Compact dual dropdown filters: Triage dropdown (`[ 👁️ All Triage ▾ ]` for `All`, `Unread`, `Read`) and Processing status dropdown (`[ ⚡ All Statuses ▾ ]` for `All`, `Processing`, `Processed`, `Synthesized`, `Failed`), replacing multi-chip rows to conserve vertical space and align with the Synthesis screen's dropdown styling.
@@ -271,21 +276,29 @@
      - Strict header layout sequence to preserve consistent horizontal alignment across read and unread cards: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`.
      - Timestamp displayed as Date then Time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
      - Action controls: Manual text edit (`[ ✎ Edit ]`). Raw capture is strictly STT and grammatical cleanup; AI Style Re-writing is hosted under Synthesis.
-  3. **Stage 2 — Synthesis (`SynthesisScreenPreview`)**:
+  4. **Stage 2 — Synthesis (`SynthesisScreenPreview`)**:
      - Clusters raw notes captured across a temporal session into consolidated notes (`#S-01`, `#S-02`) with duration metadata (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`).
      - Enforces strict **Single-Folder Discipline** (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
-     - Replaced horizontal folder carousel with a compact **Folder Filter Dropdown** in the section header, paired with 1-tap folder reassignment dropdown on each card.
+     - Compact dual dropdown filters in section header: `[ 👁️ All Triage ▾ ]` (`All`, `Unread`, `Read`) and `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+     - **Tri-Color Maturation States**:
+       - Yellow (`stateEnqueuedBg`): Re-synthesizing in progress.
+       - Blue (`stateProcessedBg`): Synthesized narrative complete; action extraction turn queued.
+       - Green (`stateSynthesizedBg`): Action extraction pass completed (promoted to Action stage; applies even if 0 tasks found).
+     - **Unread Indicator Dot**: Electric blue unread dot on freshly clustered notes, cleared upon card tap.
+     - **Pending Batch Synthesis Banner**: Inline notification `[ 🧩 X raw thoughts ready to cluster • [ ⚡ Synthesize Now ] ]` allowing manual override of automatic batching thresholds.
      - **AI Style Re-Writer (`[ ✨ Style ▾ ]`)**: Embedded on each synthesis card (where final consolidated text is formed). Displays a bottom modal with 6 preset context prompts, highlights the active preset with a checkmark (`Icons.check`), and transitions the cluster note to Yellow (`stateEnqueuedBg` / `isReprocessing = true`) when a new style is selected.
      - Expandable origin notes pill (`[ 🧩 3 Raw Notes Included ▾ ]`) revealing source raw audio.
      - Single-note ejection guard: If a cluster has only 1 origin note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden to prevent orphaned empty clusters.
      - `note_ejection_preview.dart` modal offering "Move to another clubbed note" (with target cluster selector showing sequence `#S-01`, etc.) vs "Make it an independent note", with clean copy free of recurring debug filler text. When a raw note is transferred to another clubbed note, **both** the source cluster and target cluster transition to Yellow (`stateEnqueuedBg` / pending re-synthesis) to signal that local LLM summaries must be regenerated.
-  4. **Stage 3 — Insights (`InsightsScreenPreview`)**:
+  5. **Stage 3 — Insights (`InsightsScreenPreview`)**:
      - Segmented sub-view switcher across Emotional Climate Heatmap (7-day valence from -1.0 to +1.0 with 2-minute coherence breath exercise), Topic Density distribution, and Recurrent Thought Loops.
-  5. **Stage 4 — Action (`ActionScreenPreview`)**:
+  6. **Stage 4 — Action (`ActionScreenPreview`)**:
      - Commitments todo list with interactive checkboxes, urgency chips (`⚡ High Urgency`), temporal anchors (`05/11  02:00 PM`), and origin cluster references.
      - Calendar Time-Block schedule preview with `[ 📅 Push to Calendar ]` action.
      - Calendar synchronization status card (`Device Calendar: Connected (Personal)`).
-  6. **Viewport Hardening (360dp Narrow Screens)**:
+  7. **Settings & Diagnostics Screen (`SettingsPreview`)**:
+     - Complete interactive settings panel: background hardware permissions status badges (Accessibility & Battery optimization), automatic synthesis batching thresholds ($X$ note accumulation count and $Y$ minutes session quiet window) with manual buffer synthesis override, calendar sync controls, RAM telemetry & manual model eviction, and rotating diagnostic log console.
+  8. **Viewport Hardening (360dp Narrow Screens)**:
      - Wrapped header metadata, actions, and chip rows in responsive `Wrap` and `SingleChildScrollView(scrollDirection: Axis.horizontal)` widgets.
      - Verified with 0 `RenderFlex` overflows and 0 framework assertions under automated widget testing.
 
