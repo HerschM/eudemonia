@@ -18,6 +18,28 @@ All AI agents working on Eudemonia must operate under strict engineering rigor:
 - **Do Not Simply Agree with the User**: Do not be a passive "yes-agent". If the user proposes an architecture, UX pattern, or optimization that introduces technical debt, violates system invariants (e.g. latency budgets, mobile RAM ceilings, single-folder discipline), or risks regressions, **think through the solution independently**.
 - **Provide Unbiased Analysis with Pros & Cons**: Present objective, reasoned technical trade-offs, state the risks and failure modes clearly, and recommend the best engineering path forward before executing.
 
+### C. First-Principles Architecture & Overcoming the Minimal-Diff Trap
+AI agents naturally suffer from the **"Minimal-Diff" Bias (Structural Timidity)**: the subconscious tendency to squeeze new concepts into existing classes, sections, or files to minimize diff size. This is a severe anti-pattern that introduces structural technical debt.
+
+To maintain world-class engineering rigor, every agent must adhere to these structural laws:
+
+1. **First-Principles Decomposition over Historical Analogy**:
+   - When evaluating code, state providers, or documentation, never reason by historical accident (e.g. *"Subsystem G already handles UI, so let's put the sandbox there"*, or *"Service X handles audio, so let's add playback there"*).
+   - Deconstruct the problem into its fundamental, irreducible, orthogonal concerns before designing solutions. Re-derive the optimal structure from first principles.
+
+2. **Contract Invariance vs. Structural Courage**:
+   - Anti-regression applies strictly to **behavioral contracts, user requirements, and test assertions**—it does **never** apply to obsolete structural containers.
+   - Never compromise clean architecture just to produce a smaller git diff. When structural boundaries are leaky, refactor the containers boldly while keeping 100% of the behavioral contracts green.
+
+3. **The "Split-Smell" Razor (Zero-Hybrid Containers)**:
+   - Every container (top-level document heading, Dart class, Kotlin service, Riverpod provider) must have a single, orthogonal responsibility.
+   - If a proposal requires internally bifurcating a container (e.g. *"Subsystem G will handle both production UI and sandbox previews"*, or *"Service X will handle both recording and playback"*), **that container is mathematically proven to be too coarse**. Elevate those concerns to independent, top-level entities immediately.
+
+4. **Universal Parity Across Code, State, and Documentation**:
+   - In **Dart/Kotlin Code**: Reject bloated classes. Create dedicated single-purpose services with explicit dependency injection.
+   - In **Riverpod State**: Keep providers granular. Never mix transient UI interaction state with persistent domain models.
+   - In **Documentation**: Maintain 1:1 structural parity with physical reality (e.g. `lib/` vs `previews/` mapped to separate top-level sections). Never mix runtime truth with forward-looking design proposals.
+
 ---
 
 ## 2. Project Overview & Tech Stack
