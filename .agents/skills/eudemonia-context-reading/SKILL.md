@@ -77,7 +77,7 @@ Call `read_file` with explicit bounds:
 
 ### Step 3: Cross-Reference Traversal Rule
 If the retrieved section states:
-> *"Implemented via Delta Synthesis Engine in IMPLEMENTATION.md Section 13"*
+> *"Implemented via Delta Synthesis Engine in IMPLEMENTATION.md Section 4.B"*
 > or *"Governed by FR1.3"*
 The agent **must strictly follow that anchor** and perform a targeted read on the referenced section. This guarantees zero missed architectural rules.
 
@@ -90,7 +90,9 @@ The agent **must strictly follow that anchor** and perform a targeted read on th
 | **Acceptance criteria / PRD / NFRs** | `PRODUCT_SPEC.md` | `grep -E -n "^#{2,4} " PRODUCT_SPEC.md` | Full FR block (~40–80 lines) |
 | **Out-of-scope non-goals** | `PRODUCT_SPEC.md` | `grep -n "Non-Goals" PRODUCT_SPEC.md` | Entire Section 9 non-goals block |
 | **UI specs, color tokens, layout** | `UX.md` | `grep -E -n "^#{2,3} " UX.md` | Full screen contract (~60–100 lines) |
-| **Database schema & LLM prompts** | `IMPLEMENTATION.md` | `grep -E -n "^#{2,3} " IMPLEMENTATION.md` | Full subsystem block (~50–80 lines) |
-| **Historical bug chronicle & fixes** | `IMPLEMENTATION.md` | `grep -n "Chronicle of Issues" IMPLEMENTATION.md` | Specific issue heading & fix record |
+| **Production database schema & LLM prompts** | `IMPLEMENTATION.md` | `grep -E -n "^#{2,3} " IMPLEMENTATION.md` | Section 1 subsystem block (~50–80 lines) |
+| **UI Sandbox architecture (`previews/`)** | `IMPLEMENTATION.md` | `grep -n "UI/UX Component Sandbox" IMPLEMENTATION.md` | Section 2 sandbox architecture |
+| **Historical bug chronicle & fixes** | `IMPLEMENTATION.md` | `grep -n "Chronicle of Historical Issues" IMPLEMENTATION.md` | Specific issue heading & fix record |
+| **Target architecture & active blueprints** | `IMPLEMENTATION.md` | `grep -n "Architectural Decisions" IMPLEMENTATION.md` | Section 4 target blueprint block |
 | **Active milestone tasks** | `TASKS.md` | Read top ~100 lines | Active milestone at top |
 | **Past completed tasks** | `TASKS_archive.md` | `grep -n "TASK-<number>" TASKS_archive.md` | Specific task block & verification |

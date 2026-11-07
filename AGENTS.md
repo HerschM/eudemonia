@@ -149,7 +149,7 @@ When an agent or developer requires domain context, route inquiries to the speci
 | :--- | :--- | :--- | :--- |
 | **Product Requirements & PRD** | [`PRODUCT_SPEC.md`](file:///Users/harshmavani/Documents/Eudemonia/PRODUCT_SPEC.md) | User personas, functional requirements (FR), non-goals, and roadmap. | **Wildcard outline search mandatory** (`grep -E -n "^#{2,4} " PRODUCT_SPEC.md`). |
 | **UI/UX Design Contracts** | [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md) | Component contracts, theme tokens, ASCII wireframes, layout rules, and accessibility standards. | **Wildcard outline search mandatory** (`grep -E -n "^#{2,3} " UX.md`). |
-| **Subsystem Architecture** | [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) | Technical mechanics, prompt schemas, Isar models, audio queues, debouncers, and fix chronicle. | **Wildcard outline search mandatory** (`grep -E -n "^#{2,3} " IMPLEMENTATION.md`). |
+| **Subsystem Architecture** | [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) | Production subsystems (`lib/`), sandbox architecture (`previews/`), bugfix chronicle, and target blueprints. | **Wildcard outline search mandatory** (`grep -E -n "^#{2,3} " IMPLEMENTATION.md`). |
 | **Active Task Backlog** | [`TASKS.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS.md) | Atomic tasks for active and upcoming milestones, spec anchor links, and verification criteria. | Read active milestone at top of file. |
 | **Completed Task Archive** | [`TASKS_archive.md`](file:///Users/harshmavani/Documents/Eudemonia/TASKS_archive.md) | Historical task records (Milestones 1–7) and completed test coverage logs. | Consult only when auditing historical test coverage. |
 

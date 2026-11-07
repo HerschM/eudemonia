@@ -89,7 +89,11 @@ flowchart TD
   4. `~/flutter/bin/flutter test` (Full regression pass).
 
 ### Stage 6: Documentation & Task Completion
-1. **Update `IMPLEMENTATION.md`**: Record new subsystem mechanics, prompt schemas, or historical lessons learned in the appropriate section.
+1. **Update `IMPLEMENTATION.md`**:
+   - When adding or refactoring production code (`lib/` or `android/`), update **Section 1: Production Subsystem Architecture & Runtime Mechanics** with active file paths and runtime mechanics.
+   - When modifying UI/UX components or previews, update **Section 2: UI/UX Component Sandbox Architecture & Contracts (`previews/`)**.
+   - When solving a non-trivial bug or regression, document the post-mortem in **Section 3: Chronicle of Historical Issues, Root Causes & Fixes**.
+   - When completing an active milestone whose target design was tracked in **Section 4: Architectural Decisions & Target Engineering Blueprints**, promote its concrete production models and services into Section 1 while retaining Section 4 as the permanent Architectural Decision Record (ADR).
 2. **Update `TASKS.md`**: Mark the task as completed:
    ```markdown
    - [x] **TASK-XXX: ...**

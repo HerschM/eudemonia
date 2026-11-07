@@ -10,7 +10,7 @@
 
 ---
 
-## 1. Subsystem Architecture & Current Implementation
+## 1. Production Subsystem Architecture & Runtime Mechanics (`lib/` & `android/`)
 
 ### A. Hardware Trigger & Native Android Layer (Accessibility Service, Volume Safety & Debouncing)
 - **Location**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/`
@@ -113,29 +113,26 @@
   - **Zero-Migration Schema Compatibility**: Fields `state`, `isRead`, and `failureReason` use the `@ignore` annotation, providing rich feed presentation and state handling without invalidating existing database schemas or requiring complex migration scripts.
   - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
 
-### G. User Interface & State Management (Riverpod Synchronous Providers & Preview Sandbox)
+### G. Production User Interface & State Management (`lib/features/home/`)
 - **Files**:
   - [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
   - [`lib/features/notes/presentation/thought_card.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/presentation/thought_card.dart)
   - [`lib/features/notes/audio_playback_controller.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/audio_playback_controller.dart)
   - [`lib/features/home/presentation/smooth_processing_indicator.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/smooth_processing_indicator.dart)
   - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
-  - [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md) (Exhaustive design tokens, component sandbox specs & widget snippets)
 - **Mechanics**:
-  - **Flutter Code-as-Design (Component Sandbox)**: UI/UX prototyping and conversational modifications with AI agents occur in the isolated [`previews/`](file:///Users/harshmavani/Documents/Eudemonia/previews) sandbox (`flutter run -t previews/main_preview.dart`), leaving production `lib/` 100% free of prototype boilerplate while guaranteeing zero translation loss.
+  - **Unified Reactive Feed**: `HomeScreen` synthesizes the `allThoughts` feed by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly captured audio enqueues immediately (<5ms) with `ThoughtState.enqueued` (pastel yellow, shimmer, date/time, audio play button), transitioning seamlessly to `ThoughtState.processed` (pastel blue) upon worker completion without requiring an app restart.
   - **ThoughtCard Lifecycle Rendering**:
     - *Enqueued*: Light pastel yellow background (`#FEF3C7`), animated shimmer subtext, and active spinner.
     - *Processed*: Soft blue background (`#DBEAFE`), category badge with 1-tap dropdown reassignment, inline text editor, and raw audio playback.
     - *Failed*: Soft red background (`#FEE2E2`), explicit failure message, 1-tap `Retry` button, and audio playback.
     - *Synthesized*: Soft mint background (`#DCFCE7`) for clubbed or synthesized thoughts.
-  - **Raw Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>`, managing play/pause state for raw WAV audio files without navigating away from the feed.
+  - **Dedicated Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>` over `MethodChannel('com.eudemonia/audio_playback')`. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }`, ensuring robust audio playback without sandbox permission failures.
   - **Hardware-Accelerated Smooth Progress Indicator**: `SmoothProcessingIndicator` uses a GPU-accelerated `CustomPainter` with an internal `RepaintBoundary` and ticking `AnimationController`, guaranteeing locked 60/120fps sweep fluidity even during heavy CPU-bound background inference.
-  - **Unread Thought Status & Triage Filter**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator. Filter chips (`All`, `Unread (X)`) above the feed allow instantaneous triage.
+  - **Unread Thought Status & In-Card Triage**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator. A horizontally scrollable chip row (`All`, `Unread (X)`, `Failed (X)`) above the feed allows instantaneous triage without `RenderFlex` overflows on narrow screens.
   - **AppBar Queue Pill**: Displays real-time `X pending` pill with `SmoothProcessingIndicator` whenever thoughts are in queue (`pendingCount > 0`).
-  - **In-Body Processing Banner**: Prominent card above the Folders section displaying `"Processing voice thought..."` with `SmoothProcessingIndicator`.
-  - **In-Body Failed Banner**: Warning banner displaying `"X thought(s) failed to process"` with a `"Retry"` button invoking `retryFailed()`.
+  - **In-Card Failure Presentation**: Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`), eliminating intrusive full-screen error banners.
   - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
-  - **Instant Capture HUD**: Ultra-low-latency (<5ms) bottom indicator with pulsating glow ring and soundwave visualization.
 
 ### H. Diagnostic Telemetry & Rotating Logging (2MB Capped Log File & Telemetry Dump)
 - **Files**:
@@ -148,7 +145,65 @@
 
 ---
 
-## 2. Chronicle of Issues, Root Causes & Fixes
+## 2. UI/UX Component Sandbox Architecture & Contracts (`previews/`)
+
+### A. Isolated Sandbox Architecture & Zero-Boilerplate Guardrail
+- **Location**: `previews/`
+- **Launcher**: `~/flutter/bin/flutter run -t previews/main_preview.dart -d macos` (or chrome / emulator)
+- **Key Files**:
+  - `previews/main_preview.dart`: Standalone sandbox entrypoint running without native services or platform channels.
+  - `previews/mock_data.dart`: Typed mock datasets for all edge cases across the four maturation stages.
+  - `previews/preview_theme.dart`: Design tokens (OLED dark palette, typography, radii, spacing).
+  - `previews/gallery_shell.dart`: Stage navigation shell, AI Pipeline HUD, and settings switcher.
+  - `previews/screens/`: Dedicated screen prototypes (`capture_screen_preview.dart`, `synthesis_screen_preview.dart`, `insights_screen_preview.dart`, `action_screen_preview.dart`, `settings_preview.dart`, `note_merge_preview.dart`, `note_ejection_preview.dart`).
+- **Core Guardrails**:
+  1. **Strict Sandbox Isolation**: All exploratory UI/UX design, visual redesigns, mock data experiments, and layout modifications requested by the user **must take place in `previews/`**.
+  2. **Zero Production Boilerplate**: Never commit prototype boilerplate, mock datasets, or preview scenario switchers into production code (`lib/`).
+  3. **Pure Presentational Widget Contract**: Presentational widgets in `lib/` must remain pure: accept primitive models/values and callback closures. Never make direct calls to native platform channels (`MethodChannel`), local databases (`Isar`), or heavy AI models (`sherpa_onnx`, `llama_cpp_dart`) from presentation widgets.
+
+### B. Mind Pipeline HUD & Navigation Shell (`GalleryShell`)
+- **Pipeline HUD Modal**:
+  - Global Header features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` when active / `[ 🌿 In Sync ▾ ]` when idle).
+  - Tapping opens the **Pipeline HUD Modal** detailing jobs across all 4 stages:
+    - *Capture Stage*: STT audio transcription queue with progress percentage.
+    - *Synthesis Stage*: Pending raw thoughts count with manual override button `[ ⚡ Synthesize Now ]`.
+    - *Insights Stage*: Periodic background cognitive synthesis countdown (e.g. `"Next refresh in 1 day"`).
+    - *Action Stage*: Extracted commitments status and calendar sync state.
+- **Human Attention Stage Tabs (Zero-Suppression Badges)**:
+  - Tab bar headers display counts strictly for **unconsumed human value** (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`).
+  - **Zero Suppression**: If a stage has 0 unconsumed items, the number is cleanly omitted (e.g., `Capture`, `Synthesis`).
+  - Stage switching preserves scroll position and view state.
+
+### C. Four-Stage Screen Mocks & Interactive Component Contracts
+1. **Stage 1 — Capture (`CaptureScreenPreview`)**:
+   - Raw, uncategorized stream with daily sequence numbering resetting every midnight (`#01`, `#02`...).
+   - Status color accents: Yellow for enqueued (`stateEnqueuedBg`), Blue for STT processed (`stateProcessedBg`), Green for synthesized (`stateSynthesizedBg`), and Red for failed (`stateFailedBg`).
+   - Compact dual dropdown filters: Triage dropdown (`[ 👁️ All Triage ▾ ]` for `All`, `Unread`, `Read`) and Status dropdown (`[ ⚡ All Statuses ▾ ]` for `All`, `Processing`, `Processed`, `Synthesized`, `Failed`).
+   - Strict card header order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`.
+   - Timestamps formatted as Date then Time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
+   - Floating capture capsule: `[ 🎙️ / Press Vol Up + Down to Capture ]` at bottom. Tapping acts as an in-app soft trigger, mutating into an active listening loader/waveform during capture and enqueuing a pending card upon release.
+2. **Stage 2 — Synthesis (`SynthesisScreenPreview`)**:
+   - Clustered notes (`#S-01`, `#S-02`) with duration metadata (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`).
+   - Enforces strict **Single-Folder Discipline** (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+   - Compact dual dropdown filters: Triage (`[ 👁️ All Triage ▾ ]`) and Folder (`[ 📁 All Folders ▾ ]`).
+   - Tri-color maturation states: Yellow (re-synthesizing), Blue (synthesized narrative complete; action pass queued), Green (action pass completed).
+   - AI Style Re-Writer modal (`[ ✨ Style ▾ ]`) with 6 preset context prompts (`Concise Executive`, `Bullet Point Actions`, `Stream of Consciousness`, `Technical Specification`, `Personal Reflection`, `Original Transcript`).
+   - Expandable origin notes drawer (`[ 🧩 3 Raw Notes Included ▾ ]`) with raw note ejection guard (hidden when `originNotes.length <= 1`).
+   - Ejection modal (`note_ejection_preview.dart`) and Explicit Merge modal (`note_merge_preview.dart`).
+3. **Stage 3 — Insights (`InsightsScreenPreview`)**:
+   - Sub-view switcher: Emotional Climate Heatmap (-1.0 to +1.0 valence with 2-minute Coherence Breathing exercise), Topic Density distribution, and Recurrent Thought Loops.
+4. **Stage 4 — Action (`ActionScreenPreview`)**:
+   - Commitments todo list with interactive checkboxes, urgency chips (`⚡ High Urgency`), temporal anchors (`05/11  02:00 PM`), and calendar time-block timeline with `[ 📅 Push to Calendar ]`.
+5. **Settings Screen (`SettingsPreview`)**:
+   - Hardware permissions status badges (Accessibility & Battery exemption), synthesis batching thresholds ($X$ note accumulation count and $Y$ minutes session quiet window) with manual buffer synthesis override, calendar sync controls, RAM telemetry & manual model eviction, and rotating diagnostic log console.
+
+### D. Viewport Hardening (360dp) & Test Double Suite (`test/previews/`)
+- Responsive layouts using `Wrap(spacing: ..., runSpacing: ...)` and `SingleChildScrollView(scrollDirection: Axis.horizontal)`.
+- Verified with 14 automated unit and widget tests in `test/previews/` running on 360dp narrow viewport constraints with 0 `RenderFlex` overflows and 0 framework assertions.
+
+---
+
+## 3. Chronicle of Historical Issues, Root Causes & Fixes
 
 ### 1. Volume Button Runaway & Unhandled Repeats
 - **Symptom**: Repeated single clicks or continuous holds of the volume up/down buttons either got consumed without changing volume or entered an uncontrolled runaway volume loop.
@@ -221,7 +276,7 @@
   1. Implemented `Completer<void>? _processingCompleter` in `AudioQueueService`.
   2. If a processing loop is already active, subsequent calls to `processPending()` or `retryFailed()` simply await `_processingCompleter!.future`, ensuring sequential single-threaded worker passes without duplicative model invocations.
 
-### 11. Feed Optimistic Hydration, Dedicated Audio Playback Architecture & In-Card Triage
+### 10. Feed Optimistic Hydration, Dedicated Audio Playback Architecture & In-Card Triage
 - **Symptom**:
   1. Capturing a thought did not display an entry in the feed immediately; thoughts only appeared after a cold restart of the app.
   2. Audio playback button did not play recorded audio.
@@ -235,50 +290,25 @@
   2. **Dedicated Audio Channel & FileDescriptor**: Extracted `com.eudemonia/audio_playback` with its own platform channel handler. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }` with speech `AudioAttributes`, ensuring robust audio playback without sandbox permission failures.
   3. **In-Card Failure Presentation & Responsive Failed Chip**: Removed the top error banner. Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`). Placed `Recent Thoughts` heading and an adaptive, horizontally scrollable chip row (`All`, `Unread`, `Failed`) to prevent `RenderFlex` overflows on any device viewport.
 
-### 12. Four-Stage Cognitive Maturation Architecture Sandbox & Isolated Mockups (`previews/`)
-- **Symptom / Context**: The legacy single-feed UI placed category-folder pills horizontally across the top, forcing immediate categorization and cluttering rapid raw voice capture. Furthermore, users needed a clear maturation lifecycle from disjoint raw walk captures to synthesised clusters, emotional/topic insights, and calendar/todo action items.
-- **Architecture & Mechanics**:
-  1. **Isolated Preview Sandbox (`previews/`)**: Built completely in `previews/` with zero production boilerplate in `lib/`, rendering typed mock data (`MockData`) with `PreviewTheme` (OLED dark design tokens).
-  2. **Shell Navigation & Mind Pipeline HUD (`GalleryShell`)**:
-     - Separates machine processing from human attention:
-       - **Global Header**: Features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` / `[ 🌿 In Sync ▾ ]`). Tapping opens the **Pipeline HUD Modal** detailing jobs across all 4 stages (Capture STT, Synthesis clustering queue with `[ ⚡ Synthesize Now ]`, Insights daily refresh timer, Action extraction state).
-       - **Settings Action**: Top gear icon navigates directly to `SettingsPreview`.
-       - **Stage Tab Bar**: Displays numbers strictly for **unconsumed human value** with zero-suppression (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`). If a stage has 0 unconsumed items, the number is cleanly omitted.
-  3. **Stage 1 — Capture (`CaptureScreenPreview`)**:
-     - Raw, uncategorized stream with daily sequence numbering resetting every midnight (`#01`, `#02`...).
-     - Processing status color accents: Yellow for pending processing (`stateEnqueuedBg`), Blue for STT and language corrected entries (`stateProcessedBg`), Green for synthesis completed entries (`stateSynthesizedBg`), and Red for failed processing (`stateFailedBg`).
-     - Compact dual dropdown filters: Triage dropdown (`[ 👁️ All Triage ▾ ]` for `All`, `Unread`, `Read`) and Processing status dropdown (`[ ⚡ All Statuses ▾ ]` for `All`, `Processing`, `Processed`, `Synthesized`, `Failed`), replacing multi-chip rows to conserve vertical space and align with the Synthesis screen's dropdown styling.
-     - Interactive floating capture capsule `[ 🎙️ / Press Vol Up + Down to Capture ]`: elevated and sticky at bottom, larger mic icon (`20sp`), visual `"/"` slash separator. Clickable in-app soft trigger that morphs to an active listening waveform / loader inside the button while recording, dismissing and enqueuing a yellow pending card on stop with clean SnackBar copy (`Captured a new note [#0X]`).
-     - Strict header layout sequence to preserve consistent horizontal alignment across read and unread cards: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`.
-     - Timestamp displayed as Date then Time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
-     - Action controls: Manual text edit (`[ ✎ Edit ]`). Raw capture is strictly STT and grammatical cleanup; AI Style Re-writing is hosted under Synthesis.
-  4. **Stage 2 — Synthesis (`SynthesisScreenPreview`)**:
-     - Clusters raw notes captured across a temporal session into consolidated notes (`#S-01`, `#S-02`) with duration metadata (`05/11  07:10 AM - 07:45 AM • ⏱️ 35m session`).
-     - Enforces strict **Single-Folder Discipline** (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
-     - Compact dual dropdown filters in section header: `[ 👁️ All Triage ▾ ]` (`All`, `Unread`, `Read`) and `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
-     - **Tri-Color Maturation States**:
-       - Yellow (`stateEnqueuedBg`): Re-synthesizing in progress.
-       - Blue (`stateProcessedBg`): Synthesized narrative complete; action extraction turn queued.
-       - Green (`stateSynthesizedBg`): Action extraction pass completed (promoted to Action stage; applies even if 0 tasks found).
-     - **Unread Indicator Dot**: Electric blue unread dot on freshly clustered notes, cleared upon card tap.
-     - **Pending Batch Synthesis Banner**: Inline notification `[ 🧩 X raw thoughts ready to cluster • [ ⚡ Synthesize Now ] ]` allowing manual override of automatic batching thresholds.
-     - **AI Style Re-Writer (`[ ✨ Style ▾ ]`)**: Embedded on each synthesis card (where final consolidated text is formed). Displays a bottom modal with 6 preset context prompts, highlights the active preset with a checkmark (`Icons.check`), and transitions the cluster note to Yellow (`stateEnqueuedBg` / `isReprocessing = true`) when a new style is selected.
-     - Expandable origin notes pill (`[ 🧩 3 Raw Notes Included ▾ ]`) revealing source raw audio.
-     - Single-note ejection guard: If a cluster has only 1 origin note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden to prevent orphaned empty clusters.
-     - `note_ejection_preview.dart` modal offering "Move to another clubbed note" (with target cluster selector showing sequence `#S-01`, etc.) vs "Make it an independent note", with clean copy free of recurring debug filler text. When a raw note is transferred to another clubbed note, **both** the source cluster and target cluster transition to Yellow (`stateEnqueuedBg` / pending re-synthesis) to signal that local LLM summaries must be regenerated.
-  5. **Stage 3 — Insights (`InsightsScreenPreview`)**:
-     - Segmented sub-view switcher across Emotional Climate Heatmap (7-day valence from -1.0 to +1.0 with 2-minute coherence breath exercise), Topic Density distribution, and Recurrent Thought Loops.
-  6. **Stage 4 — Action (`ActionScreenPreview`)**:
-     - Commitments todo list with interactive checkboxes, urgency chips (`⚡ High Urgency`), temporal anchors (`05/11  02:00 PM`), and origin cluster references.
-     - Calendar Time-Block schedule preview with `[ 📅 Push to Calendar ]` action.
-     - Calendar synchronization status card (`Device Calendar: Connected (Personal)`).
-  7. **Settings & Diagnostics Screen (`SettingsPreview`)**:
-     - Complete interactive settings panel: background hardware permissions status badges (Accessibility & Battery optimization), automatic synthesis batching thresholds ($X$ note accumulation count and $Y$ minutes session quiet window) with manual buffer synthesis override, calendar sync controls, RAM telemetry & manual model eviction, and rotating diagnostic log console.
-  8. **Viewport Hardening (360dp Narrow Screens)**:
-     - Wrapped header metadata, actions, and chip rows in responsive `Wrap` and `SingleChildScrollView(scrollDirection: Axis.horizontal)` widgets.
-     - Verified with 0 `RenderFlex` overflows and 0 framework assertions under automated widget testing.
+---
 
-### 13. Deep Synthesis Backend Mechanics: Active Session Horizon, Delta Processing & Semantic Manifestos
+## 4. Architectural Decisions & Target Engineering Blueprints
+
+### A. Four-Stage Cognitive Maturation Architecture Rationale
+- **Context & Motivation**: The legacy single-feed UI placed category-folder pills horizontally across the top, forcing immediate categorization and cluttering rapid raw voice capture. Furthermore, users needed a clear maturation lifecycle from disjoint raw walk captures to synthesised clusters, emotional/topic insights, and calendar/todo action items.
+- **Architectural Shift**: Transitioned from immediate category tagging to a four-stage cognitive transformation pipeline:
+  $$\mathbf{Capture} \longrightarrow \mathbf{Synthesis} \longrightarrow \mathbf{Insights} \longrightarrow \mathbf{Action}$$
+- **Key Principles**:
+  1. *Capture is Zero-Friction*: Raw voice capture must never require picking folders, adding tags, or reviewing text immediately.
+  2. *Separation of Human Attention from Machine Compute*: Top navigation tabs show counts strictly for unconsumed human value (new unread notes, new synthesized clusters), while machine processing status is housed in the persistent top AI Pipeline HUD (`[ ⚡ X in Pipeline ▾ ]`).
+  3. *Single-Folder Discipline*: High-level cognitive separation occurs across disciplined domains (`Work`, `Ideas`, `Todos`, `Journal`), avoiding open-ended tag sprawl.
+
+### B. Deep Synthesis Backend Mechanics: Active Session Horizon, Delta Processing & Semantic Manifestos (Milestone 9 Active Blueprint)
+> [!NOTE]
+> **TARGET ARCHITECTURE (Milestone 9 — In-Scope Active, TASK-048 through TASK-051)**:
+> The following mechanics represent the approved engineering design for upcoming implementation. They are not yet wired into `lib/features/`.
+> Upon completion and verification of Milestone 9 tasks, their concrete production files and runtime mechanics will be promoted to Section 1 under a dedicated subsystem heading (`### I. Deep Synthesis Clustering & Folder Manifestos`).
+
 1. **Active Session Horizon & 2D Domain-Bounded Clustering**:
    - **2D Routing (`Temporal Window ∩ Target Folder`)**: Raw notes captured within an active temporal session are strictly segregated by target folder domain. If a user dictates a technical development note and a personal emotional journal note within the same 45-minute window, the engine separates them into their respective domain-specific active clusters (`#S-01` Work vs `#S-02` Journal), preventing narrative cross-contamination.
    - **Sliding Inactivity Window ($Y=45$m)**: The session remains open and receptive to incoming notes until 45 minutes of quiet elapse in that domain.
@@ -297,4 +327,3 @@
 5. **Future Scope / Non-Goals for V1**:
    - **AI-Assisted Topical Merge Suggestions**: Zero-LLM entity and keyword set-intersection matching across the last 48 hours to display proactive suggestion pills without LLM compute overhead.
    - **User Persona & Custom Prompt Editing**: Formally excluded for V1 to guarantee strict JSON output compliance, prevent mobile token/KV-cache overflow, and avoid breaking backend parsers.
-
