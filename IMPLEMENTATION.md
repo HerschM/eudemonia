@@ -10,33 +10,9 @@
 
 ---
 
-## Table of Contents
-1. [Subsystem Architecture & Current Implementation](#1-subsystem-architecture--current-implementation)
-   - [A. Hardware Trigger & Native Android Layer](#a-hardware-trigger--native-android-layer)
-   - [B. Background Persistence & Permissions](#b-background-persistence--permissions)
-   - [C. Zero-Latency Audio Queue & Dispatch](#c-zero-latency-audio-queue--dispatch)
-   - [D. AI Model Lifecycle & Memory Management](#d-ai-model-lifecycle--memory-management)
-   - [E. Speech-to-Text & LLM Classification Pipeline](#e-speech-to-text--llm-classification-pipeline)
-   - [F. Local Storage & Isar Persistence](#f-local-storage--isar-persistence)
-   - [G. User Interface & State Management](#g-user-interface--state-management)
-   - [H. Diagnostic Telemetry & Rotating Logging](#h-diagnostic-telemetry--rotating-logging)
-2. [Chronicle of Issues, Root Causes & Fixes](#2-chronicle-of-issues-root-causes--fixes)
-   - [1. Volume Button Runaway & Unhandled Repeats](#1-volume-button-runaway--unhandled-repeats)
-   - [2. Multi-Folder Tagging & Language Correction](#2-multi-folder-tagging--language-correction)
-   - [3. Background Process Hibernation & Simultaneous Permissions](#3-background-process-hibernation--simultaneous-permissions)
-   - [4. UI Layout Overflows & Material Ink Splash Contract Violations](#4-ui-layout-overflows--material-ink-splash-contract-violations)
-   - [5. Device Screen Blackouts, OOM Kills & Haptic Latency](#5-device-screen-blackouts-oom-kills--haptic-latency)
-   - [6. Rogue Background Activity Launches](#6-rogue-background-activity-launches)
-   - [7. Worker Failure: STT Service Not Initialized & Test Double False Positives](#7-worker-failure-stt-service-not-initialized--test-double-false-positives)
-   - [8. Disappearing Pending Counts & Broadcast Stream Loss](#8-disappearing-pending-counts--broadcast-stream-loss)
-   - [9. Concurrent Queue Execution Race Condition & Retry Completer](#9-concurrent-queue-execution-race-condition--retry-completer)
-   - [10. Mobile Memory Safety & Persistent Cold-Start Hydration](#10-mobile-memory-safety--persistent-cold-start-hydration)
-
----
-
 ## 1. Subsystem Architecture & Current Implementation
 
-### A. Hardware Trigger & Native Android Layer
+### A. Hardware Trigger & Native Android Layer (Accessibility Service, Volume Safety & Debouncing)
 - **Location**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/`
 - **Files**:
   - `ButtonInterceptorService.kt`: Android `AccessibilityService` running in an isolated process (`:interceptor`).
@@ -51,7 +27,7 @@
      - An explicit broadcast (`com.eudemonia.eudemonia.HARDWARE_TRIGGER`) is sent with the current device lock state (`isLocked`).
   4. Both `MainActivity` and `EudemoniaForegroundService` listen for the trigger broadcast, pass it through `TriggerDebouncer.shared.tryTrigger()` (cooldown 500ms), and invoke the Flutter method `onHardwareTrigger`.
 
-### B. Background Persistence & Permissions
+### B. Background Persistence & Permissions (Foreground Keep-Alive & Battery Exemption)
 - **Files**:
   - `android/app/src/main/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundService.kt`
   - `lib/features/settings/background_permission_service.dart`
@@ -68,7 +44,7 @@
      - `showSimultaneousPermissionModal()` provides an educational bottom sheet guiding the user to grant both requirements in one flow.
      - Standardized status badges: **Enabled** (Green) and **Disabled** (Amber).
 
-### C. Zero-Latency Audio Queue & Dispatch
+### C. Zero-Latency Audio Queue & Dispatch (FIFO Queue & Non-Blocking Worker)
 - **Files**:
   - `lib/features/ai_processing/batch_pipeline_service.dart`
   - `lib/features/ai_processing/audio_queue_service.dart`
@@ -87,7 +63,7 @@
      - If transcription or categorization fails, the item is marked `failed` with an `errorMessage`.
      - `retryFailed()` resets all failed items back to `pending` and restarts processing without blocking incoming thoughts.
 
-### D. AI Model Lifecycle & Memory Management
+### D. AI Model Lifecycle & Memory Management (Sequential Loading, Inactivity Eviction & <60MB Baseline)
 - **Files**:
   - `lib/features/ai_processing/model_lifecycle_manager.dart`
   - `lib/features/ai_processing/llm_config.dart`
@@ -106,7 +82,7 @@
   4. **Proactive Pre-Warming**:
      - `warmupOnRecordingStart()` begins loading models in the background the moment the user starts recording, ensuring models are ready by the time audio is captured.
 
-### E. Speech-to-Text & LLM Classification Pipeline
+### E. Speech-to-Text & LLM Classification Pipeline (Sherpa-ONNX STT & Qwen 2.5 ChatML)
 - **Files**:
   - `lib/features/ai_processing/stt_service.dart`
   - `lib/features/ai_processing/llm_service.dart`
@@ -125,7 +101,7 @@
   4. **Heuristic Fallback Classifier**:
      - If the LLM is uninitialized or in rapid unit-test environments, `NoteClassifier.classifyWithHeuristic()` evaluates keyword dictionaries to assign confidence scores and folder tags.
 
-### F. Local Storage & Isar Persistence
+### F. Local Storage & Isar Persistence (Collections, Schemas & Note Lifecycle)
 - **Files**:
   - `lib/features/notes/data/note_model.dart`
   - `lib/features/notes/data/notes_repository.dart`
@@ -137,7 +113,7 @@
   - **Zero-Migration Schema Compatibility**: Fields `state`, `isRead`, and `failureReason` use the `@ignore` annotation, providing rich feed presentation and state handling without invalidating existing database schemas or requiring complex migration scripts.
   - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
 
-### G. User Interface & State Management
+### G. User Interface & State Management (Riverpod Synchronous Providers & Preview Sandbox)
 - **Files**:
   - [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
   - [`lib/features/notes/presentation/thought_card.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/presentation/thought_card.dart)
@@ -161,7 +137,7 @@
   - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
   - **Instant Capture HUD**: Ultra-low-latency (<5ms) bottom indicator with pulsating glow ring and soundwave visualization.
 
-### H. Diagnostic Telemetry & Rotating Logging
+### H. Diagnostic Telemetry & Rotating Logging (2MB Capped Log File & Telemetry Dump)
 - **Files**:
   - `lib/core/logger/app_logger.dart`
   - `lib/features/settings/settings_screen.dart`

@@ -7,24 +7,6 @@
 
 ---
 
-## Table of Contents
-1. [Executive Summary](#1-executive-summary)
-2. [Problem Statement & Market Context](#2-problem-statement--market-context)
-3. [Target Personas & User Scenarios](#3-target-personas--user-scenarios)
-4. [Product Principles & Core Value Propositions](#4-product-principles--core-value-propositions)
-5. [Scope & Requirements](#5-scope--requirements)
-   - [A. In-Scope (v1.0 MVP & Active Extensions)](#a-in-scope-v10-mvp--active-extensions)
-   - [B. Out-of-Scope (Explicit Non-Goals for v1.0)](#b-out-of-scope-explicit-non-goals-for-v10)
-   - [C. Functional Requirements (FR)](#c-functional-requirements-fr)
-   - [D. Non-Functional Requirements (NFR)](#d-non-functional-requirements-nfr)
-6. [User Experience (UX) & Four-Stage Interaction Architecture](#6-user-experience-ux--four-stage-interaction-architecture)
-7. [System Architecture & Data Flow](#7-system-architecture--data-flow)
-8. [Edge Cases, Error Handling & Recovery](#8-edge-cases-error-handling--recovery)
-9. [Future Roadmap (v1.5 & v2.0)](#9-future-roadmap-v15--v20)
-10. [Success Metrics & Quality Gates](#10-success-metrics--quality-gates)
-
----
-
 ## 1. Executive Summary
 
 **Eudemonia** is an on-device, zero-friction, voice-first thought capture and cognitive maturation system for Android. It enables thinkers, creators, and professionals to record fleeting ideas instantaneously using physical hardware triggers (simultaneous volume buttons), requiring zero screen interaction.
@@ -127,7 +109,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 ---
 
-## 5. Scope & Requirements
+## 5. Scope, Functional Requirements (FR) & Non-Functional Requirements (NFR)
 
 ### A. In-Scope (v1.0 MVP & Active Extensions)
 - Android physical dual-volume key trigger detection via an Accessibility Service.
