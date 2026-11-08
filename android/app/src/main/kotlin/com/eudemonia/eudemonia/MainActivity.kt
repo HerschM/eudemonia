@@ -157,6 +157,15 @@ class MainActivity: FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "setRecordingState" -> {
+                    val isRecording = call.argument<Boolean>("isRecording") ?: false
+                    val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+                        action = ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE
+                        putExtra("isRecording", isRecording)
+                    }
+                    startService(serviceIntent)
+                    result.success(null)
+                }
                 "playAudio", "pauseAudio", "stopAudio" -> {
                     handleAudioCall(call, result)
                 }

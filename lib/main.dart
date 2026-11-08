@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
-import 'features/home/home_screen.dart';
+import 'features/home/main_navigation_shell.dart';
 import 'features/theme/app_theme.dart';
 import 'features/notes/data/notes_repository.dart';
 
@@ -33,7 +33,7 @@ class EudemoniaApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      home: const HomeScreen(),
+      home: const MainNavigationShell(),
       debugShowCheckedModeBanner: false,
     );
   }

@@ -36,6 +36,9 @@ class EudemoniaForegroundServiceTest {
         assertEquals("com.eudemonia.eudemonia.HARDWARE_TRIGGER", EudemoniaForegroundService.TRIGGER_ACTION)
         assertEquals("com.eudemonia.eudemonia.START_FOREGROUND", ForegroundServiceCoordinator.ACTION_START)
         assertEquals("com.eudemonia.eudemonia.STOP_FOREGROUND", ForegroundServiceCoordinator.ACTION_STOP)
+        assertEquals("com.eudemonia.eudemonia.ACTION_START_CAPTURE", ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+        assertEquals("com.eudemonia.eudemonia.ACTION_STOP_CAPTURE", ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
+        assertEquals("com.eudemonia.eudemonia.ACTION_UPDATE_RECORDING_STATE", ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE)
     }
 
     @Test
@@ -162,5 +165,61 @@ class EudemoniaForegroundServiceTest {
 
         assertFalse(EudemoniaForegroundService.isRunning)
         assertNull(service.triggerReceiver)
+    }
+
+    @Test
+    fun testOnStartCommandWithStartCaptureDispatchesTrigger() {
+        var startCaptureTriggered = false
+        val testCoordinator = ForegroundServiceCoordinator(
+            onStartCaptureTriggered = { startCaptureTriggered = true }
+        )
+        service.setCoordinatorForTesting(testCoordinator)
+
+        val intent = mock(Intent::class.java)
+        org.mockito.Mockito.`when`(intent.action).thenReturn(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+
+        service.onStartCommand(intent, 0, 1)
+
+        assertTrue(startCaptureTriggered)
+        assertTrue(testCoordinator.isRecording)
+    }
+
+    @Test
+    fun testOnStartCommandWithStopCaptureDispatchesTrigger() {
+        var stopCaptureTriggered = false
+        val testCoordinator = ForegroundServiceCoordinator(
+            onStopCaptureTriggered = { stopCaptureTriggered = true }
+        )
+        service.setCoordinatorForTesting(testCoordinator)
+
+        val startIntent = mock(Intent::class.java)
+        org.mockito.Mockito.`when`(startIntent.action).thenReturn(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+        service.onStartCommand(startIntent, 0, 1)
+        assertTrue(testCoordinator.isRecording)
+
+        val stopIntent = mock(Intent::class.java)
+        org.mockito.Mockito.`when`(stopIntent.action).thenReturn(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
+        service.onStartCommand(stopIntent, 0, 2)
+
+        assertTrue(stopCaptureTriggered)
+        assertFalse(testCoordinator.isRecording)
+    }
+
+    @Test
+    fun testOnStartCommandWithUpdateRecordingStateUpdatesCoordinator() {
+        var updatedState: Boolean? = null
+        val testCoordinator = ForegroundServiceCoordinator(
+            onRecordingStateUpdated = { isRecording -> updatedState = isRecording }
+        )
+        service.setCoordinatorForTesting(testCoordinator)
+
+        val intent = mock(Intent::class.java)
+        org.mockito.Mockito.`when`(intent.action).thenReturn(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE)
+        org.mockito.Mockito.`when`(intent.getBooleanExtra("isRecording", false)).thenReturn(true)
+
+        service.onStartCommand(intent, 0, 1)
+
+        assertEquals(true, updatedState)
+        assertTrue(testCoordinator.isRecording)
     }
 }

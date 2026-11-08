@@ -33,7 +33,8 @@ final isRecordingProvider = NotifierProvider<IsRecordingNotifier, bool>(() {
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final bool showAppBar;
+  const HomeScreen({super.key, this.showAppBar = true});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -145,57 +146,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final isRecording = ref.watch(isRecordingProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Eudemonia'),
-        actions: [
-          Consumer(
-            builder: (context, ref, _) {
-              final count = ref.watch(pendingQueueCountProvider);
-              if (count <= 0) return const SizedBox.shrink();
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: const Text('Eudemonia'),
+              actions: [
+                Consumer(
+                  builder: (context, ref, _) {
+                    final count = ref.watch(pendingQueueCountProvider);
+                    if (count <= 0) return const SizedBox.shrink();
 
-              return Container(
-                margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SmoothProcessingIndicator(
-                      size: 12,
-                      strokeWidth: 2,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$count pending',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                        ),
                       ),
-                    ),
-                  ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SmoothProcessingIndicator(
+                            size: 12,
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$count pending',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-          ),
-        ],
-      ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                  },
+                ),
+              ],
+            )
+          : null,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20.0),

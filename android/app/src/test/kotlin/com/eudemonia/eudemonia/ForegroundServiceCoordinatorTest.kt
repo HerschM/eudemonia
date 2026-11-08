@@ -13,6 +13,9 @@ class ForegroundServiceCoordinatorTest {
     private var lastLockedState = false
     private var startNotificationCalled = false
     private var stopNotificationCalled = false
+    private var startCaptureCalled = false
+    private var stopCaptureCalled = false
+    private var lastRecordedStateUpdate: Boolean? = null
 
     @Before
     fun setUp() {
@@ -20,6 +23,9 @@ class ForegroundServiceCoordinatorTest {
         lastLockedState = false
         startNotificationCalled = false
         stopNotificationCalled = false
+        startCaptureCalled = false
+        stopCaptureCalled = false
+        lastRecordedStateUpdate = null
 
         coordinator = ForegroundServiceCoordinator(
             onStartForeground = { startNotificationCalled = true },
@@ -27,7 +33,10 @@ class ForegroundServiceCoordinatorTest {
             onTriggerDelivered = { isLocked ->
                 triggerCount++
                 lastLockedState = isLocked
-            }
+            },
+            onStartCaptureTriggered = { startCaptureCalled = true },
+            onStopCaptureTriggered = { stopCaptureCalled = true },
+            onRecordingStateUpdated = { isRecording -> lastRecordedStateUpdate = isRecording }
         )
     }
 
@@ -76,5 +85,35 @@ class ForegroundServiceCoordinatorTest {
         // Second start call
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
         assertTrue(coordinator.isRunning)
+    }
+
+    @Test
+    fun testStartCaptureCommandTransitionsRecordingStateAndTriggersCallback() {
+        assertFalse(coordinator.isRecording)
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+        assertTrue(coordinator.isRecording)
+        assertTrue(startCaptureCalled)
+        assertFalse(stopCaptureCalled)
+    }
+
+    @Test
+    fun testStopCaptureCommandTransitionsRecordingStateAndTriggersCallback() {
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+        assertTrue(coordinator.isRecording)
+
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
+        assertFalse(coordinator.isRecording)
+        assertTrue(stopCaptureCalled)
+    }
+
+    @Test
+    fun testUpdateRecordingStateCommandSyncsRecordingState() {
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE, true)
+        assertTrue(coordinator.isRecording)
+        assertEquals(true, lastRecordedStateUpdate)
+
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE, false)
+        assertFalse(coordinator.isRecording)
+        assertEquals(false, lastRecordedStateUpdate)
     }
 }

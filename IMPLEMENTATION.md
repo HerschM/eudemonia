@@ -43,6 +43,12 @@
      - `BackgroundPermissionService` queries both permissions simultaneously via `MethodChannel`.
      - `showSimultaneousPermissionModal()` provides an educational bottom sheet guiding the user to grant both requirements in one flow.
      - Standardized status badges: **Enabled** (Green) and **Disabled** (Amber).
+  4. **Permanent Lock Screen Notification Banner & Capture Controller (FR10)**:
+     - `EudemoniaForegroundService` maintains dynamic interactive notification action buttons:
+       - Idle: Displays `[ 🎙️ Record Thought ]` (`ACTION_START_CAPTURE`).
+       - Recording: Updates title to `Recording Thought...` and displays `[ ⏹ Stop & Save ]` (`ACTION_STOP_CAPTURE`).
+     - `ForegroundServiceCoordinator` coordinates lock screen intents and dispatches triggers via `deliverTrigger(isLocked = true)` without requiring phone unlock.
+     - Synchronized bidirectionally with Flutter via `MethodChannel("setRecordingState")` whenever recording starts or stops.
 
 ### C. Zero-Latency Audio Queue & Dispatch (FIFO Queue & Non-Blocking Worker)
 - **Files**:
@@ -142,6 +148,52 @@
   - `AppLogger` logs hardware triggers, state transitions, audio queue steps, and exceptions to disk at `${appDocumentsDir}/logs/app_logs.txt`.
   - Enforces a 2MB rotating file cap to prevent unbounded storage consumption.
   - `SettingsScreen` includes interactive actions to view system logs in a live modal, copy a full diagnostic dump to clipboard, or clear logs.
+
+### I. Four-Stage Production Navigation Shell & Mind Pipeline HUD (`lib/features/home/presentation/`)
+- **Files**:
+  - [`lib/features/home/presentation/main_navigation_shell.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/main_navigation_shell.dart)
+  - [`lib/features/home/presentation/pipeline_hud_modal.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/pipeline_hud_modal.dart)
+  - [`lib/features/insights/presentation/insights_placeholder_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/insights/presentation/insights_placeholder_screen.dart)
+  - [`lib/features/action/presentation/action_placeholder_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/action/presentation/action_placeholder_screen.dart)
+- **Mechanics**:
+  - **Top Bar**: Minimalist header with branding `Eudemonia`, interactive Mind Pipeline HUD pill (`[ ⚡ X in Pipeline ▾ ]` or `[ 🌿 In Sync ▾ ]`), and Settings gear navigation.
+  - **Interactive Mind Pipeline HUD Modal**: Bottom sheet revealing real-time machine pipeline state across stages:
+    - *Stage 1 (Capture)*: Shows pending raw audio in queue and processing state.
+    - *Stage 2 (Synthesis)*: Shows count of buffered thoughts awaiting clustering with an on-demand `[ ⚡ Synthesize Now ]` trigger button.
+    - *Stages 3 & 4 (Insights & Action)*: Indicates synchronicity status.
+  - **Four-Stage Tab Bar & Zero-Suppression**:
+    - `Capture (X)`: Zero-suppressed unconsumed thought count ($X = \text{unread} + \text{in-flight queue}$).
+    - `Synthesis (Y)`: Zero-suppressed unconsumed session count ($Y = \text{unread clusters}$).
+    - `Insights` & `Action`: Visually greyed out (`Opacity(0.38)`) and tap-intercepted to remain unclickable placeholders with friendly explanatory empty states until backend stages are activated.
+
+### J. Production Synthesis Subsystem & Session Clustering (`lib/features/synthesis/`)
+- **Files**:
+  - [`lib/features/synthesis/domain/synthesis_cluster.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/domain/synthesis_cluster.dart)
+  - [`lib/features/synthesis/data/synthesis_repository.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/data/synthesis_repository.dart)
+  - [`lib/features/synthesis/presentation/synthesis_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/synthesis_screen.dart)
+  - [`lib/features/synthesis/presentation/style_rewriter_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/style_rewriter_sheet.dart)
+  - [`lib/features/synthesis/presentation/note_ejection_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/note_ejection_sheet.dart)
+  - [`lib/features/synthesis/presentation/note_merge_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/note_merge_sheet.dart)
+- **Mechanics**:
+  - **State Architecture**: `SynthesisRepository` extends Riverpod 3 `Notifier<List<SynthesisCluster>>` exposed via `synthesisRepositoryProvider`.
+  - **Cluster Cards**:
+    - Header shows sequence badge (e.g., `#S-01`), folder tag with dropdown reassignment, and unread indicator dot (`•`).
+    - Expandable raw origin notes pill (`X Raw Notes ▾`) displaying constituent thought transcriptions and origin sequence numbers (`#01`, `#02`).
+    - Actions: `[ ✨ Style ▾ ]` (Executive, Action-Oriented, Exploratory re-writing), `[ 🔗 Merge ]` (cross-cluster consolidation), and `[ 🗑️ Delete ]`.
+    - **Single-Note Ejection Guard**: Single-thought clusters hide the `[ Move Out ]` button to prevent creating empty, orphaned synthesis sessions. In multi-note clusters, `[ Move Out ]` opens `NoteEjectionModal` offering to move the note into an existing cluster or spawn an independent session.
+  - **Triage & Folder Filtering**: Compact dual dropdowns (`All Triage`, `Unread`, `Read`) and (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`) prevent screen real-estate wastage.
+  - **Pending Batch Banner**: Prominently shows unprocessed thought buffer count with an instant `[ ⚡ Synthesize Now ]` action.
+
+### K. Production Settings & Advanced Diagnostics (`lib/features/settings/`)
+- **Files**:
+  - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
+- **Mechanics**:
+  - **Background & Hardware Permissions**: Persistent foreground service keep-alive toggle, battery optimization exemption, and accessibility service controls with simultaneous permission guidance.
+  - **Automatic Synthesis Trigger & Batching**: Configurable capture threshold ($X$ thoughts) and session quiet window ($Y$ minutes) plus instant buffer synthesis trigger.
+  - **Folder Management & Semantic Manifestos**: Real-time display of folder manifestos (`Work`, `Ideas`, `Todos`, `Journal`) with an interactive dialog to add custom user folders and keyword anchors.
+  - **Calendar Synchronization**: Toggle to automatically block out schedule commitments extracted from thoughts.
+  - **On-Device AI Memory & Thermal Telemetry**: Live thermal headroom display, model footprint monitor, and an instant `[ Evict Models Now (<60 MB) ]` memory reclamation button.
+  - **Diagnostic Logging**: Rotating 2MB log inspector modal, one-click clipboard telemetry dump, and log clearing.
 
 ---
 

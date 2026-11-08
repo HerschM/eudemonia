@@ -38,6 +38,9 @@ class EudemoniaForegroundService : Service() {
             },
             onTriggerDelivered = { isLocked ->
                 deliverTrigger(isLocked)
+            },
+            onRecordingStateUpdated = { isRecording ->
+                updateNotification(isRecording)
             }
         )
     }
@@ -60,29 +63,31 @@ class EudemoniaForegroundService : Service() {
             return START_NOT_STICKY
         }
 
+        if (action == ForegroundServiceCoordinator.ACTION_START_CAPTURE) {
+            coordinator.handleCommand(action)
+            deliverTrigger(isLocked = true)
+            updateNotification(isRecording = true)
+            return START_STICKY
+        }
+
+        if (action == ForegroundServiceCoordinator.ACTION_STOP_CAPTURE) {
+            coordinator.handleCommand(action)
+            deliverTrigger(isLocked = true)
+            updateNotification(isRecording = false)
+            return START_STICKY
+        }
+
+        if (action == ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE) {
+            val isRec = intent?.getBooleanExtra("isRecording", false) ?: false
+            coordinator.handleCommand(action, isRec)
+            updateNotification(isRecording = isRec)
+            return START_STICKY
+        }
+
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
         try {
             createNotificationChannel()
-
-            val notificationIntent = Intent(this, MainActivity::class.java).apply {
-                this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                0,
-                notificationIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Eudemonia Background Listener")
-                .setContentText("Ready to capture thoughts via volume buttons.")
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build()
-
+            val notification = buildNotification(coordinator.isRecording)
             startForeground(NOTIFICATION_ID, notification)
         } catch (_: Exception) {}
 
@@ -91,6 +96,70 @@ class EudemoniaForegroundService : Service() {
         } catch (_: Exception) {}
 
         return START_STICKY
+    }
+
+    internal fun updateNotification(isRecording: Boolean) {
+        try {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.notify(NOTIFICATION_ID, buildNotification(isRecording))
+        } catch (_: Exception) {}
+    }
+
+    internal fun buildNotification(isRecording: Boolean): android.app.Notification {
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            notificationIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+
+        if (isRecording) {
+            val stopIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+                this.action = ForegroundServiceCoordinator.ACTION_STOP_CAPTURE
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                this,
+                2,
+                stopIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.setContentTitle("Recording Thought...")
+                .setContentText("Speak freely • Tap to finish")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .addAction(
+                    android.R.drawable.ic_media_pause,
+                    "Stop & Save",
+                    stopPendingIntent
+                )
+        } else {
+            val startIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+                this.action = ForegroundServiceCoordinator.ACTION_START_CAPTURE
+            }
+            val startPendingIntent = PendingIntent.getService(
+                this,
+                1,
+                startIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.setContentTitle("Eudemonia Background Listener")
+                .setContentText("Ready to capture thoughts via volume buttons.")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .addAction(
+                    android.R.drawable.ic_btn_speak_now,
+                    "Record Thought",
+                    startPendingIntent
+                )
+        }
+
+        return builder.build()
     }
 
     internal fun registerTriggerReceiver() {
