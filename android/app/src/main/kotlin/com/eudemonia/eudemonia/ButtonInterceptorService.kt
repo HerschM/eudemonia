@@ -118,13 +118,16 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
         }
     }
 
+    private var isRecordingActive = false
+
     override fun triggerVoicePipeline() {
-        Log.d(TAG, "Both volume buttons pressed simultaneously! Performing instant haptic & sending trigger broadcast.")
-        playInstantHaptic()
+        isRecordingActive = !isRecordingActive
+        Log.d(TAG, "Both volume buttons pressed simultaneously! Performing instant haptic (isStart=$isRecordingActive) & sending trigger broadcast.")
+        playInstantHaptic(isStart = isRecordingActive)
         sendTriggerToApp()
     }
 
-    private fun playInstantHaptic() {
+    private fun playInstantHaptic(isStart: Boolean) {
         try {
             val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
@@ -136,11 +139,15 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
 
             if (vibrator?.hasVibrator() == true) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)
+                    val effect = if (isStart) {
+                        android.os.VibrationEffect.createOneShot(45, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                    } else {
+                        android.os.VibrationEffect.createWaveform(longArrayOf(0, 30, 50, 30), -1)
+                    }
                     vibrator.vibrate(effect)
                 } else {
                     @Suppress("DEPRECATION")
-                    vibrator.vibrate(80L)
+                    vibrator.vibrate(if (isStart) 45L else 80L)
                 }
             }
         } catch (e: Exception) {

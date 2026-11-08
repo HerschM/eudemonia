@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:eudemonia/core/logger/app_logger.dart';
 
 /// Result of processing and categorizing a raw speech transcript.
 class NoteClassificationResult {
@@ -29,19 +30,21 @@ class NoteClassificationResult {
   }
 
   /// Print structured debug logs requested for observability.
-  void printDebugLog() {
-    print('=================== [AI Note Processing] ===================');
-    print('[Raw Transcript]             : "$rawText"');
-    print('[Language Corrected]         : "$correctedText"');
-    print('[Folder Confidence Scores]   : $formattedScores');
-    print('[Selected Folder]            : "$selectedFolder"');
-    if (reasoning != null && reasoning!.isNotEmpty) {
-      print('[Reasoning]                  : $reasoning');
+  void printDebugLog([AppLogger? logger]) {
+    if (logger != null) {
+      logger.info('=================== [AI Note Processing] ===================');
+      logger.info('[Raw Transcript]             : "$rawText"');
+      logger.info('[Language Corrected]         : "$correctedText"');
+      logger.info('[Folder Confidence Scores]   : $formattedScores');
+      logger.info('[Selected Folder]            : "$selectedFolder"');
+      if (reasoning != null && reasoning!.isNotEmpty) {
+        logger.info('[Reasoning]                  : $reasoning');
+      }
+      if (usedFallback) {
+        logger.info('[Notice]                     : Processed via heuristic fallback classifier');
+      }
+      logger.info('============================================================');
     }
-    if (usedFallback) {
-      print('[Notice]                     : Processed via heuristic fallback classifier');
-    }
-    print('============================================================');
   }
 }
 

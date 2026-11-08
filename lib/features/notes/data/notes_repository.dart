@@ -7,7 +7,6 @@ class NotesRepository {
   Isar? _isar;
   bool _isInitialized = false;
   final List<Note> _inMemoryNotes = [];
-  final Set<Id> _readNoteIds = {};
   int _nextId = 1;
 
   NotesRepository({Isar? isar})
@@ -25,19 +24,43 @@ class NotesRepository {
   }
 
   Future<void> saveNote(Note note) async {
+    if (note.dailySequenceNumber == null) {
+      final date = note.createdAt ?? DateTime.now();
+      final startOfDay = DateTime(date.year, date.month, date.day);
+      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
+
+      int maxSeq = 0;
+      if (_isar != null) {
+        final sameDayNotes = await _isar!.notes
+            .filter()
+            .createdAtBetween(startOfDay, endOfDay)
+            .findAll();
+        for (final n in sameDayNotes) {
+          if (n.dailySequenceNumber != null && n.dailySequenceNumber! > maxSeq) {
+            maxSeq = n.dailySequenceNumber!;
+          }
+        }
+      } else {
+        for (final n in _inMemoryNotes) {
+          final nDate = n.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          if (nDate.isAfter(startOfDay.subtract(const Duration(milliseconds: 1))) &&
+              nDate.isBefore(endOfDay.add(const Duration(milliseconds: 1)))) {
+            if (n.dailySequenceNumber != null && n.dailySequenceNumber! > maxSeq) {
+              maxSeq = n.dailySequenceNumber!;
+            }
+          }
+        }
+      }
+      note.dailySequenceNumber = maxSeq + 1;
+    }
+
     if (_isar != null) {
       await _isar!.writeTxn(() async {
         await _isar!.notes.put(note);
       });
-      if (note.isRead) {
-        _readNoteIds.add(note.id);
-      }
     } else {
       if (note.id == Isar.autoIncrement || note.id == 0) {
         note.id = _nextId++;
-      }
-      if (note.isRead) {
-        _readNoteIds.add(note.id);
       }
       final existingIndex = _inMemoryNotes.indexWhere((n) => n.id == note.id);
       if (existingIndex >= 0) {
@@ -49,16 +72,21 @@ class NotesRepository {
   }
 
   Future<Note?> getNoteById(Id id) async {
-    Note? note;
     if (_isar != null) {
-      note = await _isar!.notes.get(id);
+      return await _isar!.notes.get(id);
     } else {
-      note = _inMemoryNotes.where((n) => n.id == id).firstOrNull;
+      return _inMemoryNotes.where((n) => n.id == id).firstOrNull;
     }
-    if (note != null) {
-      note.isRead = _readNoteIds.contains(note.id);
+  }
+
+  Future<void> deleteNote(Id id) async {
+    if (_isar != null) {
+      await _isar!.writeTxn(() async {
+        await _isar!.notes.delete(id);
+      });
+    } else {
+      _inMemoryNotes.removeWhere((n) => n.id == id);
     }
-    return note;
   }
 
   Future<void> updateNoteText(Id id, String newText) async {
@@ -96,12 +124,14 @@ class NotesRepository {
   }
 
   Future<void> markAsRead(Id id) async {
-    _readNoteIds.add(id);
     if (_isar != null) {
-      final note = await _isar!.notes.get(id);
-      if (note != null) {
-        note.isRead = true;
-      }
+      await _isar!.writeTxn(() async {
+        final note = await _isar!.notes.get(id);
+        if (note != null) {
+          note.isRead = true;
+          await _isar!.notes.put(note);
+        }
+      });
     } else {
       final note = _inMemoryNotes.where((n) => n.id == id).firstOrNull;
       if (note != null) {
@@ -116,23 +146,44 @@ class NotesRepository {
   }
 
   Future<List<Note>> getAllNotes() async {
-    List<Note> list;
-    if (_isar != null) {
-      list = await _isar!.notes.where().sortByCreatedAtDesc().findAll();
-    } else {
-      list = List<Note>.from(_inMemoryNotes)
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final notes = _isar != null
+        ? await _isar!.notes.where().sortByCreatedAtDesc().findAll()
+        : (List<Note>.from(_inMemoryNotes)
+          ..sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))));
+
+    // Backfill legacy notes missing dailySequenceNumber chronologically per day
+    if (notes.any((n) => n.dailySequenceNumber == null)) {
+      final byDay = <String, List<Note>>{};
+      for (final n in notes) {
+        final d = n.createdAt ?? DateTime.now();
+        final key = '${d.year}-${d.month}-${d.day}';
+        byDay.putIfAbsent(key, () => []).add(n);
+      }
+      for (final dayNotes in byDay.values) {
+        dayNotes.sort((a, b) => (a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+        int seq = 1;
+        for (final n in dayNotes) {
+          if (n.dailySequenceNumber == null) {
+            n.dailySequenceNumber = seq;
+            if (_isar != null && n.id > 0) {
+              await _isar!.writeTxn(() async {
+                await _isar!.notes.put(n);
+              });
+            }
+          }
+          seq = (n.dailySequenceNumber ?? seq) + 1;
+        }
+      }
     }
-    for (final n in list) {
-      n.isRead = _readNoteIds.contains(n.id);
-    }
-    return list;
+
+    return notes;
   }
 
   Future<List<Note>> searchNotes(String query) async {
-    List<Note> list;
     if (_isar != null) {
-      list = await _isar!.notes
+      return await _isar!.notes
           .filter()
           .correctedTextContains(query, caseSensitive: false)
           .or()
@@ -141,37 +192,30 @@ class NotesRepository {
           .findAll();
     } else {
       final q = query.toLowerCase();
-      list = _inMemoryNotes
+      return _inMemoryNotes
           .where((n) =>
               n.correctedText.toLowerCase().contains(q) ||
               n.folder.toLowerCase().contains(q))
           .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        ..sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
     }
-    for (final n in list) {
-      n.isRead = _readNoteIds.contains(n.id);
-    }
-    return list;
   }
 
   Future<List<Note>> getNotesByFolder(String folder) async {
-    List<Note> list;
     if (_isar != null) {
-      list = await _isar!.notes
+      return await _isar!.notes
           .filter()
           .folderEqualTo(folder)
           .sortByCreatedAtDesc()
           .findAll();
     } else {
-      list = _inMemoryNotes
+      return _inMemoryNotes
           .where((n) => n.folder == folder)
           .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        ..sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
     }
-    for (final n in list) {
-      n.isRead = _readNoteIds.contains(n.id);
-    }
-    return list;
   }
 
   Future<List<String>> getAllFolders() async {

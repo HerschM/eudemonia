@@ -27,20 +27,41 @@ const NoteSchema = CollectionSchema(
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
-    r'folder': PropertySchema(
+    r'dailySequenceNumber': PropertySchema(
       id: 2,
+      name: r'dailySequenceNumber',
+      type: IsarType.long,
+    ),
+    r'failureReason': PropertySchema(
+      id: 3,
+      name: r'failureReason',
+      type: IsarType.string,
+    ),
+    r'folder': PropertySchema(
+      id: 4,
       name: r'folder',
       type: IsarType.string,
     ),
+    r'isRead': PropertySchema(
+      id: 5,
+      name: r'isRead',
+      type: IsarType.bool,
+    ),
     r'originalAudioPath': PropertySchema(
-      id: 3,
+      id: 6,
       name: r'originalAudioPath',
       type: IsarType.string,
     ),
     r'rawText': PropertySchema(
-      id: 4,
+      id: 7,
       name: r'rawText',
       type: IsarType.string,
+    ),
+    r'state': PropertySchema(
+      id: 8,
+      name: r'state',
+      type: IsarType.string,
+      enumMap: _NotestateEnumValueMap,
     )
   },
   estimateSize: _noteEstimateSize,
@@ -78,6 +99,12 @@ int _noteEstimateSize(
 ) {
   var bytesCount = offsets.last;
   bytesCount += 3 + object.correctedText.length * 3;
+  {
+    final value = object.failureReason;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.folder.length * 3;
   {
     final value = object.originalAudioPath;
@@ -86,6 +113,7 @@ int _noteEstimateSize(
     }
   }
   bytesCount += 3 + object.rawText.length * 3;
+  bytesCount += 3 + object.state.name.length * 3;
   return bytesCount;
 }
 
@@ -97,9 +125,13 @@ void _noteSerialize(
 ) {
   writer.writeString(offsets[0], object.correctedText);
   writer.writeDateTime(offsets[1], object.createdAt);
-  writer.writeString(offsets[2], object.folder);
-  writer.writeString(offsets[3], object.originalAudioPath);
-  writer.writeString(offsets[4], object.rawText);
+  writer.writeLong(offsets[2], object.dailySequenceNumber);
+  writer.writeString(offsets[3], object.failureReason);
+  writer.writeString(offsets[4], object.folder);
+  writer.writeBool(offsets[5], object.isRead);
+  writer.writeString(offsets[6], object.originalAudioPath);
+  writer.writeString(offsets[7], object.rawText);
+  writer.writeString(offsets[8], object.state.name);
 }
 
 Note _noteDeserialize(
@@ -108,13 +140,19 @@ Note _noteDeserialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  final object = Note();
-  object.correctedText = reader.readString(offsets[0]);
-  object.createdAt = reader.readDateTime(offsets[1]);
-  object.folder = reader.readString(offsets[2]);
+  final object = Note(
+    correctedText: reader.readStringOrNull(offsets[0]) ?? '',
+    createdAt: reader.readDateTimeOrNull(offsets[1]),
+    dailySequenceNumber: reader.readLongOrNull(offsets[2]),
+    failureReason: reader.readStringOrNull(offsets[3]),
+    folder: reader.readStringOrNull(offsets[4]) ?? 'Uncategorized',
+    isRead: reader.readBoolOrNull(offsets[5]) ?? false,
+    originalAudioPath: reader.readStringOrNull(offsets[6]),
+    rawText: reader.readStringOrNull(offsets[7]) ?? '',
+    state: _NotestateValueEnumMap[reader.readStringOrNull(offsets[8])] ??
+        ThoughtState.processed,
+  );
   object.id = id;
-  object.originalAudioPath = reader.readStringOrNull(offsets[3]);
-  object.rawText = reader.readString(offsets[4]);
   return object;
 }
 
@@ -126,19 +164,41 @@ P _noteDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? '') as P;
     case 1:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset) ?? 'Uncategorized') as P;
+    case 5:
+      return (reader.readBoolOrNull(offset) ?? false) as P;
+    case 6:
+      return (reader.readStringOrNull(offset)) as P;
+    case 7:
+      return (reader.readStringOrNull(offset) ?? '') as P;
+    case 8:
+      return (_NotestateValueEnumMap[reader.readStringOrNull(offset)] ??
+          ThoughtState.processed) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
 }
+
+const _NotestateEnumValueMap = {
+  r'enqueued': r'enqueued',
+  r'processed': r'processed',
+  r'failed': r'failed',
+  r'synthesized': r'synthesized',
+};
+const _NotestateValueEnumMap = {
+  r'enqueued': ThoughtState.enqueued,
+  r'processed': ThoughtState.processed,
+  r'failed': ThoughtState.failed,
+  r'synthesized': ThoughtState.synthesized,
+};
 
 Id _noteGetId(Note object) {
   return object.id;
@@ -401,8 +461,24 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterFilterCondition> createdAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'createdAt',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> createdAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'createdAt',
+      ));
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterFilterCondition> createdAtEqualTo(
-      DateTime value) {
+      DateTime? value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'createdAt',
@@ -412,7 +488,7 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
   }
 
   QueryBuilder<Note, Note, QAfterFilterCondition> createdAtGreaterThan(
-    DateTime value, {
+    DateTime? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -425,7 +501,7 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
   }
 
   QueryBuilder<Note, Note, QAfterFilterCondition> createdAtLessThan(
-    DateTime value, {
+    DateTime? value, {
     bool include = false,
   }) {
     return QueryBuilder.apply(this, (query) {
@@ -438,8 +514,8 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
   }
 
   QueryBuilder<Note, Note, QAfterFilterCondition> createdAtBetween(
-    DateTime lower,
-    DateTime upper, {
+    DateTime? lower,
+    DateTime? upper, {
     bool includeLower = true,
     bool includeUpper = true,
   }) {
@@ -450,6 +526,223 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> dailySequenceNumberIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'dailySequenceNumber',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition>
+      dailySequenceNumberIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'dailySequenceNumber',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> dailySequenceNumberEqualTo(
+      int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'dailySequenceNumber',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition>
+      dailySequenceNumberGreaterThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'dailySequenceNumber',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> dailySequenceNumberLessThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'dailySequenceNumber',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> dailySequenceNumberBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'dailySequenceNumber',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'failureReason',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'failureReason',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'failureReason',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'failureReason',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'failureReason',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'failureReason',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> failureReasonIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'failureReason',
+        value: '',
       ));
     });
   }
@@ -630,6 +923,15 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> isReadEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isRead',
+        value: value,
       ));
     });
   }
@@ -908,6 +1210,134 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
       ));
     });
   }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateEqualTo(
+    ThoughtState value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateGreaterThan(
+    ThoughtState value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateLessThan(
+    ThoughtState value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateBetween(
+    ThoughtState lower,
+    ThoughtState upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'state',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateContains(String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'state',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateMatches(String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'state',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'state',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> stateIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'state',
+        value: '',
+      ));
+    });
+  }
 }
 
 extension NoteQueryObject on QueryBuilder<Note, Note, QFilterCondition> {}
@@ -939,6 +1369,30 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterSortBy> sortByDailySequenceNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'dailySequenceNumber', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByDailySequenceNumberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'dailySequenceNumber', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByFailureReason() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'failureReason', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByFailureReasonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'failureReason', Sort.desc);
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterSortBy> sortByFolder() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'folder', Sort.asc);
@@ -948,6 +1402,18 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
   QueryBuilder<Note, Note, QAfterSortBy> sortByFolderDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'folder', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByIsReadDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.desc);
     });
   }
 
@@ -972,6 +1438,18 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
   QueryBuilder<Note, Note, QAfterSortBy> sortByRawTextDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'rawText', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByState() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'state', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByStateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'state', Sort.desc);
     });
   }
 }
@@ -1001,6 +1479,30 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterSortBy> thenByDailySequenceNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'dailySequenceNumber', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByDailySequenceNumberDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'dailySequenceNumber', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByFailureReason() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'failureReason', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByFailureReasonDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'failureReason', Sort.desc);
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterSortBy> thenByFolder() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'folder', Sort.asc);
@@ -1022,6 +1524,18 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
   QueryBuilder<Note, Note, QAfterSortBy> thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByIsReadDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.desc);
     });
   }
 
@@ -1048,6 +1562,18 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
       return query.addSortBy(r'rawText', Sort.desc);
     });
   }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByState() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'state', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByStateDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'state', Sort.desc);
+    });
+  }
 }
 
 extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
@@ -1065,10 +1591,30 @@ extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
     });
   }
 
+  QueryBuilder<Note, Note, QDistinct> distinctByDailySequenceNumber() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'dailySequenceNumber');
+    });
+  }
+
+  QueryBuilder<Note, Note, QDistinct> distinctByFailureReason(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'failureReason',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Note, Note, QDistinct> distinctByFolder(
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'folder', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Note, Note, QDistinct> distinctByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isRead');
     });
   }
 
@@ -1086,6 +1632,13 @@ extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
       return query.addDistinctBy(r'rawText', caseSensitive: caseSensitive);
     });
   }
+
+  QueryBuilder<Note, Note, QDistinct> distinctByState(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'state', caseSensitive: caseSensitive);
+    });
+  }
 }
 
 extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
@@ -1101,15 +1654,33 @@ extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
     });
   }
 
-  QueryBuilder<Note, DateTime, QQueryOperations> createdAtProperty() {
+  QueryBuilder<Note, DateTime?, QQueryOperations> createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
+    });
+  }
+
+  QueryBuilder<Note, int?, QQueryOperations> dailySequenceNumberProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'dailySequenceNumber');
+    });
+  }
+
+  QueryBuilder<Note, String?, QQueryOperations> failureReasonProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'failureReason');
     });
   }
 
   QueryBuilder<Note, String, QQueryOperations> folderProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'folder');
+    });
+  }
+
+  QueryBuilder<Note, bool, QQueryOperations> isReadProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isRead');
     });
   }
 
@@ -1122,6 +1693,12 @@ extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
   QueryBuilder<Note, String, QQueryOperations> rawTextProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'rawText');
+    });
+  }
+
+  QueryBuilder<Note, ThoughtState, QQueryOperations> stateProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'state');
     });
   }
 }

@@ -15,6 +15,7 @@ class AudioQueueItem {
   String? folder;
   String? correctedText;
   String? errorMessage;
+  int? sequenceNumber;
 
   AudioQueueItem({
     required this.id,
@@ -25,6 +26,7 @@ class AudioQueueItem {
     this.folder,
     this.correctedText,
     this.errorMessage,
+    this.sequenceNumber,
   });
 
   Map<String, dynamic> toJson() => {
@@ -36,6 +38,7 @@ class AudioQueueItem {
         'folder': folder,
         'correctedText': correctedText,
         'errorMessage': errorMessage,
+        'sequenceNumber': sequenceNumber,
       };
 
   factory AudioQueueItem.fromJson(Map<String, dynamic> json) => AudioQueueItem(
@@ -50,5 +53,6 @@ class AudioQueueItem {
         folder: json['folder'] as String?,
         correctedText: json['correctedText'] as String?,
         errorMessage: json['errorMessage'] as String?,
+        sequenceNumber: json['sequenceNumber'] as int?,
       );
 }

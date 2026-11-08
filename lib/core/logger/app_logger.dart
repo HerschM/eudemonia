@@ -15,10 +15,9 @@ class AppLogger {
   final List<String> _writeBuffer = [];
 
   AppLogger({
-    Future<File> Function()? logFileResolver,
-    int maxSizeBytes = 2 * 1024 * 1024, // 2MB default rotation cap
-  })  : _logFileResolver = logFileResolver,
-        _maxSizeBytes = maxSizeBytes;
+    this._logFileResolver,
+    this._maxSizeBytes = 2 * 1024 * 1024, // 2MB default rotation cap
+  });
 
   Future<File> _resolveLogFile() async {
     if (_cachedFile != null) return _cachedFile!;
@@ -72,7 +71,7 @@ class AppLogger {
       try {
         final file = await _resolveLogFile();
         while (_writeBuffer.isNotEmpty) {
-          final chunk = _writeBuffer.join('\n') + '\n';
+          final chunk = '${_writeBuffer.join('\n')}\n';
           _writeBuffer.clear();
 
           // Check for size cap rotation

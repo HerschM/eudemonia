@@ -10,6 +10,8 @@ class ThoughtCard extends StatefulWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onDelete;
+  final int? sequenceNumber;
   final bool isSelected;
   final bool isSelectionMode;
 
@@ -23,6 +25,8 @@ class ThoughtCard extends StatefulWidget {
     this.onRetry,
     this.onTap,
     this.onLongPress,
+    this.onDelete,
+    this.sequenceNumber,
     this.isSelected = false,
     this.isSelectionMode = false,
   });
@@ -145,10 +149,31 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Row
+                // Header Row (Strictly: [# Number] -> [▶ Play Audio] -> [• Unread Dot] -> Spacer() -> [🗑️ Delete])
                 Row(
+                  key: const Key('header_row'),
                   children: [
-                    // Play Audio Button
+                    // 1. # Daily Sequence Badge
+                    if (widget.sequenceNumber != null)
+                      Container(
+                        key: const Key('sequence_badge'),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '#${widget.sequenceNumber.toString().padLeft(2, '0')}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+
+                    // 2. Play Audio Button
                     if (note.originalAudioPath != null && note.originalAudioPath!.isNotEmpty)
                       IconButton(
                         key: const Key('play_audio_button'),
@@ -168,49 +193,33 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
                         color: _getActionColor(),
                         size: 24,
                       ),
-                    const SizedBox(width: 10),
 
-                    // Timestamp
-                    Text(
-                      _formatDate(note.createdAt),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    // Unread Indicator Dot
-                    if (!note.isRead && note.state == ThoughtState.processed)
+                    // 3. Unread Indicator Dot
+                    if (!note.isRead && note.state == ThoughtState.processed) ...[
+                      const SizedBox(width: 8),
                       Container(
                         key: const Key('unread_dot'),
                         width: 8,
                         height: 8,
-                        margin: const EdgeInsets.only(right: 8),
                         decoration: const BoxDecoration(
                           color: Color(0xFF3B82F6),
                           shape: BoxShape.circle,
                         ),
                       ),
+                    ],
 
-                    // Category Pill or State Badge
-                    _buildStateOrCategoryBadge(context),
+                    const Spacer(),
 
-                    // Edit button for processed thoughts
-                    if (note.state == ThoughtState.processed && !_isEditing)
+                    // 4. Delete button (Uniformly rendered in header across all card states)
+                    if (widget.onDelete != null)
                       IconButton(
-                        key: const Key('edit_text_button'),
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                        padding: const EdgeInsets.only(left: 6),
+                        key: const Key('delete_note_button'),
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () {
-                          setState(() {
-                            _isEditing = true;
-                          });
-                        },
+                        onPressed: widget.onDelete,
+                        tooltip: 'Delete note',
                       ),
                   ],
                 ),
@@ -219,6 +228,39 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
 
                 // Body Section based on ThoughtState
                 _buildBodyContent(context),
+
+                const SizedBox(height: 12),
+
+                // Divider separating body and footer
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: borderColor.withValues(alpha: 0.25),
+                ),
+                const SizedBox(height: 8),
+
+                // Footer Row: [Timestamp: DD/MM  HH:MM AM/PM] -> Spacer -> [Status Badge / Edit / Retry]
+                SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    key: const Key('footer_row'),
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        _formatDate(note.createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      _buildFooterActions(context),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -240,12 +282,69 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     }
   }
 
+  Widget _buildFooterActions(BuildContext context) {
+    final note = widget.note;
+    switch (note.state) {
+      case ThoughtState.enqueued:
+        return _buildStateOrCategoryBadge(context);
+      case ThoughtState.failed:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildStateOrCategoryBadge(context),
+            const SizedBox(width: 6),
+            ElevatedButton.icon(
+              key: const Key('retry_button'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.refresh, size: 13),
+              label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              onPressed: widget.onRetry,
+            ),
+          ],
+        );
+      case ThoughtState.synthesized:
+        return _buildStateOrCategoryBadge(context);
+      case ThoughtState.processed:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildStateOrCategoryBadge(context),
+            if (!_isEditing) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                key: const Key('edit_text_button'),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                padding: const EdgeInsets.only(left: 4),
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  setState(() {
+                    _isEditing = true;
+                  });
+                },
+                tooltip: 'Edit text',
+              ),
+            ],
+          ],
+        );
+    }
+  }
+
   Widget _buildStateOrCategoryBadge(BuildContext context) {
     final note = widget.note;
     switch (note.state) {
       case ThoughtState.enqueued:
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(20),
@@ -257,7 +356,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         );
       case ThoughtState.failed:
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: const Color(0xFFEF4444).withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(20),
@@ -269,7 +368,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         );
       case ThoughtState.synthesized:
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: const Color(0xFF10B981).withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(20),
@@ -305,7 +404,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
             }).toList();
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
               borderRadius: BorderRadius.circular(20),
@@ -368,37 +467,13 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     }
 
     if (note.state == ThoughtState.failed) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            note.failureReason ?? 'Error processing voice recording.',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFFB91C1C),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ElevatedButton.icon(
-              key: const Key('retry_button'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFEF4444),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Retry', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              onPressed: widget.onRetry,
-            ),
-          ),
-        ],
+      return Text(
+        note.failureReason ?? 'Error processing voice recording.',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFFB91C1C),
+        ),
       );
     }
 
@@ -474,7 +549,14 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.month}/${date.day} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  String _formatDate(DateTime? date) {
+    if (date == null) return '';
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final hour = date.hour == 0 ? 12 : (date.hour > 12 ? date.hour - 12 : date.hour);
+    final hourStr = hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '$day/$month  $hourStr:$minute $period';
   }
 }

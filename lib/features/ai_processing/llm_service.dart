@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
+import 'package:eudemonia/core/logger/app_logger.dart';
 import 'llm_config.dart';
 import 'note_classifier.dart';
 
@@ -13,6 +14,7 @@ typedef LLMResponse = NoteClassificationResult;
 
 class LLMService {
   final LLMConfig config;
+  final AppLogger? _logger;
   LlamaParent? _llama;
   bool _isInitialized = false;
 
@@ -20,7 +22,7 @@ class LLMService {
   LlamaScope? _currentScope;
   Timer? _kvCacheTtlTimer;
 
-  LLMService({this.config = const LLMConfig()});
+  LLMService({this.config = const LLMConfig(), this._logger});
 
   bool get isInitialized => _isInitialized;
   int get completedTurnsCount => _completedTurnsCount;
@@ -33,7 +35,7 @@ class LLMService {
       throw Exception('LLM model not found at $modelPath');
     }
 
-    print('[LLMService] Initializing llama.cpp engine with config: $config');
+    _logger?.info('[LLMService] Initializing llama.cpp engine with config: $config');
 
     final contextParams = ContextParams()
       ..nCtx = config.kvCacheMaxSize
@@ -55,7 +57,7 @@ class LLMService {
     await _llama!.init();
     _isInitialized = true;
     _completedTurnsCount = 0;
-    print('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, type: ${config.kvCacheType.name}).');
+    _logger?.info('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, type: ${config.kvCacheType.name}).');
   }
 
   /// Explicitly clears the active native KV cache slot.
@@ -65,11 +67,11 @@ class LLMService {
 
     if (_currentScope != null && _llama != null) {
       try {
-        print('[LLMService] Purging KV cache slot (reason: $reason)...');
+        _logger?.info('[LLMService] Purging KV cache slot (reason: $reason)...');
         await _llama!.disposeScope(_currentScope!);
-        print('[LLMService] KV cache slot freed successfully. Native RAM reclaimed.');
+        _logger?.info('[LLMService] KV cache slot freed successfully. Native RAM reclaimed.');
       } catch (e) {
-        print('[LLMService] Warning during KV cache scope disposal: $e');
+        _logger?.warning('[LLMService] Warning during KV cache scope disposal: $e');
       } finally {
         _currentScope = null;
       }
@@ -79,29 +81,29 @@ class LLMService {
   void _resetKvCacheTimer() {
     _kvCacheTtlTimer?.cancel();
     _kvCacheTtlTimer = Timer(config.kvCacheTtl, () async {
-      print('[LLMService] KV cache TTL expired (${config.kvCacheTtl.inSeconds}s idle). Auto-clearing KV slot.');
+      _logger?.info('[LLMService] KV cache TTL expired (${config.kvCacheTtl.inSeconds}s idle). Auto-clearing KV slot.');
       await clearKvCache(reason: 'TTL expired');
     });
   }
 
   Future<NoteClassificationResult> processText(String rawText) async {
     if (!_isInitialized || _llama == null) {
-      print('[LLMService] LLM not initialized, falling back to heuristic classifier.');
+      _logger?.info('[LLMService] LLM not initialized, falling back to heuristic classifier.');
       final result = NoteClassifier.fallbackClassify(rawText, reason: 'LLM not initialized');
-      result.printDebugLog();
+      result.printDebugLog(_logger);
       return result;
     }
 
     _completedTurnsCount++;
     _kvCacheTtlTimer?.cancel();
 
-    print('[LLMService] === Starting Inference Turn #$_completedTurnsCount ===');
-    print('[LLMService] KV Cache Policy: max=${config.kvCacheMaxSize}, clearEveryXTurns=${config.clearKvCacheEveryXTurns}');
+    _logger?.info('[LLMService] === Starting Inference Turn #$_completedTurnsCount ===');
+    _logger?.info('[LLMService] KV Cache Policy: max=${config.kvCacheMaxSize}, clearEveryXTurns=${config.clearKvCacheEveryXTurns}');
 
     // Guard against excessive input length
     String sanitizedText = rawText;
     if (sanitizedText.length > config.inputTokenLimit * 4) {
-      print('[LLMService] Input exceeds character guardrail limit (${config.inputTokenLimit * 4}). Truncating.');
+      _logger?.warning('[LLMService] Input exceeds character guardrail limit (${config.inputTokenLimit * 4}). Truncating.');
       sanitizedText = sanitizedText.substring(0, config.inputTokenLimit * 4);
     }
 
@@ -124,19 +126,19 @@ class LLMService {
           .timeout(const Duration(seconds: 25));
       fullResponse = buffer.toString();
     } catch (e) {
-      print('[LLMService] LLM generation error or timeout: $e');
+      _logger?.error('[LLMService] LLM generation error or timeout', error: e);
       fullResponse = buffer.toString();
     } finally {
       stopwatch.stop();
       await streamSub.cancel();
     }
 
-    print('[LLMService] Turn #$_completedTurnsCount completed in ${stopwatch.elapsedMilliseconds}ms.');
+    _logger?.info('[LLMService] Turn #$_completedTurnsCount completed in ${stopwatch.elapsedMilliseconds}ms.');
 
     // Evaluate turn-based KV cache purge policy
     if (config.clearKvCacheEveryXTurns > 0 &&
         _completedTurnsCount % config.clearKvCacheEveryXTurns == 0) {
-      print('[LLMService] Turn count ($_completedTurnsCount) matched clearKvCacheEveryXTurns (${config.clearKvCacheEveryXTurns}). Freeing KV cache.');
+      _logger?.info('[LLMService] Turn count ($_completedTurnsCount) matched clearKvCacheEveryXTurns (${config.clearKvCacheEveryXTurns}). Freeing KV cache.');
       await clearKvCache(reason: 'turn threshold reached');
     } else {
       // Schedule KV cache TTL countdown for inactivity
@@ -144,12 +146,12 @@ class LLMService {
     }
 
     final result = NoteClassifier.parseResponse(rawText, fullResponse);
-    result.printDebugLog();
+    result.printDebugLog(_logger);
     return result;
   }
 
   void dispose() {
-    print('[LLMService] Disposing LLMService...');
+    _logger?.info('[LLMService] Disposing LLMService...');
     _kvCacheTtlTimer?.cancel();
     _kvCacheTtlTimer = null;
     _currentScope = null;
@@ -157,12 +159,13 @@ class LLMService {
     _llama?.dispose();
     _llama = null;
     _isInitialized = false;
-    print('[LLMService] LLMService disposed. Base weights and KV cache freed.');
+    _logger?.info('[LLMService] LLMService disposed. Base weights and KV cache freed.');
   }
 }
 
 final llmServiceProvider = Provider<LLMService>((ref) {
   final config = ref.watch(llmConfigProvider);
-  return LLMService(config: config);
+  final logger = ref.watch(appLoggerProvider);
+  return LLMService(config: config, logger: logger);
 });
 

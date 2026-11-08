@@ -33,6 +33,20 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -125,8 +139,14 @@ class MainActivity: FlutterActivity() {
                 }
                 "playHaptic" -> {
                     val isStart = call.argument<Boolean>("isStart") ?: true
-                    val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
-                    if (vibrator.hasVibrator()) {
+                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                        vibratorManager?.defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                    }
+                    if (vibrator?.hasVibrator() == true) {
                         if (isStart) {
                             val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 100, 50), -1)
                             vibrator.vibrate(effect)
@@ -160,10 +180,8 @@ class MainActivity: FlutterActivity() {
 
         // Check if activity was launched by service trigger
         if (intent?.getBooleanExtra("autoTrigger", false) == true) {
-            if (TriggerDebouncer.shared.tryTrigger()) {
-                val isLocked = intent.getBooleanExtra("isLocked", false)
-                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
-            }
+            val isLocked = intent.getBooleanExtra("isLocked", false)
+            methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
         }
     }
 
@@ -171,10 +189,8 @@ class MainActivity: FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra("autoTrigger", false)) {
-            if (TriggerDebouncer.shared.tryTrigger()) {
-                val isLocked = intent.getBooleanExtra("isLocked", false)
-                methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
-            }
+            val isLocked = intent.getBooleanExtra("isLocked", false)
+            methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
         }
     }
 
@@ -204,16 +220,14 @@ class MainActivity: FlutterActivity() {
                     mediaPlayer = null
 
                     val player = android.media.MediaPlayer()
-                    java.io.FileInputStream(file).use { fis ->
-                        player.setAudioAttributes(
-                            android.media.AudioAttributes.Builder()
-                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                .build()
-                        )
-                        player.setDataSource(fis.fd)
-                        player.prepare()
-                    }
+                    player.setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .build()
+                    )
+                    player.setDataSource(file.absolutePath)
+                    player.prepare()
 
                     player.setOnCompletionListener {
                         currentlyPlayingPath = null

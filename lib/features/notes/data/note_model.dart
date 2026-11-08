@@ -22,15 +22,15 @@ class Note {
   @Index()
   late String folder;
   
-  late DateTime createdAt;
+  DateTime? createdAt;
 
-  @ignore
+  int? dailySequenceNumber;
+
+  @Enumerated(EnumType.name)
   ThoughtState state = ThoughtState.processed;
 
-  @ignore
   bool isRead = false;
 
-  @ignore
   String? failureReason;
 
   Note({
@@ -39,6 +39,7 @@ class Note {
     this.correctedText = '',
     this.folder = 'Uncategorized',
     DateTime? createdAt,
+    this.dailySequenceNumber,
     this.state = ThoughtState.processed,
     this.isRead = false,
     this.failureReason,

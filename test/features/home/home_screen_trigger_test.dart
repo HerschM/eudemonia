@@ -142,4 +142,37 @@ void main() {
     expect(find.text('Network timeout during transcription.'), findsOneWidget);
     expect(find.byKey(const Key('retry_button')), findsOneWidget);
   });
+
+  testWidgets('Tapping on a folder card navigates to NoteListScreen', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          notesRepositoryProvider.overrideWithValue(MockNotesRepo()),
+          backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
+            const BackgroundPermissionStatus(
+              isAccessibilityEnabled: true,
+              isBatteryOptimizationIgnored: true,
+              isForegroundServiceRunning: true,
+            ),
+          )),
+          pendingQueueCountProvider.overrideWith(() => FakePendingQueueCountNotifier(0)),
+          failedQueueCountProvider.overrideWith(() => FakeFailedQueueCountNotifier(0)),
+          queueItemsProvider.overrideWith(() => FakeQueueItemsNotifier([])),
+        ],
+        child: const MaterialApp(
+          home: HomeScreen(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ideas'), findsOneWidget);
+    await tester.tap(find.text('Ideas'));
+    await tester.pumpAndSettle();
+
+    // Verify NoteListScreen is pushed
+    expect(find.byType(AppBar), findsOneWidget);
+    expect(find.text('Ideas'), findsOneWidget);
+  });
 }

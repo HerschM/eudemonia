@@ -13,6 +13,7 @@ import '../notes/data/note_model.dart';
 import '../notes/data/notes_repository.dart';
 import '../notes/presentation/thought_card.dart';
 import '../notes/audio_playback_controller.dart';
+import '../notes/note_list_screen.dart';
 import 'presentation/smooth_processing_indicator.dart';
 
 enum ThoughtFilter { all, unread, failed }
@@ -46,6 +47,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _channel.setMethodCallHandler(_handleMethodCall);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(backgroundPermissionServiceProvider).startForegroundService();
+    });
   }
 
   @override
@@ -121,6 +125,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         correctedText: item.correctedText ?? item.rawTranscript ?? (isFailed ? 'Failed to process audio recording' : 'Processing audio note...'),
         folder: item.folder ?? 'Uncategorized',
         createdAt: item.recordedAt,
+        dailySequenceNumber: item.sequenceNumber,
         state: isFailed ? ThoughtState.failed : ThoughtState.enqueued,
         failureReason: isFailed ? (item.errorMessage ?? 'Error processing voice recording.') : null,
         isRead: isFailed ? true : false,
@@ -130,7 +135,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
 
     final all = [...activeQueueNotes, ...persistedNotes];
-    all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    all.sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+        .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
     return all;
   }
 
@@ -424,6 +430,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                             return ThoughtCard(
                               key: ValueKey(note.id),
                               note: note,
+                              sequenceNumber: note.dailySequenceNumber,
                               isPlaying: isPlaying,
                               onPlayAudio: note.originalAudioPath != null && note.originalAudioPath!.isNotEmpty
                                   ? () {
@@ -440,6 +447,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                 if (note.id > 0) {
                                   await ref.read(notesRepositoryProvider).updateNoteFolder(note.id, newCategory);
                                   ref.invalidate(recentNotesProvider);
+                                }
+                              },
+                              onDelete: () async {
+                                if (note.id > 0) {
+                                  await ref.read(notesRepositoryProvider).deleteNote(note.id);
+                                  ref.invalidate(recentNotesProvider);
+                                } else if (note.originalAudioPath != null) {
+                                  await ref.read(audioQueueServiceProvider).removeItemByAudioPath(note.originalAudioPath!);
                                 }
                               },
                               onRetry: () {
@@ -496,7 +511,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            // Navigate to note list filtered by folder
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => NoteListScreen(folder: title),
+              ),
+            );
           },
           child: Padding(
             padding: const EdgeInsets.all(16.0),

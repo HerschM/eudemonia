@@ -32,17 +32,13 @@ class AudioQueueService {
     this._llmService,
     this._notesRepo,
     this._modelLifecycle, {
-    AppLogger? logger,
-    Future<File> Function()? storageFileResolver,
-    void Function(int pending, int failed)? onQueueChanged,
-    void Function(List<AudioQueueItem> items)? onItemsChanged,
-    void Function()? onNoteSaved,
+    this._logger,
+    this._storageFileResolver,
+    this._onQueueChanged,
+    this._onItemsChanged,
+    this._onNoteSaved,
     bool autoLoad = true,
-  })  : _logger = logger,
-        _storageFileResolver = storageFileResolver,
-        _onQueueChanged = onQueueChanged,
-        _onItemsChanged = onItemsChanged,
-        _onNoteSaved = onNoteSaved {
+  }) {
     if (autoLoad) {
       loadFromStorage();
     }
@@ -129,23 +125,68 @@ class AudioQueueService {
   }
 
   Future<AudioQueueItem> enqueue(String audioFilePath, {bool autoProcess = true}) async {
+    final now = DateTime.now();
+    int nextSeq = 1;
+    try {
+      final existingNotes = await _notesRepo.getAllNotes();
+      for (final n in existingNotes) {
+        final d = n.createdAt;
+        if (d != null && d.year == now.year && d.month == now.month && d.day == now.day) {
+          if (n.dailySequenceNumber != null && n.dailySequenceNumber! >= nextSeq) {
+            nextSeq = n.dailySequenceNumber! + 1;
+          }
+        }
+      }
+      for (final item in _items) {
+        final d = item.recordedAt;
+        if (d.year == now.year && d.month == now.month && d.day == now.day) {
+          if (item.sequenceNumber != null && item.sequenceNumber! >= nextSeq) {
+            nextSeq = item.sequenceNumber! + 1;
+          }
+        }
+      }
+    } catch (_) {}
+
     final item = AudioQueueItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: now.millisecondsSinceEpoch.toString(),
       audioFilePath: audioFilePath,
-      recordedAt: DateTime.now(),
+      recordedAt: now,
       status: AudioQueueStatus.pending,
+      sequenceNumber: nextSeq,
     );
 
     _items.add(item);
     await _saveToStorage();
     _notifyState();
-    _logger?.info('[AudioQueue] Enqueued new thought: ${item.id} (Total pending: $pendingCount)');
+    _logger?.info('[AudioQueue] Enqueued new thought: ${item.id} with sequence #$nextSeq (Total pending: $pendingCount)');
 
     if (autoProcess) {
       unawaited(processPending());
     }
 
     return item;
+  }
+
+  Future<void> removeItemByAudioPath(String audioFilePath) async {
+    _items.removeWhere((i) => i.audioFilePath == audioFilePath);
+    await _saveToStorage();
+    _notifyState();
+    _logger?.info('[AudioQueue] Removed item with audioFilePath: $audioFilePath');
+    try {
+      final file = File(audioFilePath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      _logger?.warning('[AudioQueue] Failed to delete audio file: $e');
+    }
+  }
+
+  Future<void> removeItemById(String id) async {
+    final match = _items.cast<AudioQueueItem?>().firstWhere((i) => i?.id == id, orElse: () => null);
+    if (match != null) {
+      await removeItemByAudioPath(match.audioFilePath);
+    }
   }
 
   Future<void> retryFailed() async {
@@ -234,7 +275,8 @@ class AudioQueueService {
         ..correctedText = llmResponse.correctedText
         ..folder = llmResponse.folder
         ..createdAt = item.recordedAt
-        ..originalAudioPath = item.audioFilePath;
+        ..originalAudioPath = item.audioFilePath
+        ..dailySequenceNumber = item.sequenceNumber;
 
       await _notesRepo.saveNote(note);
       item.status = AudioQueueStatus.completed;

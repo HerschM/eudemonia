@@ -23,7 +23,7 @@
   1. `ButtonInterceptorService` intercepts `KEYCODE_VOLUME_UP` and `KEYCODE_VOLUME_DOWN`.
   2. If only one button is pressed or held, `VolumeButtonCoordinator` dispatches `audioManager.adjustSuggestedStreamVolume(..., FLAG_SHOW_UI)`, transparently preserving system volume changes with smooth repetition (`repeatIntervalMs = 110L`, `initialRepeatDelayMs = 300L`).
   3. When both buttons are depressed within a 50ms window (`dualPressWindowMs = 50L`):
-     - An instant native haptic pulse is triggered directly via `Vibrator` / `VibratorManager` (`VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)`).
+     - An instant native haptic pulse is triggered directly via `Vibrator` / `VibratorManager`: single crisp pulse for start recording (`createOneShot(45)`), and distinct double-pulse completion buzz for stop recording (`createWaveform(longArrayOf(0, 30, 50, 30), -1)`).
      - An explicit broadcast (`com.eudemonia.eudemonia.HARDWARE_TRIGGER`) is sent with the current device lock state (`isLocked`).
   4. Both `MainActivity` and `EudemoniaForegroundService` listen for the trigger broadcast, pass it through `TriggerDebouncer.shared.tryTrigger()` (cooldown 500ms), and invoke the Flutter method `onHardwareTrigger`.
 
@@ -108,10 +108,10 @@
   - `lib/features/notes/note_model.dart`
 - **Mechanics**:
   - Managed with Isar database.
-  - `Note` schema includes `id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, and `originalAudioPath`.
-  - **Thought Lifecycle States**: The `ThoughtState` enum (`enqueued`, `processed`, `failed`, `synthesized`) represents the lifecycle progression of captured thoughts.
-  - **Zero-Migration Schema Compatibility**: Fields `state`, `isRead`, and `failureReason` use the `@ignore` annotation, providing rich feed presentation and state handling without invalidating existing database schemas or requiring complex migration scripts.
-  - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
+  - `Note` schema includes `id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, `originalAudioPath`, `isRead`, `state`, and `failureReason`.
+  - **Thought Lifecycle States**: The `ThoughtState` enum (`enqueued`, `processed`, `failed`, `synthesized`) represents the lifecycle progression of captured thoughts, persisted using `@Enumerated(EnumType.name)` in Isar.
+  - **Durable Persistence Across Cold Starts**: `isRead`, `state`, and `failureReason` are fully persisted properties within `note_model.g.dart`. Calling `markAsRead(id)` or `saveNote(note)` updates the Isar database directly in a write transaction, guaranteeing that unread/read state and processing metadata survive process kills and phone reboots.
+  - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `deleteNote`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
 
 ### G. Production User Interface & State Management (`lib/features/home/`)
 - **Files**:
@@ -289,6 +289,102 @@
   1. **Unified Reactive Feed**: `HomeScreen` synthesizes `allThoughts` by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly enqueued audio items appear instantly (<5ms) with `ThoughtState.enqueued` (pastel yellow, shimmer, date/time, audio play button). Upon worker completion, the note transitions smoothly to `ThoughtState.processed` (pastel blue) without app restart.
   2. **Dedicated Audio Channel & FileDescriptor**: Extracted `com.eudemonia/audio_playback` with its own platform channel handler. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }` with speech `AudioAttributes`, ensuring robust audio playback without sandbox permission failures.
   3. **In-Card Failure Presentation & Responsive Failed Chip**: Removed the top error banner. Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`). Placed `Recent Thoughts` heading and an adaptive, horizontally scrollable chip row (`All`, `Unread`, `Failed`) to prevent `RenderFlex` overflows on any device viewport.
+
+### 11. Isar Schema Persistence, True Unread Durability & Complete Note Lifecycle
+- **Symptom**:
+  1. Marking notes as read appeared to work in-session, but upon restarting the app, all notes reverted to unread state with unread dots (`•`).
+  2. Notes could not be deleted from the persistent database (`NotesRepository` lacked `deleteNote`).
+- **Root Cause**:
+  1. `Note.isRead`, `Note.state`, and `Note.failureReason` were annotated with `@ignore` in `lib/features/notes/data/note_model.dart` to bypass `build_runner`. `NotesRepository` relied on an ephemeral, in-memory `Set<Id> _readNoteIds = {}` that vanished on app restart.
+  2. `markAsRead(id)` mutated the in-memory object but did not write to Isar because the field was ignored by the database schema generator.
+- **Solution**:
+  1. Promoted `isRead`, `@Enumerated(EnumType.name) ThoughtState state`, and `failureReason` to first-class persistent properties in `note_model.dart`.
+  2. Regenerated `note_model.g.dart` via `dart run build_runner build --delete-conflicting-outputs`.
+  3. Replaced `_readNoteIds` in `NotesRepository` with genuine Isar write transactions (`await _isar!.notes.put(note)`).
+  4. Implemented `deleteNote(Id id)` in `NotesRepository` with full unit and widget test coverage.
+
+### 12. Sherpa-ONNX Native Stream Resource Leak & Android MediaPlayer Audio Safety
+- **Symptom**:
+  1. Potential native memory accumulation during high-volume audio transcription if speech recognition threw an exception.
+  2. Audio playback occasionally failed with `MediaPlayer error: what=1, extra=-2147483648` on specific Android devices.
+  3. Android build deprecation warnings regarding `Context.VIBRATOR_SERVICE`.
+- **Root Cause**:
+  1. In `stt_service.dart`, `stream.free()` was called after sequential decoding steps without a `try ... finally` block. If `readWave`, `acceptWaveform`, or `decode` failed, the native C++ stream remained allocated in process memory.
+  2. In `MainActivity.kt`, `player.setDataSource(fis.fd)` was executed within `FileInputStream(file).use { ... }`, causing the file descriptor to be closed when the block exited before `MediaPlayer` completed streaming audio.
+  3. `getSystemService(Context.VIBRATOR_SERVICE)` was deprecated in Android 12 (API 31).
+- **Solution**:
+  1. Wrapped `stream.free()` in `try ... finally` in `STTService.transcribe`.
+  2. Refactored `MainActivity.kt` to pass `player.setDataSource(file.absolutePath)` directly to `MediaPlayer` with speech `AudioAttributes`.
+  3. Updated `MainActivity.kt` to use `VibratorManager` on API 31+ with safe backward-compatible fallbacks, eliminating compiler deprecation warnings.
+
+### 13. Repository-wide Central Logging Unification (`AppLogger`) & 0-Issue Static Analysis Gate
+- **Symptom**:
+  1. `dart analyze` reported 75 linter issues (`avoid_print`, `prefer_initializing_formals`, `prefer_interpolation_to_compose_strings`, `unnecessary_import`).
+  2. Diagnostic logs were scattered across raw `print()` statements, failing to persist to disk for export via the Settings screen.
+- **Root Cause**:
+  1. AI processing services (`AudioRecordingService`, `STTService`, `LLMService`, `ModelLifecycleManager`, `NoteClassifier`) lacked dependency injection of `AppLogger`, relying on unformatted `print()`.
+  2. Constructor parameters used redundant type annotations or non-initializing formals.
+- **Solution**:
+  1. Injected `AppLogger` across all services via Riverpod providers. Replaced all raw `print()` calls with structured, timestamped `logger.info()`, `logger.warning()`, and `logger.error()`.
+  2. Fixed all constructor formals (`this._logger`, `this._maxSizeBytes`, etc.) and string interpolations.
+  3. Achieved **0 errors and 0 warnings** across `dart analyze`.
+
+### 14. Folder Navigation Wiring & ThoughtCard Header Standardization
+- **Symptom**:
+  1. Tapping on folder cards (`Ideas`, `Work`, `Journal`, `Todos`) in `HomeScreen` was a no-op (`onTap: () {}`).
+  2. `NoteListScreen` rendered a static placeholder text rather than actual stored notes.
+  3. `ThoughtCard` lacked the sequence badge (`#01`, `#02`...) specified in FR9.4 and lacked an inline deletion trigger.
+- **Root Cause**:
+  1. Folder navigation was prototyped in `previews/` but the production callback in `home_screen.dart` was never wired to `Navigator.push`.
+  2. `NoteListScreen` was a static `StatelessWidget` without Riverpod data binding.
+- **Solution**:
+  1. Converted `NoteListScreen` to a `ConsumerWidget` powered by `notesByFolderProvider(folder)` and integrated `ThoughtCard` list rendering with audio playback, editing, and deletion.
+  2. Wired `_buildFolderCard` in `HomeScreen` to navigate to `NoteListScreen`.
+  3. Standardized `ThoughtCard` header layout: `[# Number]` -> `[▶ Play Audio]` -> `[• Unread Dot]` -> `[Timestamp]` -> `[Category/State]` -> `[✎ Edit]` -> `[🗑️ Delete]`, with full widget test coverage.
+
+### 13. Dynamic Note Sequence Renumbering on Capture & Filter Toggles
+- **Symptom**: When opening the app, note numbers shifted dynamically whenever a new recording was started, when items were queued, or when filters were toggled (e.g. from `All` to `Unread`).
+- **Root Cause**: `ThoughtCard` sequence numbers were calculated dynamically in `HomeScreen` and `NoteListScreen` as `displayedNotes.length - index`. Every time the list length changed, all notes were recalculated and renumbered on the fly, violating FR9.4 and FR9.5.
+- **Solution**: Added `int? dailySequenceNumber` to `Note` and `int? sequenceNumber` to `AudioQueueItem`. `NotesRepository.saveNote` calculates an immutable daily sequence number per calendar day (resetting at midnight per FR9.4) and preserves gaps on deletion (FR9.5). `AudioQueueService.enqueue` computes the next daily sequence for pending items and carries it through to the persisted note. Existing notes in the database are backfilled chronologically.
+
+### 14. Horizontal Text & Icon Overflow in ThoughtCard on Narrow Viewports
+- **Symptom**: An unread note caused a horizontal `RenderFlex` overflow error on 360dp mobile viewports when rendering sequence badge, play audio button, unread dot, timestamp, category pill, edit button, and delete button in a single horizontal row.
+- **Root Cause**: All 8 header elements and action controls were crammed into a single unconstrained `Row` exceeding 440dp of horizontal width.
+- **Solution**: Restructured `ThoughtCard` layout to strictly match `UX.md` Visual ASCII Wireframe:
+  - **Header Row**: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `Spacer()` $\rightarrow$ `[🗑️ Delete]`. Maximum width is ~120dp, completely eliminating horizontal crowding.
+  - **Footer Row**: `SizedBox(width: double.infinity, child: Wrap(alignment: WrapAlignment.spaceBetween, ...))` hosting `[Timestamp: DD/MM  HH:MM AM/PM]` on the left and `[Status / Edit / Retry]` actions on the right, mathematically guaranteeing 0 `RenderFlex` overflows on any screen width or font scale.
+
+### 15. STT Word Dropping & Permission Latency
+- **Symptom**: Despite clear audio recording, STT dropped initial words and chopped the ending of speech (e.g. note #116).
+- **Root Cause**:
+  1. `AudioRecordingService.checkPermission()` called `Permission.microphone.request()` on every single recording start gesture, causing a 300ms-700ms Android IPC latency window that dropped the user's initial speech.
+  2. Parakeet transducer STT lacked audio sample rate validation/resampling for non-16kHz recordings (e.g. 44.1kHz or 48kHz audio was 3x time-compressed).
+  3. Transducer subsampling kernels and joiner blank predictor lacked trailing context frames, truncating final words.
+- **Solution**:
+  1. Updated `AudioRecordingService.checkPermission()` to check `Permission.microphone.status` first, returning immediately with 0ms lag when granted.
+  2. Added automatic linear resampling in `STTService.transcribe()` to guarantee 16kHz audio input.
+  3. Added 300ms (4800 samples at 16kHz) tail acoustic silence padding in `STTService.transcribe()`, ensuring complete convolution receptive field and token emission.
+
+### 16. Lock Screen Intermittent Recording & Redundant Double Vibration
+- **Symptom**: Recording from lock screen or other screens failed intermittently, and volume key presses always produced an identical double-vibration buzz for both start and stop.
+- **Root Cause**:
+  1. `ButtonInterceptorService.kt` executed `VibrationEffect.createWaveform(longArrayOf(0, 40, 60, 40), -1)` on both start and stop without differentiating state.
+  2. When waking `MainActivity` via `autoTrigger`, `MainActivity.kt` called `TriggerDebouncer.shared.tryTrigger()` a second time, dropping the trigger because the foreground service had already activated the 500ms cooldown window.
+  3. `MainActivity` lacked `setShowWhenLocked(true)` and `setTurnScreenOn(true)` in Kotlin and `android:showWhenLocked="true"` in `AndroidManifest.xml`, allowing Android keyguard to suppress activity wakeups.
+  4. `EudemoniaForegroundService` was never initialized on startup, leaving background microphone recording unprivileged.
+- **Solution**:
+  1. Tracked pipeline recording state in `ButtonInterceptorService.kt`. Start triggers a crisp single haptic tick (`createOneShot(45)`), while stop triggers a distinct double-pulse completion buzz (`createWaveform(longArrayOf(0, 30, 50, 30), -1)`).
+  2. Removed redundant debouncer check in `MainActivity`'s `autoTrigger` branch.
+  3. Configured `setShowWhenLocked(true)` and `setTurnScreenOn(true)` in `MainActivity.kt` and `AndroidManifest.xml`.
+  4. Auto-started foreground service on app launch.
+
+### 17. Inconsistent Delete Button on Failed Cards
+- **Symptom**: Delete button was missing on failed and enqueued thought cards.
+- **Root Cause**: `HomeScreen` only passed `onDelete` if `note.id > 0`. Items in the active queue have temporary negative IDs, so `onDelete` was passed as `null`. Additionally, `AudioQueueService` lacked a method to remove items from the queue.
+- **Solution**:
+  1. Added `removeItemByAudioPath(String audioFilePath)` and `removeItemById(String id)` to `AudioQueueService` with storage persistence and temporary audio file cleanup.
+  2. Updated `HomeScreen` to pass `onDelete` uniformly for all notes: deleting persisted notes via `NotesRepository.deleteNote` and queue items via `AudioQueueService.removeItemByAudioPath`.
+  3. Placed the delete button in the top-right header row of `ThoughtCard` across all states (enqueued, processed, synthesized, and failed).
 
 ---
 

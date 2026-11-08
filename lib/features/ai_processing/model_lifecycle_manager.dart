@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'llm_config.dart';
+import 'package:eudemonia/core/logger/app_logger.dart';
 import 'llm_service.dart';
 import 'stt_service.dart';
 
@@ -23,6 +23,7 @@ class ModelLifecycleManager {
   final STTService _sttService;
   final LLMService _llmService;
   final LLMConfig _config;
+  final AppLogger? _logger;
   final Future<String?> Function()? _modelsDirResolver;
 
   ModelLifecycleState _state = ModelLifecycleState.unloaded;
@@ -35,9 +36,9 @@ class ModelLifecycleManager {
     this._sttService,
     this._llmService, {
     LLMConfig? config,
-    Future<String?> Function()? modelsDirResolver,
-  })  : _config = config ?? const LLMConfig(),
-        _modelsDirResolver = modelsDirResolver;
+    this._logger,
+    this._modelsDirResolver,
+  })  : _config = config ?? const LLMConfig();
 
   ModelLifecycleState get state => _state;
   bool get areModelsLoaded => _state == ModelLifecycleState.ready;
@@ -55,12 +56,12 @@ class ModelLifecycleManager {
     _cancelInactivityTimer();
 
     if (_state == ModelLifecycleState.ready) {
-      print('[ModelLifecycle] Models already loaded in RAM (Reason: $reason). Zero reload overhead.');
+      _logger?.info('[ModelLifecycle] Models already loaded in RAM (Reason: $reason). Zero reload overhead.');
       return;
     }
 
     if (_state == ModelLifecycleState.loading && _loadingCompleter != null) {
-      print('[ModelLifecycle] Awaiting active model loading task (Reason: $reason)...');
+      _logger?.info('[ModelLifecycle] Awaiting active model loading task (Reason: $reason)...');
       return _loadingCompleter!.future;
     }
 
@@ -68,12 +69,12 @@ class ModelLifecycleManager {
     _loadingCompleter = Completer<void>();
 
     final stopwatch = Stopwatch()..start();
-    print('================ [ModelLifecycle State Transition] ================');
-    print('[ModelLifecycle] STATE CHANGE: Unloaded -> Loading');
-    print('[ModelLifecycle] Reason: $reason');
-    print('[ModelLifecycle] Target Models: Sherpa-ONNX Parakeet v3 (~600MB) & Qwen-2.5 1.5B GGUF (~1.0GB)');
-    print('[ModelLifecycle] Inactivity TTL: ${_config.modelInactivityTtl.inMinutes} minutes');
-    print('===================================================================');
+    _logger?.info('================ [ModelLifecycle State Transition] ================');
+    _logger?.info('[ModelLifecycle] STATE CHANGE: Unloaded -> Loading');
+    _logger?.info('[ModelLifecycle] Reason: $reason');
+    _logger?.info('[ModelLifecycle] Target Models: Sherpa-ONNX Parakeet v3 (~600MB) & Qwen-2.5 1.5B GGUF (~1.0GB)');
+    _logger?.info('[ModelLifecycle] Inactivity TTL: ${_config.modelInactivityTtl.inMinutes} minutes');
+    _logger?.info('===================================================================');
 
     try {
       String? modelsDirPath;
@@ -92,28 +93,27 @@ class ModelLifecycleManager {
       final llmModelPath = '$modelsDirPath/qwen2.5-1.5b.gguf';
 
       // Load models sequentially to prevent simultaneous memory spikes and OS OOM kills
-      print('[ModelLifecycle] Step 1/2: Initializing Sherpa-ONNX STT model...');
+      _logger?.info('[ModelLifecycle] Step 1/2: Initializing Sherpa-ONNX STT model...');
       await _sttService.initialize(sttModelPath);
 
-      print('[ModelLifecycle] Step 2/2: Initializing Qwen GGUF LLM model...');
+      _logger?.info('[ModelLifecycle] Step 2/2: Initializing Qwen GGUF LLM model...');
       await _llmService.initialize(llmModelPath);
 
       stopwatch.stop();
       _state = ModelLifecycleState.ready;
       _lastLoadedTime = DateTime.now();
 
-      print('================ [ModelLifecycle State Transition] ================');
-      print('[ModelLifecycle] STATE CHANGE: Loading -> Ready');
-      print('[ModelLifecycle] Total Load Duration: ${stopwatch.elapsedMilliseconds}ms');
-      print('[ModelLifecycle] Estimated RAM Consumed: ~1.6 GB');
-      print('===================================================================');
+      _logger?.info('================ [ModelLifecycle State Transition] ================');
+      _logger?.info('[ModelLifecycle] STATE CHANGE: Loading -> Ready');
+      _logger?.info('[ModelLifecycle] Total Load Duration: ${stopwatch.elapsedMilliseconds}ms');
+      _logger?.info('[ModelLifecycle] Estimated RAM Consumed: ~1.6 GB');
+      _logger?.info('===================================================================');
 
       _loadingCompleter?.complete();
     } catch (e, stack) {
       stopwatch.stop();
       _state = ModelLifecycleState.unloaded;
-      print('[ModelLifecycle] ERROR during model loading: $e');
-      print('[ModelLifecycle] Stack: $stack');
+      _logger?.error('[ModelLifecycle] ERROR during model loading', error: e, stackTrace: stack);
       _loadingCompleter?.completeError(e, stack);
       rethrow;
     } finally {
@@ -128,13 +128,13 @@ class ModelLifecycleManager {
     _cancelInactivityTimer();
 
     if (_state == ModelLifecycleState.ready) {
-      print('[ModelLifecycle] Warmup requested: Models already hot in RAM.');
+      _logger?.info('[ModelLifecycle] Warmup requested: Models already hot in RAM.');
       return;
     }
 
-    print('[ModelLifecycle] Proactive warmup initiated on recording start.');
+    _logger?.info('[ModelLifecycle] Proactive warmup initiated on recording start.');
     ensureModelsLoaded(reason: 'Recording started (proactive pre-warm)').catchError((e) {
-      print('[ModelLifecycle] Non-fatal background warmup warning: $e');
+      _logger?.warning('[ModelLifecycle] Non-fatal background warmup warning: $e');
     });
   }
 
@@ -144,16 +144,16 @@ class ModelLifecycleManager {
     _cancelInactivityTimer();
 
     if (_state != ModelLifecycleState.ready) {
-      print('[ModelLifecycle] touch() called but models are not loaded (state: $_state).');
+      _logger?.info('[ModelLifecycle] touch() called but models are not loaded (state: $_state).');
       return;
     }
 
     final ttl = _config.modelInactivityTtl;
-    print('[ModelLifecycle] Activity recorded ($reason). Resetting inactivity timer.');
-    print('[ModelLifecycle] Inactivity TTL countdown started: ${ttl.inMinutes}m 00s until automatic eviction.');
+    _logger?.info('[ModelLifecycle] Activity recorded ($reason). Resetting inactivity timer.');
+    _logger?.info('[ModelLifecycle] Inactivity TTL countdown started: ${ttl.inMinutes}m 00s until automatic eviction.');
 
     _inactivityTimer = Timer(ttl, () async {
-      print('[ModelLifecycle] Inactivity TTL expired (${ttl.inMinutes}m of zero activity). Initiating model eviction.');
+      _logger?.info('[ModelLifecycle] Inactivity TTL expired (${ttl.inMinutes}m of zero activity). Initiating model eviction.');
       await evictModels(reason: 'Inactivity TTL expired (${ttl.inMinutes}m idle)');
     });
   }
@@ -163,26 +163,26 @@ class ModelLifecycleManager {
     _cancelInactivityTimer();
 
     if (_state == ModelLifecycleState.unloaded) {
-      print('[ModelLifecycle] evictModels() called but models are already unloaded.');
+      _logger?.info('[ModelLifecycle] evictModels() called but models are already unloaded.');
       return;
     }
 
-    print('================ [ModelLifecycle State Transition] ================');
-    print('[ModelLifecycle] STATE CHANGE: Ready -> Unloaded (Eviction)');
-    print('[ModelLifecycle] Eviction Reason: $reason');
-    print('[ModelLifecycle] Disposing STTService & LLMService native handles...');
+    _logger?.info('================ [ModelLifecycle State Transition] ================');
+    _logger?.info('[ModelLifecycle] STATE CHANGE: Ready -> Unloaded (Eviction)');
+    _logger?.info('[ModelLifecycle] Eviction Reason: $reason');
+    _logger?.info('[ModelLifecycle] Disposing STTService & LLMService native handles...');
 
     try {
       _sttService.dispose();
       _llmService.dispose();
       _state = ModelLifecycleState.unloaded;
-      print('[ModelLifecycle] Models successfully unloaded from RAM.');
-      print('[ModelLifecycle] Memory Reclaimed: ~1.6 GB RAM. App footprint returned to baseline (<60 MB).');
+      _logger?.info('[ModelLifecycle] Models successfully unloaded from RAM.');
+      _logger?.info('[ModelLifecycle] Memory Reclaimed: ~1.6 GB RAM. App footprint returned to baseline (<60 MB).');
     } catch (e) {
-      print('[ModelLifecycle] Error during eviction: $e');
+      _logger?.error('[ModelLifecycle] Error during eviction', error: e);
       _state = ModelLifecycleState.unloaded;
     }
-    print('===================================================================');
+    _logger?.info('===================================================================');
   }
 
   void _cancelInactivityTimer() {
@@ -209,10 +209,10 @@ class ModelLifecycleManager {
   }
 
   void printDiagnosticDump() {
-    print('---------------- [ModelLifecycle Diagnostic Dump] ----------------');
+    _logger?.info('---------------- [ModelLifecycle Diagnostic Dump] ----------------');
     final dump = getDiagnosticState();
-    dump.forEach((k, v) => print('  $k: $v'));
-    print('------------------------------------------------------------------');
+    dump.forEach((k, v) => _logger?.info('  $k: $v'));
+    _logger?.info('------------------------------------------------------------------');
   }
 
   void dispose() {
@@ -225,5 +225,6 @@ final modelLifecycleManagerProvider = Provider<ModelLifecycleManager>((ref) {
   final sttService = ref.watch(sttServiceProvider);
   final llmService = ref.watch(llmServiceProvider);
   final config = ref.watch(llmConfigProvider);
-  return ModelLifecycleManager(sttService, llmService, config: config);
+  final logger = ref.watch(appLoggerProvider);
+  return ModelLifecycleManager(sttService, llmService, config: config, logger: logger);
 });

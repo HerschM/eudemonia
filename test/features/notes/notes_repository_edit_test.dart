@@ -38,5 +38,19 @@ void main() {
       expect(updated, isNotNull);
       expect(updated!.folder, equals('Work'));
     });
+
+    test('3. deleteNote(id) permanently removes note from repository', () async {
+      final note = Note(
+        correctedText: 'Note to be deleted',
+        folder: 'Journal',
+      );
+      await repo.saveNote(note);
+      expect(await repo.getNoteById(note.id), isNotNull);
+
+      await repo.deleteNote(note.id);
+      expect(await repo.getNoteById(note.id), isNull);
+      final all = await repo.getAllNotes();
+      expect(all.any((n) => n.id == note.id), isFalse);
+    });
   });
 }
