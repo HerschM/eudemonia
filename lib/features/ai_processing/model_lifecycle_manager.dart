@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'llm_service.dart';
+import 'model_file_validator.dart';
+import 'model_load_guard.dart';
 import 'stt_service.dart';
 
 /// Represents the memory state of AI models (LLM and STT).
@@ -26,6 +28,8 @@ class ModelLifecycleManager {
   final AppLogger? _logger;
   final Future<String?> Function()? _modelsDirResolver;
   final void Function(ModelLifecycleState state)? _onStateChanged;
+  final ModelFileValidator? _fileValidator;
+  final ModelLoadGuard? _loadGuard;
 
   ModelLifecycleState _state = ModelLifecycleState.unloaded;
   Future<void>? _loadFuture;
@@ -44,6 +48,8 @@ class ModelLifecycleManager {
     this._logger,
     this._modelsDirResolver,
     this._onStateChanged,
+    this._fileValidator,
+    this._loadGuard,
   })  : _config = config ?? const LLMConfig();
 
   void _setState(ModelLifecycleState next) {
@@ -108,13 +114,25 @@ class ModelLifecycleManager {
 
       final sttModelPath = '$modelsDirPath/parakeet';
       final llmModelPath = '$modelsDirPath/qwen2.5-1.5b.gguf';
+      final files = ModelFiles(sttModelDir: sttModelPath, llmModelPath: llmModelPath);
 
-      // Load models sequentially to prevent simultaneous memory spikes and OS OOM kills
-      _logger?.info('[ModelLifecycle] Step 1/2: Initializing Sherpa-ONNX STT model...');
-      await _sttService.initialize(sttModelPath);
+      // The native runtimes abort the process on a malformed file, so reject what we can first.
+      await _fileValidator?.validate(files);
 
-      _logger?.info('[ModelLifecycle] Step 2/2: Initializing Qwen GGUF LLM model...');
-      await _llmService.initialize(llmModelPath);
+      // Whatever validation cannot see is contained by the crash-loop guard.
+      final guard = _loadGuard;
+      if (guard != null) await guard.begin(await files.signature());
+      try {
+        // Load models sequentially to prevent simultaneous memory spikes and OS OOM kills
+        _logger?.info('[ModelLifecycle] Step 1/2: Initializing Sherpa-ONNX STT model...');
+        await _sttService.initialize(sttModelPath);
+
+        _logger?.info('[ModelLifecycle] Step 2/2: Initializing Qwen GGUF LLM model...');
+        await _llmService.initialize(llmModelPath);
+      } finally {
+        // Reaching this line means the process survived the native load.
+        await guard?.finish();
+      }
 
       stopwatch.stop();
       _lastLoadedTime = DateTime.now();
@@ -133,6 +151,11 @@ class ModelLifecycleManager {
       _setState(ModelLifecycleState.unloaded);
       rethrow;
     }
+  }
+
+  /// Lifts a crash-loop block so the next load is attempted. Called for explicit user retries.
+  Future<void> allowLoadRetry() async {
+    await _loadGuard?.clearBlock();
   }
 
   /// Runs [task] with both models resident in RAM. Eviction is held off until
@@ -304,6 +327,8 @@ final modelLifecycleManagerProvider = Provider<ModelLifecycleManager>((ref) {
     llmService,
     config: config,
     logger: logger,
+    fileValidator: const ModelFileValidator(),
+    loadGuard: ModelLoadGuard(),
     onStateChanged: (state) {
       ref.read(modelLifecycleStateProvider.notifier).setLifecycleState(state);
     },

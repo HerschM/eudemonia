@@ -49,7 +49,7 @@ Eudemonia is an on-device, zero-friction, voice-first thought capture system for
 - **Frontend**: Flutter / Dart (State management: Riverpod)
 - **Native Android**: Kotlin (Accessibility Service for hardware triggers, Foreground Service for process keep-alive)
 - **On-Device AI**: Local Speech-to-Text (STT) and Large Language Model (LLM) inference runtimes
-- **Persistence**: Local database (Isar) & file storage
+- **Persistence**: Local database (Isar, via the maintained `isar_community` fork) & file storage
 
 ---
 

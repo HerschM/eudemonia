@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 import 'package:eudemonia/core/database/app_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'note_model.dart';

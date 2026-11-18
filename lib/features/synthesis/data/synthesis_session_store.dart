@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 import 'package:eudemonia/core/database/app_database.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'synthesis_session_record.dart';

@@ -1,4 +1,4 @@
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 part 'synthesis_session_record.g.dart';

@@ -88,7 +88,10 @@
 ### D. AI Model Lifecycle & Memory Management (Sequential Loading, Inactivity Eviction & <60MB Baseline)
 - **Files**:
   - `lib/features/ai_processing/model_lifecycle_manager.dart`
+  - `lib/features/ai_processing/model_file_validator.dart`
+  - `lib/features/ai_processing/model_load_guard.dart`
   - `lib/features/ai_processing/llm_config.dart`
+  - `download_models.sh`
 - **Mechanics**:
   1. **Lifecycle State Machine**:
      - Three discrete states: `unloaded` (<60 MB RAM), `loading`, and `ready` (~1.6 GB RAM).
@@ -106,7 +109,13 @@
      - `runWithModels(task)` holds a lease for the duration of an inference task. `evictModels()` returns `Future<bool>`: `true` once the models are out of RAM; `false` when a lease is active, in which case eviction is deferred and executed the moment the task completes. An eviction requested during loading waits for the load to settle first. Native handles are therefore never freed underneath a running inference (e.g. the Settings `Evict Models Now` button during queue processing).
   5. **Reactive Lifecycle State**:
      - State transitions are published through `onStateChanged` into `modelLifecycleStateProvider` (`NotifierProvider<ModelLifecycleStateNotifier, ModelLifecycleState>`), which the Pipeline HUD and Settings memory telemetry watch, so the displayed footprint follows loads and evictions live.
-  6. **Proactive Pre-Warming (available, not wired)**:
+  6. **Model File Integrity & Crash-Loop Protection**:
+     - The native runtimes (ONNX Runtime, llama.cpp) abort the whole process on a malformed file; an uncaught C++ exception cannot be caught from Dart. `_loadModels()` therefore runs two defenses before any native call:
+       1. `ModelFileValidator.validate(ModelFiles)`: walks the top-level protobuf fields of each `.onnx` file (a few bytes per field, ~10ms for the 650 MB encoder) and requires them to end exactly at end-of-file, rejecting truncated, spliced, zero-filled and non-model files; checks `tokens.txt` exists and the LLM file starts with the `GGUF` magic. Failures throw `ModelFileException` with a user-readable message naming the file.
+       2. `ModelLoadGuard`: writes a marker (`${appDocumentsDir}/model_load_in_progress`) containing the file-set signature (path, size, mtime) before the native load and deletes it in `finally`. A marker that survives means the process died inside the load; the next launch throws `ModelLoadBlockedException` instead of loading the same files again. The block lifts when the files change or on an explicit user retry (`AudioQueueService.retryFailed()` → `allowLoadRetry()`).
+     - Either failure marks queue items `failed` with the message shown on the card, so the startup queue resume can never crash-loop the app.
+     - `download_models.sh` pins both upstream repositories to a commit, downloads each file to `<name>.part`, verifies its SHA-256 before moving it into place, and re-verifies the copies on the device after `adb push`. It never resumes onto an existing file.
+  7. **Proactive Pre-Warming (available, not wired)**:
      - `warmupOnRecordingStart()` can begin loading models in the background when recording starts. It is currently **not invoked** by the capture path: model loading is left to the queue worker so that ~1.6 GB of allocations never coincide with active microphone capture (see Chronicle #5).
 
 ### E. Speech-to-Text & LLM Classification Pipeline (Sherpa-ONNX STT & Qwen 2.5 ChatML)
@@ -140,7 +149,7 @@
   - `lib/features/notes/note_model.dart`
   - `lib/core/database/app_database.dart`
 - **Mechanics**:
-  - Managed with Isar database.
+  - Managed with Isar database, via the maintained `isar_community` 3.4.1 fork (`isar_community`, `isar_community_flutter_libs`, `isar_community_generator`). It is API- and file-compatible with Isar 3.1 and ships 16 KB page-aligned Android libraries; the abandoned upstream `isar_flutter_libs 3.1.0+1` bundles a 4 KB-aligned `libisar.so`.
   - **Single Shared Database Instance**: `openAppDatabase()` opens one Isar instance with every collection (`appDatabaseSchemas`: `NoteSchema`, `SynthesisSessionRecordSchema`). `main()` injects it through `appDatabaseProvider`; `notesRepositoryProvider` and `synthesisSessionStoreProvider` both read it. The provider defaults to `null`, which makes repositories fall back to in-memory storage in unit and widget tests.
   - `Note` schema includes `id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, `originalAudioPath`, `isRead`, `state`, and `failureReason`.
   - **Thought Lifecycle States**: The `ThoughtState` enum (`enqueued`, `processed`, `failed`, `synthesized`) represents the lifecycle progression of captured thoughts, persisted using `@Enumerated(EnumType.name)` in Isar.
@@ -529,6 +538,19 @@
 - **Symptom**: Settings always displayed `84% (Nominal)` thermal headroom and `~1.58 GB` / `<60 MB` RAM regardless of the device; the Pipeline HUD and eviction confirmation repeated the same constants.
 - **Root Cause**: Mock values from the settings preview were copied into `lib/` as string literals.
 - **Solution**: Added `SystemTelemetryCollector` (Kotlin) and `SystemTelemetryService` (Dart) and replaced every literal with live OS readings or `Unavailable`. Covered by `system_telemetry_test.dart`.
+
+### 26. App Crash Loop on Launch from a Corrupt Speech Model File
+- **Symptom**: The app aborted within ~10 seconds of every launch: `terminating due to uncaught exception of type Ort::Exception: Load model from .../parakeet/encoder.int8.onnx failed:Protobuf parsing failed`.
+- **Root Cause**:
+  1. The encoder on the device was not a valid ONNX file. Its size matched the published file but its SHA-256 did not; it had been rewritten that day by `download_models.sh`, which resumed downloads with `wget -c` and verified nothing, while the upstream repository had moved to a newer revision (the decoder and joiner were also from the older revision).
+  2. ONNX Runtime reports a malformed model by throwing a C++ exception through the C API, which terminates the process and cannot be caught in Dart.
+  3. The queue resume at startup (Chronicle #19) retried the same load on every launch, turning one bad file into a crash loop.
+- **Solution**: `ModelFileValidator` + `ModelLoadGuard` in front of every native load (Subsystem D.6), and a rewritten `download_models.sh` with pinned revisions and checksum verification. The validator was confirmed to reject the actual corrupt encoder; the fixed build was run on the affected Pixel 7a, where models loaded and a queued recording was processed. Covered by `model_load_safety_test.dart`.
+
+### 27. Android "This app isn't 16 KB compatible" Warning
+- **Symptom**: On launch, Android showed an App Compatibility dialog listing native libraries as not 16 KB aligned.
+- **Root Cause**: Inspecting the APK with `llvm-readelf` showed every arm64 library had 16 KB (or 64 KB) `LOAD` alignment and correct zip alignment except `libisar.so` from `isar_flutter_libs 3.1.0+1`, which was linked for 4 KB pages.
+- **Solution**: Migrated to `isar_community 3.4.1` and regenerated the schemas. All 16 arm64 libraries in the rebuilt APK are 16 KB aligned, the existing on-device database opened unchanged, and the dialog no longer appears.
 
 ---
 

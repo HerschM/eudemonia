@@ -2,7 +2,7 @@
 
 > **Purpose**: This document tracks active and pending engineering tasks bridging [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) (the *What* & *Why*) and [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) (the *How* & *Architecture*).
 >
-> **Archive Reference**: Completed historical tasks (TASK-001 through TASK-036, TASK-047) are archived in [TASKS_archive.md](./TASKS_archive.md). Milestones 11 and 12 (TASK-052 through TASK-059) are complete and await archiving once their on-device checks are done.
+> **Archive Reference**: Completed historical tasks (TASK-001 through TASK-036, TASK-047) are archived in [TASKS_archive.md](./TASKS_archive.md). Milestones 11–13 (TASK-052 through TASK-061) are complete and await archiving once the remaining on-device checks are done.
 >
 > **Context Optimization Rule**:
 > - Never load the entire tasks file if you only need the active milestone.
@@ -323,6 +323,46 @@
       - `~/flutter/bin/flutter test test/features/settings/system_telemetry_test.dart`
       - `cd android && ./gradlew :app:testDebugUnitTest`
       - **Pending on-device check**: `SystemTelemetryCollector` values on real hardware (framework calls are not reachable from JVM unit tests).
+
+---
+
+## Milestone 13: Launch Stability — Model File Integrity, Crash-Loop Protection & 16 KB Page-Size Compatibility (Completed)
+
+- [x] **TASK-060: Model File Validation, Crash-Loop Guard & Verified Model Downloads**
+  - **Area**: `lib/features/ai_processing/model_file_validator.dart`, `lib/features/ai_processing/model_load_guard.dart`, `lib/features/ai_processing/model_lifecycle_manager.dart`, `lib/features/ai_processing/audio_queue_service.dart`, `download_models.sh`
+  - **Spec**: [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`Reliability: App Crash-Free Rate`, `Queue Failure Isolation`) and [`PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management`](./PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management)
+  - **Details**: Reject malformed model files before they reach the native runtimes, stop the app from re-attempting a model load that killed the previous process, surface the reason on the failed card with Retry as the override, and make the download script pin revisions and verify checksums.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/model_load_safety_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/model_load_safety_test.dart)
+      - Cases:
+        1. Accepts a well-formed ONNX file; rejects truncated, spliced, zero-filled, empty, LFS-pointer and HTML files; reports a missing file by name.
+        2. Accepts a complete model set; rejects non-GGUF LLM weights and a missing `tokens.txt`.
+        3. A corrupt file fails the load without reaching the native runtime.
+        4. A successful load leaves no crash marker.
+        5. After a process death inside a load, the next launch refuses to load the same files.
+        6. Replacing the model files lifts the block automatically.
+        7. Queue items fail with a readable reason while blocked, and Retry attempts the load again.
+    - **Widget Tests**:
+      - N/A — Non-UI component.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/model_load_safety_test.dart`
+      - `bash download_models.sh` (verified download and device push)
+      - On-device (Pixel 7a): launch, model load, and processing of a queued recording completed without a crash.
+
+- [x] **TASK-061: 16 KB Page-Size Compatible Native Libraries (Isar Community Fork Migration)**
+  - **Area**: `pubspec.yaml`, `lib/core/database/app_database.dart`, `lib/features/notes/data/`, `lib/features/synthesis/data/`
+  - **Spec**: [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`Reliability`) and the target platform in the document header (`optimized for modern Android 14/15/16`)
+  - **Details**: Replace the abandoned `isar` 3.1.0+1 packages, whose `libisar.so` is 4 KB aligned, with `isar_community` 3.4.1 and regenerate schemas (dependency swap approved by the user's request to fix the warning).
+  - **Verification**:
+    - **Unit Tests**:
+      - Existing repository and persistence suites remain green on the fork.
+    - **Widget Tests**:
+      - N/A — Dependency migration.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test`
+      - `~/flutter/bin/flutter build apk --debug`, then `llvm-readelf -lW` on every `lib/arm64-v8a/*.so`: all 16 libraries report 16 KB or larger `LOAD` alignment; `zipalign -c -P 16 4` passes.
+      - On-device (Pixel 7a): existing database opened; no compatibility dialog on launch.
 
 ---
 

@@ -247,6 +247,8 @@ class AudioQueueService {
       }
     }
     if (hasFailed) {
+      // An explicit retry is the user's request to attempt model loading again.
+      await _modelLifecycle.allowLoadRetry();
       await _saveToStorage();
       _notifyState();
       _logger?.info('[AudioQueue] Retrying failed items. (Total pending: $pendingCount)');
@@ -299,7 +301,7 @@ class AudioQueueService {
       _logger?.error('[AudioQueue] Failed to process item ${item.id}', error: e, stackTrace: stack);
       if (!_isQueued(item)) return;
       item.status = AudioQueueStatus.failed;
-      item.errorMessage = e.toString();
+      item.errorMessage = e.toString().replaceFirst('Exception: ', '');
       await _saveToStorage();
       _notifyState();
     }
