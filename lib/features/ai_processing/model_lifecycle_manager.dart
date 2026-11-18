@@ -25,12 +25,17 @@ class ModelLifecycleManager {
   final LLMConfig _config;
   final AppLogger? _logger;
   final Future<String?> Function()? _modelsDirResolver;
+  final void Function(ModelLifecycleState state)? _onStateChanged;
 
   ModelLifecycleState _state = ModelLifecycleState.unloaded;
-  Completer<void>? _loadingCompleter;
+  Future<void>? _loadFuture;
   Timer? _inactivityTimer;
   DateTime? _lastActiveTime;
   DateTime? _lastLoadedTime;
+
+  /// Number of in-flight inference tasks holding the models in RAM.
+  int _activeUsers = 0;
+  String? _deferredEvictionReason;
 
   ModelLifecycleManager(
     this._sttService,
@@ -38,7 +43,14 @@ class ModelLifecycleManager {
     LLMConfig? config,
     this._logger,
     this._modelsDirResolver,
+    this._onStateChanged,
   })  : _config = config ?? const LLMConfig();
+
+  void _setState(ModelLifecycleState next) {
+    if (_state == next) return;
+    _state = next;
+    _onStateChanged?.call(next);
+  }
 
   ModelLifecycleState get state => _state;
   bool get areModelsLoaded => _state == ModelLifecycleState.ready;
@@ -49,7 +61,7 @@ class ModelLifecycleManager {
   /// Ensures both STT and LLM models are mapped and initialized in RAM.
   /// If already loaded, returns immediately.
   /// If loading is in progress, awaits the active Future (thread-safe, idempotent).
-  Future<void> ensureModelsLoaded({String reason = 'demand'}) async {
+  Future<void> ensureModelsLoaded({String reason = 'demand'}) {
     _lastActiveTime = DateTime.now();
 
     // Cancel pending eviction countdown because activity is occurring
@@ -57,16 +69,21 @@ class ModelLifecycleManager {
 
     if (_state == ModelLifecycleState.ready) {
       _logger?.info('[ModelLifecycle] Models already loaded in RAM (Reason: $reason). Zero reload overhead.');
-      return;
+      return Future.value();
     }
 
-    if (_state == ModelLifecycleState.loading && _loadingCompleter != null) {
+    final active = _loadFuture;
+    if (active != null) {
       _logger?.info('[ModelLifecycle] Awaiting active model loading task (Reason: $reason)...');
-      return _loadingCompleter!.future;
+      return active;
     }
 
-    _state = ModelLifecycleState.loading;
-    _loadingCompleter = Completer<void>();
+    // Every caller awaits this same future, so a load failure always has a listener.
+    return _loadFuture = _loadModels(reason).whenComplete(() => _loadFuture = null);
+  }
+
+  Future<void> _loadModels(String reason) async {
+    _setState(ModelLifecycleState.loading);
 
     final stopwatch = Stopwatch()..start();
     _logger?.info('================ [ModelLifecycle State Transition] ================');
@@ -100,24 +117,39 @@ class ModelLifecycleManager {
       await _llmService.initialize(llmModelPath);
 
       stopwatch.stop();
-      _state = ModelLifecycleState.ready;
       _lastLoadedTime = DateTime.now();
+      _setState(ModelLifecycleState.ready);
 
       _logger?.info('================ [ModelLifecycle State Transition] ================');
       _logger?.info('[ModelLifecycle] STATE CHANGE: Loading -> Ready');
       _logger?.info('[ModelLifecycle] Total Load Duration: ${stopwatch.elapsedMilliseconds}ms');
       _logger?.info('[ModelLifecycle] Estimated RAM Consumed: ~1.6 GB');
       _logger?.info('===================================================================');
-
-      _loadingCompleter?.complete();
     } catch (e, stack) {
       stopwatch.stop();
-      _state = ModelLifecycleState.unloaded;
       _logger?.error('[ModelLifecycle] ERROR during model loading', error: e, stackTrace: stack);
-      _loadingCompleter?.completeError(e, stack);
+      // A half-finished load must not strand one model in RAM.
+      _disposeServices();
+      _setState(ModelLifecycleState.unloaded);
       rethrow;
+    }
+  }
+
+  /// Runs [task] with both models resident in RAM. Eviction is held off until
+  /// the task finishes, then the inactivity countdown restarts.
+  Future<T> runWithModels<T>(Future<T> Function() task, {String reason = 'demand'}) async {
+    await ensureModelsLoaded(reason: reason);
+    _activeUsers++;
+    try {
+      return await task();
     } finally {
-      _loadingCompleter = null;
+      _activeUsers--;
+      final deferredReason = _deferredEvictionReason;
+      if (_activeUsers == 0 && deferredReason != null) {
+        await evictModels(reason: deferredReason);
+      } else {
+        touch(reason: 'Finished: $reason');
+      }
     }
   }
 
@@ -129,6 +161,7 @@ class ModelLifecycleManager {
 
     if (_state == ModelLifecycleState.ready) {
       _logger?.info('[ModelLifecycle] Warmup requested: Models already hot in RAM.');
+      touch(reason: 'Warmup requested while models already loaded');
       return;
     }
 
@@ -158,31 +191,58 @@ class ModelLifecycleManager {
     });
   }
 
-  /// Evicts both LLM and STT models from RAM immediately, freeing ~1.6 GB of memory.
-  Future<void> evictModels({String reason = 'manual eviction'}) async {
+  /// Evicts both LLM and STT models from RAM, freeing ~1.6 GB of memory.
+  ///
+  /// Returns `true` once the models are out of RAM. If inference is in flight,
+  /// eviction is deferred until it finishes and this returns `false`.
+  Future<bool> evictModels({String reason = 'manual eviction'}) async {
     _cancelInactivityTimer();
+
+    // Let an in-progress load settle so its handles are released too.
+    final loading = _loadFuture;
+    if (loading != null) {
+      try {
+        await loading;
+      } catch (_) {}
+      _cancelInactivityTimer();
+    }
 
     if (_state == ModelLifecycleState.unloaded) {
       _logger?.info('[ModelLifecycle] evictModels() called but models are already unloaded.');
-      return;
+      return true;
     }
+
+    if (_activeUsers > 0) {
+      _logger?.info('[ModelLifecycle] Eviction deferred until in-flight inference completes (Reason: $reason).');
+      _deferredEvictionReason = reason;
+      return false;
+    }
+    _deferredEvictionReason = null;
 
     _logger?.info('================ [ModelLifecycle State Transition] ================');
     _logger?.info('[ModelLifecycle] STATE CHANGE: Ready -> Unloaded (Eviction)');
     _logger?.info('[ModelLifecycle] Eviction Reason: $reason');
     _logger?.info('[ModelLifecycle] Disposing STTService & LLMService native handles...');
 
+    _disposeServices();
+    _setState(ModelLifecycleState.unloaded);
+    _logger?.info('[ModelLifecycle] Models successfully unloaded from RAM.');
+    _logger?.info('[ModelLifecycle] Memory Reclaimed: ~1.6 GB RAM. App footprint returned to baseline (<60 MB).');
+    _logger?.info('===================================================================');
+    return true;
+  }
+
+  void _disposeServices() {
     try {
       _sttService.dispose();
-      _llmService.dispose();
-      _state = ModelLifecycleState.unloaded;
-      _logger?.info('[ModelLifecycle] Models successfully unloaded from RAM.');
-      _logger?.info('[ModelLifecycle] Memory Reclaimed: ~1.6 GB RAM. App footprint returned to baseline (<60 MB).');
     } catch (e) {
-      _logger?.error('[ModelLifecycle] Error during eviction', error: e);
-      _state = ModelLifecycleState.unloaded;
+      _logger?.error('[ModelLifecycle] Error disposing STT model', error: e);
     }
-    _logger?.info('===================================================================');
+    try {
+      _llmService.dispose();
+    } catch (e) {
+      _logger?.error('[ModelLifecycle] Error disposing LLM model', error: e);
+    }
   }
 
   void _cancelInactivityTimer() {
@@ -221,10 +281,32 @@ class ModelLifecycleManager {
   }
 }
 
+/// Synchronous mirror of [ModelLifecycleManager.state] for UI telemetry.
+class ModelLifecycleStateNotifier extends Notifier<ModelLifecycleState> {
+  @override
+  ModelLifecycleState build() => ModelLifecycleState.unloaded;
+
+  void setLifecycleState(ModelLifecycleState value) => state = value;
+}
+
+final modelLifecycleStateProvider =
+    NotifierProvider<ModelLifecycleStateNotifier, ModelLifecycleState>(() {
+  return ModelLifecycleStateNotifier();
+});
+
 final modelLifecycleManagerProvider = Provider<ModelLifecycleManager>((ref) {
   final sttService = ref.watch(sttServiceProvider);
   final llmService = ref.watch(llmServiceProvider);
   final config = ref.watch(llmConfigProvider);
   final logger = ref.watch(appLoggerProvider);
-  return ModelLifecycleManager(sttService, llmService, config: config, logger: logger);
+  final manager = ModelLifecycleManager(
+    sttService,
+    llmService,
+    config: config,
+    logger: logger,
+    onStateChanged: (state) {
+      ref.read(modelLifecycleStateProvider.notifier).setLifecycleState(state);
+    },
+  );
+  return manager;
 });

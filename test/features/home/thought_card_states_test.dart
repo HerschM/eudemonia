@@ -30,8 +30,8 @@ void main() {
       final BoxDecoration decoration = container.decoration as BoxDecoration;
       expect(decoration.color, const Color(0xFFDBEAFE));
 
-      // Verify folder badge is visible
-      expect(find.text('Work'), findsOneWidget);
+      // FR9.1: capture cards carry no folder tag
+      expect(find.text('Work'), findsNothing);
       expect(find.text('Schedule team sync for next week.'), findsOneWidget);
     });
 

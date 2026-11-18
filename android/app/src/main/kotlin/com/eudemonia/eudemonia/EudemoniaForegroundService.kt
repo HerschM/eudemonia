@@ -65,14 +65,14 @@ class EudemoniaForegroundService : Service() {
 
         if (action == ForegroundServiceCoordinator.ACTION_START_CAPTURE) {
             coordinator.handleCommand(action)
-            deliverTrigger(isLocked = true)
+            deliverTrigger(isLocked = true, desiredRecording = true)
             updateNotification(isRecording = true)
             return START_STICKY
         }
 
         if (action == ForegroundServiceCoordinator.ACTION_STOP_CAPTURE) {
             coordinator.handleCommand(action)
-            deliverTrigger(isLocked = true)
+            deliverTrigger(isLocked = true, desiredRecording = false)
             updateNotification(isRecording = false)
             return START_STICKY
         }
@@ -84,12 +84,25 @@ class EudemoniaForegroundService : Service() {
             return START_STICKY
         }
 
-        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        try {
+        // Only report the service as running once it actually holds foreground priority.
+        val enteredForeground = try {
             createNotificationChannel()
-            val notification = buildNotification(coordinator.isRecording)
-            startForeground(NOTIFICATION_ID, notification)
-        } catch (_: Exception) {}
+            startForeground(NOTIFICATION_ID, buildNotification(coordinator.isRecording))
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("EudemoniaFgService", "Unable to enter foreground: ${e.message}")
+            false
+        }
+
+        if (!enteredForeground) {
+            coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP)
+            try {
+                stopSelf()
+            } catch (_: Exception) {}
+            return START_NOT_STICKY
+        }
+
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
 
         try {
             registerTriggerReceiver()
@@ -186,13 +199,26 @@ class EudemoniaForegroundService : Service() {
         }
     }
 
+    /**
+     * Forwards a capture trigger to Flutter.
+     *
+     * [desiredRecording] is set by the explicit notification actions so that "Stop & Save"
+     * can never start a recording (and vice versa) if the notification is stale. Volume
+     * button triggers leave it null and simply toggle.
+     */
     internal fun deliverTrigger(
         isLocked: Boolean,
-        channel: io.flutter.plugin.common.MethodChannel? = MainActivity.activeMethodChannel
+        channel: io.flutter.plugin.common.MethodChannel? = MainActivity.activeMethodChannel,
+        desiredRecording: Boolean? = null
     ): Boolean {
         if (channel != null) {
             // Forward directly to Flutter
-            channel.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+            val args = if (desiredRecording == null) {
+                mapOf("isLocked" to isLocked)
+            } else {
+                mapOf("isLocked" to isLocked, "desiredRecording" to desiredRecording)
+            }
+            channel.invokeMethod("onHardwareTrigger", args)
             return true
         } else {
             // Wake MainActivity to process the trigger
@@ -201,6 +227,9 @@ class EudemoniaForegroundService : Service() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     putExtra("isLocked", isLocked)
                     putExtra("autoTrigger", true)
+                    if (desiredRecording != null) {
+                        putExtra("desiredRecording", desiredRecording)
+                    }
                 }
                 if (launchIntent != null) {
                     startActivity(launchIntent)

@@ -12,8 +12,9 @@ class FakeAudioRecordingService implements AudioRecordingService {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 
   @override
-  Future<void> startRecording() async {
+  Future<bool> startRecording() async {
     isRecording = true;
+    return true;
   }
 
   @override

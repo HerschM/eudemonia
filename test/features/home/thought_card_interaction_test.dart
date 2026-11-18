@@ -55,7 +55,7 @@ void main() {
       expect(find.byKey(const Key('inline_edit_textfield')), findsNothing);
     });
 
-    testWidgets('2. Tapping category badge opens category dropdown picker', (tester) async {
+    testWidgets('2. FR9.1: Capture cards never expose a folder badge or category picker', (tester) async {
       final note = Note(
         rawText: 'Test note',
         correctedText: 'Test note.',
@@ -73,28 +73,18 @@ void main() {
         ),
       );
 
-      // Category badge exists
-      final dropdownButton = find.byKey(const Key('category_dropdown_button'));
-      expect(dropdownButton, findsOneWidget);
-      expect(find.text('Ideas'), findsOneWidget);
-
-      // Tap badge to open popup menu
-      await tester.tap(dropdownButton);
-      await tester.pumpAndSettle();
-
-      // Verify dropdown options are displayed
-      expect(find.text('Work'), findsOneWidget);
-      expect(find.text('Todos'), findsOneWidget);
-      expect(find.text('Journal'), findsOneWidget);
+      expect(find.byKey(const Key('category_dropdown_button')), findsNothing);
+      expect(find.text('Ideas'), findsNothing);
+      // The footer offers manual editing only.
+      expect(find.byKey(const Key('edit_text_button')), findsOneWidget);
     });
 
-    testWidgets('3. Selecting new category invokes update callback and updates pill label', (tester) async {
-      String? selectedFolder;
+    testWidgets('3. Synthesized card names the session that consumed it', (tester) async {
       final note = Note(
-        rawText: 'Test note',
-        correctedText: 'Test note.',
-        folder: 'Ideas',
-        state: ThoughtState.processed,
+        rawText: 'Clubbed',
+        correctedText: 'Clubbed.',
+        folder: 'Work',
+        state: ThoughtState.synthesized,
       );
 
       await tester.pumpWidget(
@@ -102,26 +92,14 @@ void main() {
           home: Scaffold(
             body: ThoughtCard(
               note: note,
-              onCategoryChanged: (newCat) {
-                selectedFolder = newCat;
-              },
+              synthesizedSessionLabel: '#S-02',
             ),
           ),
         ),
       );
 
-      // Tap badge
-      final dropdownButton = find.byKey(const Key('category_dropdown_button'));
-      await tester.tap(dropdownButton);
-      await tester.pumpAndSettle();
-
-      // Tap 'Work' item in popup menu
-      await tester.tap(find.text('Work'));
-      await tester.pumpAndSettle();
-
-      // Verify callback received 'Work' and pill label now displays 'Work'
-      expect(selectedFolder, equals('Work'));
-      expect(find.text('Work'), findsOneWidget);
+      expect(find.textContaining('Synthesized in #S-02'), findsOneWidget);
+      expect(find.byKey(const Key('edit_text_button')), findsNothing);
     });
   });
 }

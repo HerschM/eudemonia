@@ -1,119 +1,194 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
+import 'dart:isolate';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
+import 'stt_engine.dart';
 
+export 'stt_engine.dart';
+
+/// On-device speech-to-text service.
+///
+/// Model loading and decoding are synchronous native calls that take seconds,
+/// so they run on a dedicated worker isolate. The UI isolate (which also
+/// services hardware capture triggers) only exchanges messages with it.
 class STTService {
   final AppLogger? _logger;
-  OfflineRecognizer? _recognizer;
-  bool _isInitialized = false;
+  final SttEngineFactory _engineFactory;
 
-  STTService({this._logger});
+  _SttWorker? _worker;
+  bool _isInitialized = false;
+  Future<void> _teardown = Future.value();
+
+  STTService({this._logger, this._engineFactory = createSherpaSttEngine});
 
   bool get isInitialized => _isInitialized;
 
   Future<void> initialize(String modelDir) async {
     if (_isInitialized) return;
 
+    // Never hold two copies of the model: wait for a previous worker to free its weights.
+    await _teardown;
+    if (_isInitialized) return;
+
     _logger?.info('[STTService] Initializing Parakeet v3 STT model from $modelDir...');
 
+    final worker = await _SttWorker.spawn(_engineFactory);
     try {
-      initBindings();
-    } catch (_) {}
-
-    final encoderPath = '$modelDir/encoder.int8.onnx';
-    final decoderPath = '$modelDir/decoder.int8.onnx';
-    final joinerPath = '$modelDir/joiner.int8.onnx';
-    final tokensPath = '$modelDir/tokens.txt';
-
-    if (!await File(encoderPath).exists()) {
-      throw Exception('Parakeet model files not found in $modelDir');
+      await worker.request(_SttOp.load, modelDir);
+    } catch (_) {
+      await worker.shutdown();
+      rethrow;
     }
 
-    final config = OfflineRecognizerConfig(
-      model: OfflineModelConfig(
-        transducer: OfflineTransducerModelConfig(
-          encoder: encoderPath,
-          decoder: decoderPath,
-          joiner: joinerPath,
-        ),
-        tokens: tokensPath,
-        modelType: 'nemo_transducer',
-        numThreads: 4,
-        debug: false,
-      ),
-    );
-
-    _recognizer = OfflineRecognizer(config);
+    _worker = worker;
     _isInitialized = true;
     _logger?.info('[STTService] Parakeet v3 STT model loaded successfully.');
   }
 
-  Float32List _resample(Float32List input, int fromRate, int toRate) {
-    if (fromRate == toRate || input.isEmpty || fromRate <= 0 || toRate <= 0) return input;
-    final ratio = fromRate / toRate;
-    final outLength = (input.length / ratio).round();
-    final output = Float32List(outLength);
-    for (int i = 0; i < outLength; i++) {
-      final position = i * ratio;
-      final index = position.floor();
-      final fraction = position - index;
-      if (index + 1 < input.length) {
-        output[i] = input[index] * (1.0 - fraction) + input[index + 1] * fraction;
-      } else if (index < input.length) {
-        output[i] = input[index];
-      }
+  Future<String> transcribe(String audioFilePath) async {
+    final worker = _worker;
+    if (!_isInitialized || worker == null) throw Exception('STT Service not initialized');
+
+    final text = await worker.request(_SttOp.transcribe, audioFilePath) as String;
+    if (text.isEmpty) {
+      _logger?.warning('[STTService] No speech found in file: $audioFilePath');
     }
-    return output;
+    return text;
   }
 
-  Future<String> transcribe(String audioFilePath) async {
-    if (!_isInitialized || _recognizer == null) throw Exception('STT Service not initialized');
+  /// Frees the model. The worker handles requests in order, so an in-flight
+  /// transcription finishes before its native handles are released.
+  void dispose() {
+    final worker = _worker;
+    _worker = null;
+    _isInitialized = false;
+    if (worker == null) return;
 
-    final waveData = readWave(audioFilePath);
-    if (waveData.samples.isEmpty) {
-      _logger?.warning('[STTService] Empty audio samples in file: $audioFilePath');
-      return '';
+    _logger?.info('[STTService] Disposing Parakeet v3 STT model...');
+    _teardown = worker.shutdown().then((_) {
+      _logger?.info('[STTService] Parakeet v3 STT model disposed.');
+    });
+  }
+}
+
+enum _SttOp { load, transcribe, dispose }
+
+/// Main-isolate handle to the STT worker isolate.
+class _SttWorker {
+  final Isolate _isolate;
+  final SendPort _commands;
+  final ReceivePort _replies;
+  final ReceivePort _exit;
+  final Map<int, Completer<Object?>> _pending = {};
+  final Completer<void> _exited = Completer<void>();
+  int _nextRequestId = 0;
+
+  _SttWorker._(this._isolate, this._commands, this._replies, this._exit);
+
+  static Future<_SttWorker> spawn(SttEngineFactory engineFactory) async {
+    final replies = ReceivePort();
+    final exit = ReceivePort();
+    final isolate = await Isolate.spawn(
+      _sttWorkerMain,
+      [replies.sendPort, engineFactory],
+      onExit: exit.sendPort,
+      debugName: 'stt-worker',
+    );
+
+    final events = StreamIterator<dynamic>(replies);
+    await events.moveNext();
+    final worker = _SttWorker._(isolate, events.current as SendPort, replies, exit);
+    worker._listen(events);
+    return worker;
+  }
+
+  void _listen(StreamIterator<dynamic> events) {
+    () async {
+      while (await events.moveNext()) {
+        final reply = events.current as List<dynamic>;
+        final completer = _pending.remove(reply[0] as int);
+        if (completer == null) continue;
+        if (reply[1] as bool) {
+          completer.complete(reply[2]);
+        } else {
+          completer.completeError(Exception(reply[2] as String));
+        }
+      }
+    }();
+
+    _exit.first.then((_) {
+      _replies.close();
+      _exit.close();
+      for (final completer in _pending.values) {
+        completer.completeError(Exception('STT worker stopped unexpectedly'));
+      }
+      _pending.clear();
+      if (!_exited.isCompleted) _exited.complete();
+    });
+  }
+
+  Future<Object?> request(_SttOp op, [String? argument]) {
+    if (_exited.isCompleted) {
+      return Future.error(Exception('STT worker is not running'));
     }
+    final id = _nextRequestId++;
+    final completer = Completer<Object?>();
+    _pending[id] = completer;
+    _commands.send([id, op.index, argument]);
+    return completer.future;
+  }
 
-    // Ensure 16000Hz sample rate for Parakeet transducer
-    Float32List samples = waveData.samples;
-    int targetSampleRate = 16000;
-    if (waveData.sampleRate != targetSampleRate && waveData.sampleRate > 0) {
-      _logger?.info('[STTService] Resampling audio from ${waveData.sampleRate}Hz to ${targetSampleRate}Hz');
-      samples = _resample(samples, waveData.sampleRate, targetSampleRate);
+  /// Releases the engine and waits for the isolate to exit.
+  Future<void> shutdown() async {
+    try {
+      await request(_SttOp.dispose);
+    } catch (_) {
+      _isolate.kill(priority: Isolate.immediate);
     }
+    await _exited.future;
+  }
+}
 
-    // Append 300ms tail silence padding (4800 samples at 16kHz) to ensure transducer emission without word cut-off
-    const tailPaddingSamples = 4800;
-    final paddedSamples = Float32List(samples.length + tailPaddingSamples);
-    paddedSamples.setRange(0, samples.length, samples);
+void _sttWorkerMain(List<dynamic> args) {
+  final replies = args[0] as SendPort;
+  final engineFactory = args[1] as SttEngineFactory;
+  final commands = ReceivePort();
+  SttEngine? engine;
 
-    final stream = _recognizer!.createStream();
+  replies.send(commands.sendPort);
+
+  commands.listen((dynamic message) {
+    final request = message as List<dynamic>;
+    final id = request[0] as int;
+    final op = _SttOp.values[request[1] as int];
+    final argument = request[2] as String?;
 
     try {
-      stream.acceptWaveform(
-        samples: paddedSamples,
-        sampleRate: targetSampleRate,
-      );
-
-      _recognizer!.decode(stream);
-      final result = _recognizer!.getResult(stream);
-      return result.text;
-    } finally {
-      stream.free();
+      switch (op) {
+        case _SttOp.load:
+          final created = engineFactory();
+          try {
+            created.load(argument!);
+          } catch (_) {
+            created.dispose();
+            rethrow;
+          }
+          engine = created;
+          replies.send([id, true, null]);
+        case _SttOp.transcribe:
+          final active = engine;
+          if (active == null) throw Exception('STT Service not initialized');
+          replies.send([id, true, active.transcribe(argument!)]);
+        case _SttOp.dispose:
+          engine?.dispose();
+          engine = null;
+          replies.send([id, true, null]);
+          commands.close();
+      }
+    } catch (e) {
+      replies.send([id, false, e.toString().replaceFirst('Exception: ', '')]);
     }
-  }
-
-  void dispose() {
-    _logger?.info('[STTService] Disposing Parakeet v3 STT model...');
-    _recognizer?.free();
-    _recognizer = null;
-    _isInitialized = false;
-    _logger?.info('[STTService] Parakeet v3 STT model disposed.');
-  }
+  });
 }
 
 final sttServiceProvider = Provider<STTService>((ref) {

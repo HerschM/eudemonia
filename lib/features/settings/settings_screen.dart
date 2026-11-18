@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'background_permission_service.dart';
+import 'system_telemetry_service.dart';
 
 class FolderManifesto {
   final String id;
@@ -49,10 +51,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   late List<FolderManifesto> _folderManifestos;
 
+  /// How often live thermal and memory readings are refreshed while this screen is open.
+  static const Duration telemetryRefreshInterval = Duration(seconds: 5);
+  Timer? _telemetryRefreshTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _telemetryRefreshTimer = Timer.periodic(telemetryRefreshInterval, (_) {
+      ref.invalidate(systemTelemetryProvider);
+    });
     _folderManifestos = [
       const FolderManifesto(
         id: 'work',
@@ -89,6 +98,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   @override
   void dispose() {
+    _telemetryRefreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -126,16 +136,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
 
   void _evictModelsNow() async {
     final modelLifecycle = ref.read(modelLifecycleManagerProvider);
-    await modelLifecycle.evictModels(reason: 'Manual settings screen eviction');
+    final evicted =
+        await modelLifecycle.evictModels(reason: 'Manual settings screen eviction');
+    ref.invalidate(systemTelemetryProvider);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         backgroundColor: AppColors.surfaceElevated,
         content: Text(
-          'AI models evicted. Memory reclaimed: ~1.58 GB RAM. Baseline: <60 MB.',
-          style: TextStyle(color: AppColors.accentCapture),
+          evicted
+              ? 'AI models evicted from memory.'
+              : 'A thought is being processed. Models will be evicted as soon as it finishes.',
+          style: const TextStyle(color: AppColors.accentCapture),
         ),
-        duration: Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -256,9 +270,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Widget build(BuildContext context) {
     final permStatusAsync = ref.watch(backgroundPermissionStatusProvider);
     final permService = ref.watch(backgroundPermissionServiceProvider);
-    final modelLifecycle = ref.watch(modelLifecycleManagerProvider);
+    final areModelsLoaded =
+        ref.watch(modelLifecycleStateProvider) == ModelLifecycleState.ready;
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final bufferCount = rawNotesCountAsync.value ?? 0;
+    final telemetry = ref.watch(systemTelemetryProvider).value;
+    final thermalColor = telemetry == null || telemetry.thermalStatus == null
+        ? AppColors.textSecondary
+        : telemetry.isThermallyThrottled
+            ? AppColors.accentError
+            : (telemetry.thermalStatus! >= 1 ? AppColors.accentWarning : AppColors.accentCapture);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -890,15 +911,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppColors.accentCapture.withValues(alpha: 0.15),
+                        color: thermalColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
-                        '84% (Nominal)',
+                      child: Text(
+                        telemetry?.thermalSummary ?? 'Unavailable',
+                        key: const Key('thermal_headroom_value'),
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.accentCapture,
+                          color: thermalColor,
                         ),
                       ),
                     ),
@@ -913,7 +935,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'On-Device AI Model Footprint',
+                            'App Memory In Use',
                             style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -921,22 +943,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            modelLifecycle.areModelsLoaded
-                                ? 'Inactivity eviction timer: active (to <60MB)'
-                                : 'Models currently unloaded (<60 MB footprint)',
+                            areModelsLoaded
+                                ? 'AI models loaded • inactivity eviction timer active'
+                                : 'AI models currently unloaded',
                             style: const TextStyle(
                                 fontSize: 12, color: AppColors.textSecondary),
                           ),
+                          if (telemetry?.deviceMemoryLabel != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Device: ${telemetry!.deviceMemoryLabel}'
+                              '${telemetry.isLowMemory ? ' • low memory' : ''}',
+                              key: const Key('device_memory_value'),
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      modelLifecycle.areModelsLoaded ? '~1.58 GB RAM' : '<60 MB RAM',
+                      telemetry?.appMemoryLabel ?? 'Unavailable',
+                      key: const Key('app_memory_value'),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: modelLifecycle.areModelsLoaded
+                        color: areModelsLoaded
                             ? AppColors.accentWarning
                             : AppColors.accentCapture,
                       ),
@@ -954,7 +987,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   onPressed: _evictModelsNow,
                   child: const Center(
                     child: Text(
-                      'Evict Models Now (<60 MB)',
+                      'Evict Models Now',
                       style: TextStyle(
                           color: AppColors.textSecondary, fontSize: 12),
                     ),

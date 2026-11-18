@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
@@ -7,6 +8,7 @@ class FakeSTTService extends STTService {
   int initializeCallCount = 0;
   int disposeCallCount = 0;
   bool _mockInitialized = false;
+  Completer<void>? initializeGate;
 
   @override
   bool get isInitialized => _mockInitialized;
@@ -14,6 +16,7 @@ class FakeSTTService extends STTService {
   @override
   Future<void> initialize(String modelDir) async {
     initializeCallCount++;
+    if (initializeGate != null) await initializeGate!.future;
     _mockInitialized = true;
   }
 
@@ -31,12 +34,15 @@ class FakeLLMService extends LLMService {
 
   FakeLLMService({super.config});
 
+  bool failInitialize = false;
+
   @override
   bool get isInitialized => _mockInitialized;
 
   @override
   Future<void> initialize(String modelPath) async {
     initializeCallCount++;
+    if (failInitialize) throw Exception('LLM model not found at $modelPath');
     _mockInitialized = true;
   }
 
@@ -188,6 +194,95 @@ void main() {
       expect(dump['inactivityTtlMinutes'], equals(3));
       expect(dump['kvCacheMaxSize'], equals(2048));
       expect(dump['lastLoadedTime'], isNotNull);
+    });
+
+    group('load failure & eviction safety', () {
+      test('a failed LLM load releases the already-loaded STT model', () async {
+        fakeLLM.failInitialize = true;
+
+        await expectLater(manager.ensureModelsLoaded(), throwsException);
+
+        expect(manager.state, equals(ModelLifecycleState.unloaded));
+        expect(fakeSTT.isInitialized, isFalse);
+        expect(fakeSTT.disposeCallCount, equals(1));
+      });
+
+      test('every concurrent caller observes a load failure and a retry can succeed', () async {
+        fakeLLM.failInitialize = true;
+
+        final first = manager.ensureModelsLoaded(reason: 'first');
+        final second = manager.ensureModelsLoaded(reason: 'second');
+        await expectLater(first, throwsException);
+        await expectLater(second, throwsException);
+        expect(fakeSTT.initializeCallCount, equals(1));
+
+        fakeLLM.failInitialize = false;
+        await manager.ensureModelsLoaded(reason: 'retry');
+        expect(manager.state, equals(ModelLifecycleState.ready));
+      });
+
+      test('eviction requested during inference is deferred until the task completes', () async {
+        final taskGate = Completer<void>();
+        final task = manager.runWithModels(() => taskGate.future);
+        await Future<void>.delayed(Duration.zero);
+        expect(manager.state, equals(ModelLifecycleState.ready));
+
+        final evicted = await manager.evictModels(reason: 'manual');
+        expect(evicted, isFalse);
+        expect(manager.state, equals(ModelLifecycleState.ready));
+        expect(fakeSTT.disposeCallCount, equals(0));
+
+        taskGate.complete();
+        await task;
+
+        expect(manager.state, equals(ModelLifecycleState.unloaded));
+        expect(fakeSTT.disposeCallCount, equals(1));
+        expect(fakeLLM.disposeCallCount, equals(1));
+      });
+
+      test('eviction requested while loading waits for the load, then unloads', () async {
+        fakeSTT.initializeGate = Completer<void>();
+        final loading = manager.ensureModelsLoaded();
+        expect(manager.state, equals(ModelLifecycleState.loading));
+
+        final eviction = manager.evictModels(reason: 'manual');
+        fakeSTT.initializeGate!.complete();
+        await loading;
+
+        expect(await eviction, isTrue);
+        expect(manager.state, equals(ModelLifecycleState.unloaded));
+        expect(fakeSTT.isInitialized, isFalse);
+        expect(fakeLLM.isInitialized, isFalse);
+      });
+
+      test('runWithModels restarts the inactivity countdown even when the task throws', () async {
+        await expectLater(
+          manager.runWithModels<void>(() async => throw Exception('inference failed')),
+          throwsException,
+        );
+
+        expect(manager.state, equals(ModelLifecycleState.ready));
+        expect(manager.getDiagnosticState()['isTimerActive'], isTrue);
+      });
+
+      test('state transitions are reported to the onStateChanged listener', () async {
+        final transitions = <ModelLifecycleState>[];
+        final observed = ModelLifecycleManager(
+          fakeSTT,
+          fakeLLM,
+          modelsDirResolver: () async => '/mock/models/dir',
+          onStateChanged: transitions.add,
+        );
+
+        await observed.ensureModelsLoaded();
+        await observed.evictModels();
+
+        expect(transitions, [
+          ModelLifecycleState.loading,
+          ModelLifecycleState.ready,
+          ModelLifecycleState.unloaded,
+        ]);
+      });
     });
   });
 }

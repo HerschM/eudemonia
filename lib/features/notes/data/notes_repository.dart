@@ -1,5 +1,6 @@
+import 'dart:io';
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:eudemonia/core/database/app_database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'note_model.dart';
 
@@ -15,42 +16,39 @@ class NotesRepository {
 
   Future<void> init({String? directory}) async {
     if (_isInitialized) return;
-    final dirPath = directory ?? (await getApplicationDocumentsDirectory()).path;
-    _isar = await Isar.open(
-      [NoteSchema],
-      directory: dirPath,
-    );
+    _isar = await openAppDatabase(directory: directory);
     _isInitialized = true;
+  }
+
+  /// Highest daily sequence number already assigned on the calendar day of [day], or 0.
+  Future<int> maxDailySequenceFor(DateTime day) async {
+    final startOfDay = DateTime(day.year, day.month, day.day);
+    final endOfDay = DateTime(day.year, day.month, day.day, 23, 59, 59, 999);
+
+    final Iterable<Note> sameDayNotes;
+    if (_isar != null) {
+      sameDayNotes = await _isar!.notes
+          .filter()
+          .createdAtBetween(startOfDay, endOfDay)
+          .findAll();
+    } else {
+      sameDayNotes = _inMemoryNotes.where((n) {
+        final nDate = n.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return !nDate.isBefore(startOfDay) && !nDate.isAfter(endOfDay);
+      });
+    }
+
+    int maxSeq = 0;
+    for (final n in sameDayNotes) {
+      final seq = n.dailySequenceNumber;
+      if (seq != null && seq > maxSeq) maxSeq = seq;
+    }
+    return maxSeq;
   }
 
   Future<void> saveNote(Note note) async {
     if (note.dailySequenceNumber == null) {
-      final date = note.createdAt ?? DateTime.now();
-      final startOfDay = DateTime(date.year, date.month, date.day);
-      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
-
-      int maxSeq = 0;
-      if (_isar != null) {
-        final sameDayNotes = await _isar!.notes
-            .filter()
-            .createdAtBetween(startOfDay, endOfDay)
-            .findAll();
-        for (final n in sameDayNotes) {
-          if (n.dailySequenceNumber != null && n.dailySequenceNumber! > maxSeq) {
-            maxSeq = n.dailySequenceNumber!;
-          }
-        }
-      } else {
-        for (final n in _inMemoryNotes) {
-          final nDate = n.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-          if (nDate.isAfter(startOfDay.subtract(const Duration(milliseconds: 1))) &&
-              nDate.isBefore(endOfDay.add(const Duration(milliseconds: 1)))) {
-            if (n.dailySequenceNumber != null && n.dailySequenceNumber! > maxSeq) {
-              maxSeq = n.dailySequenceNumber!;
-            }
-          }
-        }
-      }
+      final maxSeq = await maxDailySequenceFor(note.createdAt ?? DateTime.now());
       note.dailySequenceNumber = maxSeq + 1;
     }
 
@@ -79,13 +77,27 @@ class NotesRepository {
     }
   }
 
+  /// Deletes the note together with its raw audio recording.
   Future<void> deleteNote(Id id) async {
+    final audioPath = (await getNoteById(id))?.originalAudioPath;
+
     if (_isar != null) {
       await _isar!.writeTxn(() async {
         await _isar!.notes.delete(id);
       });
     } else {
       _inMemoryNotes.removeWhere((n) => n.id == id);
+    }
+
+    if (audioPath != null && audioPath.isNotEmpty) {
+      try {
+        final file = File(audioPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {
+        // The note is gone either way; a stray recording must not fail the delete.
+      }
     }
   }
 
@@ -234,7 +246,7 @@ class NotesRepository {
 }
 
 final notesRepositoryProvider = Provider<NotesRepository>((ref) {
-  return NotesRepository();
+  return NotesRepository(isar: ref.watch(appDatabaseProvider));
 });
 
 final recentNotesProvider = FutureProvider<List<Note>>((ref) async {

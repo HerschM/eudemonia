@@ -18,14 +18,18 @@
   - `ButtonInterceptorService.kt`: Android `AccessibilityService` running in an isolated process (`:interceptor`).
   - `VolumeButtonCoordinator.kt`: State machine managing key events, dual-press windows, and repeating volume steps.
   - `TriggerDebouncer.kt`: Shared thread-safe 500ms cooldown debouncer.
+  - `RecordingStateTracker.kt`: Pure Kotlin recording-state mirror used by the interceptor process to pick the start vs stop haptic.
   - `MainActivity.kt`: Flutter activity establishing the `com.eudemonia/hardware_buttons` `MethodChannel`.
 - **Mechanics**:
   1. `ButtonInterceptorService` intercepts `KEYCODE_VOLUME_UP` and `KEYCODE_VOLUME_DOWN`.
   2. If only one button is pressed or held, `VolumeButtonCoordinator` dispatches `audioManager.adjustSuggestedStreamVolume(..., FLAG_SHOW_UI)`, transparently preserving system volume changes with smooth repetition (`repeatIntervalMs = 110L`, `initialRepeatDelayMs = 300L`).
   3. When both buttons are depressed within a 50ms window (`dualPressWindowMs = 50L`):
      - An instant native haptic pulse is triggered directly via `Vibrator` / `VibratorManager`: single crisp pulse for start recording (`createOneShot(45)`), and distinct double-pulse completion buzz for stop recording (`createWaveform(longArrayOf(0, 30, 50, 30), -1)`).
+     - **Start/stop prediction with authoritative correction**: the haptic must fire before the app process reacts, so `RecordingStateTracker.onTriggerFired()` optimistically predicts the toggle. After every trigger Flutter reports the real outcome (`setRecordingState` → package-scoped `RECORDING_STATE_CHANGED` broadcast → `onAuthoritativeState()`), so a dropped trigger, a denied microphone, or a recording toggled from the notification can never leave the two patterns inverted.
      - An explicit broadcast (`com.eudemonia.eudemonia.HARDWARE_TRIGGER`) is sent with the current device lock state (`isLocked`).
   4. Both `MainActivity` and `EudemoniaForegroundService` listen for the trigger broadcast, pass it through `TriggerDebouncer.shared.tryTrigger()` (cooldown 500ms), and invoke the Flutter method `onHardwareTrigger`.
+  5. On the Dart side the trigger is received by `CaptureController` (`lib/features/capture/capture_controller.dart`, see Subsystem C), not by a widget.
+  6. The main manifest declares **no `INTERNET` permission** (it exists only in the `debug`/`profile` manifests for Flutter tooling), enforcing the 0-bytes-outbound privacy NFR at the OS level in release builds.
 
 ### B. Background Persistence & Permissions (Foreground Keep-Alive & Battery Exemption)
 - **Files**:
@@ -39,6 +43,8 @@
   2. **Foreground Service Keep-Alive**:
      - `EudemoniaForegroundService` runs with `foregroundServiceType="microphone"` and displays a persistent low-priority ongoing notification (`eudemonia_background_channel`).
      - Elevates the app process priority to `FOREGROUND_SERVICE`, preventing the Android Low Memory Killer (LMK) from terminating the background listener.
+     - **Runtime permission gate**: a `microphone` foreground service cannot enter the foreground before `RECORD_AUDIO` is granted. `MainActivity.startCaptureServiceOrRequestPermissions()` therefore requests `RECORD_AUDIO` (and `POST_NOTIFICATIONS` on API 33+) while the activity is visible, starts the service only once the microphone is granted (immediately, or from `onRequestPermissionsResult`), and returns `false` otherwise.
+     - `EudemoniaForegroundService.isRunning` becomes `true` only after `startForeground()` succeeds; on failure the service stops itself instead of lingering without foreground priority.
   3. **UI Coordination**:
      - `BackgroundPermissionService` queries both permissions simultaneously via `MethodChannel`.
      - `showSimultaneousPermissionModal()` provides an educational bottom sheet guiding the user to grant both requirements in one flow.
@@ -47,27 +53,37 @@
      - `EudemoniaForegroundService` maintains dynamic interactive notification action buttons:
        - Idle: Displays `[ 🎙️ Record Thought ]` (`ACTION_START_CAPTURE`).
        - Recording: Updates title to `Recording Thought...` and displays `[ ⏹ Stop & Save ]` (`ACTION_STOP_CAPTURE`).
-     - `ForegroundServiceCoordinator` coordinates lock screen intents and dispatches triggers via `deliverTrigger(isLocked = true)` without requiring phone unlock.
-     - Synchronized bidirectionally with Flutter via `MethodChannel("setRecordingState")` whenever recording starts or stops.
+     - `ForegroundServiceCoordinator` coordinates lock screen intents and dispatches triggers via `deliverTrigger(isLocked = true, desiredRecording = true|false)` without requiring phone unlock. The explicit `desiredRecording` argument makes the two actions idempotent: a stale `Stop & Save` can never start a recording.
+     - Synchronized bidirectionally with Flutter via `MethodChannel("setRecordingState")`: `CaptureController` reports the authoritative state after every trigger, and `MainActivity.publishRecordingState()` fans it out to the notification and to the interceptor process.
 
 ### C. Zero-Latency Audio Queue & Dispatch (FIFO Queue & Non-Blocking Worker)
 - **Files**:
+  - `lib/features/capture/capture_controller.dart`
   - `lib/features/ai_processing/batch_pipeline_service.dart`
+  - `lib/features/ai_processing/audio_recording_service.dart`
   - `lib/features/ai_processing/audio_queue_service.dart`
   - `lib/features/ai_processing/audio_queue_item.dart`
 - **Mechanics**:
+  0. **Capture Trigger Ownership (`CaptureController`)**:
+     - Riverpod `NotifierProvider<CaptureController, bool>` (`captureControllerProvider`, state = is recording) owns the `com.eudemonia/hardware_buttons` `onHardwareTrigger` handler. It is instantiated in `main()` before `runApp`, so triggers are handled regardless of which screen is mounted; `CaptureScreen` only watches it for the listening indicator.
+     - The state flips to recording immediately (indicator appears without waiting on the recorder) and is **reverted if `startRecording()` returns `false`** (microphone permission missing or recorder failure), so a failed start is never followed by a phantom "stop".
+     - Honors the optional `desiredRecording` argument (explicit notification actions) as a no-op when it already matches, keeps the 500ms Dart-side cooldown, and reports the authoritative state to native via `setRecordingState` after every trigger.
   1. **Decoupled Recording Capture**:
-     - `BatchPipelineService.startRecording()` starts microphone capture with 0ms delay.
+     - `BatchPipelineService.startRecording()` starts microphone capture with 0ms delay and returns whether capture actually began.
      - `BatchPipelineService.stopRecordingAndProcess()` stops audio capture and immediately dispatches the recorded WAV path to `AudioQueueService.enqueue()`. The call completes in **<5ms**, immediately returning control to the UI.
+     - `enqueue()` notifies the UI providers **before** the disk write and takes its daily sequence number from an in-memory high-water mark (seeded once per calendar day from `NotesRepository.maxDailySequenceFor()` during hydration), so the capture path performs no database scan.
   2. **FIFO Disk Persistence**:
      - Enqueued items are serialized to `${appDocumentsDir}/queue/queue.json` as `AudioQueueItem` objects.
      - Status progression: `pending` -> `transcribing` -> `categorizing` -> `completed` (or `failed`).
+     - Writes are **serialized and atomic** (snapshot → `queue.json.tmp` → `rename`), so overlapping mutations or a process kill can never leave a truncated or interleaved file.
+     - **Cold-start hydration & recovery**: `main()` calls `AudioQueueService.resumePendingWork()`, which hydrates the queue and drains it. During hydration, items left in `transcribing`/`categorizing` by a killed process are reset to `pending`, and `completed` items (already persisted as notes) are pruned so the file cannot grow without bound. `enqueue()` awaits hydration first, so a capture arriving during startup can never be overwritten by (or overwrite) the persisted queue.
   3. **Reactive UI State Management**:
      - Count tracking is managed via Riverpod 3 `NotifierProvider<PendingQueueCountNotifier, int>` and `NotifierProvider<FailedQueueCountNotifier, int>`.
      - `onQueueChanged` callbacks update synchronous state notifiers immediately, avoiding dropped stream events.
   4. **Failure Recovery**:
      - If transcription or categorization fails, the item is marked `failed` with an `errorMessage`.
      - `retryFailed()` resets all failed items back to `pending` and restarts processing without blocking incoming thoughts.
+     - A thought deleted while it is being processed is dropped silently: the worker re-checks queue membership after each inference step and never saves a note (or marks a failure) for a removed item.
 
 ### D. AI Model Lifecycle & Memory Management (Sequential Loading, Inactivity Eviction & <60MB Baseline)
 - **Files**:
@@ -80,22 +96,32 @@
      - To prevent RAM allocation spikes above physical memory thresholds, `ensureModelsLoaded()` loads models sequentially:
        - Step 1: Sherpa-ONNX Parakeet v3 STT model (~600 MB).
        - Step 2: Qwen-2.5 1.5B GGUF LLM model (~1.0 GB).
-     - Concurrent callers share an active `Completer<void>`, ensuring thread-safe idempotency.
+     - Concurrent callers share one in-flight load `Future`, ensuring thread-safe idempotency; a load failure is delivered to every caller (never to an unlistened completer).
+     - If any step fails, both services are disposed so a half-finished load cannot strand the STT model (~600 MB) in RAM while the state reads `unloaded`.
   3. **Inactivity TTL Eviction**:
      - Default TTL: 3 minutes (`modelInactivityTtl`).
-     - Every completed queue item calls `touch()`, restarting the 3-minute timer.
+     - Every queue item runs inside `runWithModels()`, which calls `touch()` when the item finishes **whether it succeeded or failed**, restarting the 3-minute timer. (Previously only successful items re-armed the timer, so a failing queue kept ~1.6 GB resident indefinitely.)
      - Upon expiry, `evictModels()` disposes the native C++ handles for both STT and LLM, freeing ~1.6 GB of RAM and restoring baseline memory footprint to <60 MB.
-  4. **Proactive Pre-Warming**:
-     - `warmupOnRecordingStart()` begins loading models in the background the moment the user starts recording, ensuring models are ready by the time audio is captured.
+  4. **Eviction Safety (In-Use Leases)**:
+     - `runWithModels(task)` holds a lease for the duration of an inference task. `evictModels()` returns `Future<bool>`: `true` once the models are out of RAM; `false` when a lease is active, in which case eviction is deferred and executed the moment the task completes. An eviction requested during loading waits for the load to settle first. Native handles are therefore never freed underneath a running inference (e.g. the Settings `Evict Models Now` button during queue processing).
+  5. **Reactive Lifecycle State**:
+     - State transitions are published through `onStateChanged` into `modelLifecycleStateProvider` (`NotifierProvider<ModelLifecycleStateNotifier, ModelLifecycleState>`), which the Pipeline HUD and Settings memory telemetry watch, so the displayed footprint follows loads and evictions live.
+  6. **Proactive Pre-Warming (available, not wired)**:
+     - `warmupOnRecordingStart()` can begin loading models in the background when recording starts. It is currently **not invoked** by the capture path: model loading is left to the queue worker so that ~1.6 GB of allocations never coincide with active microphone capture (see Chronicle #5).
 
 ### E. Speech-to-Text & LLM Classification Pipeline (Sherpa-ONNX STT & Qwen 2.5 ChatML)
 - **Files**:
   - `lib/features/ai_processing/stt_service.dart`
+  - `lib/features/ai_processing/stt_engine.dart`
   - `lib/features/ai_processing/llm_service.dart`
   - `lib/features/ai_processing/note_classifier.dart`
 - **Mechanics**:
   1. **STT Transcription**:
      - Powered by `sherpa_onnx` using an offline recognizer configured with Parakeet CTC/Transducer models.
+     - **Dedicated worker isolate**: `STTService` is a message-passing facade over a long-lived `stt-worker` isolate. The synchronous native work (model load, `readWave`, resampling, `decode`) lives in `SherpaSttEngine` (`stt_engine.dart`, behind the `SttEngine` interface) and executes only inside that isolate, which calls `initBindings()` itself. The UI isolate, which also services hardware capture triggers, is never blocked by transcription; the LLM already runs in `llama_cpp_dart`'s own isolate.
+     - Requests are processed strictly in order, so `dispose()` issued during a decode frees the recognizer only after that decode returns, then the isolate exits. `initialize()` awaits the previous worker's teardown so two copies of the model are never resident.
+     - The engine is injected through a top-level `SttEngineFactory`, which lets host tests exercise the real isolate protocol with a contract-enforcing fake engine.
+     - Preserved audio safeguards: automatic linear resampling to 16kHz (`resampleLinear`), 300ms tail-silence padding, `stream.free()` in `finally`, plus an explicit `Audio recording not found` failure when the WAV file is missing.
   2. **Prompt Engineering & Single-Folder Classification**:
      - ChatML prompt instructs Qwen 2.5 Instruct to perform:
        1. *Language Correction*: Grammar, capitalization, punctuation, and removal of conversational filler words (*"um"*, *"uh"*, *"like"*).
@@ -112,33 +138,42 @@
   - `lib/features/notes/data/note_model.dart`
   - `lib/features/notes/data/notes_repository.dart`
   - `lib/features/notes/note_model.dart`
+  - `lib/core/database/app_database.dart`
 - **Mechanics**:
   - Managed with Isar database.
+  - **Single Shared Database Instance**: `openAppDatabase()` opens one Isar instance with every collection (`appDatabaseSchemas`: `NoteSchema`, `SynthesisSessionRecordSchema`). `main()` injects it through `appDatabaseProvider`; `notesRepositoryProvider` and `synthesisSessionStoreProvider` both read it. The provider defaults to `null`, which makes repositories fall back to in-memory storage in unit and widget tests.
   - `Note` schema includes `id`, `rawText`, `correctedText`, indexed `folder`, `createdAt`, `originalAudioPath`, `isRead`, `state`, and `failureReason`.
   - **Thought Lifecycle States**: The `ThoughtState` enum (`enqueued`, `processed`, `failed`, `synthesized`) represents the lifecycle progression of captured thoughts, persisted using `@Enumerated(EnumType.name)` in Isar.
   - **Durable Persistence Across Cold Starts**: `isRead`, `state`, and `failureReason` are fully persisted properties within `note_model.g.dart`. Calling `markAsRead(id)` or `saveNote(note)` updates the Isar database directly in a write transaction, guaranteeing that unread/read state and processing metadata survive process kills and phone reboots.
-  - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `deleteNote`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, and `getUnreadNotes`, with transparent fallback to in-memory storage during isolated unit and widget tests.
+  - **Repository Operations**: `NotesRepository` supports `saveNote`, `getNoteById`, `deleteNote`, `getAllNotes`, `getNotesByFolder`, `searchNotes`, `updateNoteText`, `updateNoteFolder`, `markAsRead`, `getUnreadNotes`, and `maxDailySequenceFor`, with transparent fallback to in-memory storage during isolated unit and widget tests.
+  - **Audio Lifecycle on Delete**: `deleteNote(id)` also deletes the note's raw WAV recording (`originalAudioPath`), so deleted thoughts leave no audio behind on device storage.
 
-### G. Production User Interface & State Management (`lib/features/home/`)
+### G. Production Capture Screen & Thought Card Presentation (`lib/features/capture/presentation/`)
 - **Files**:
-  - [`lib/features/home/home_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/home_screen.dart)
+  - [`lib/features/capture/presentation/capture_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/capture/presentation/capture_screen.dart)
+  - [`lib/features/capture/presentation/floating_capture_capsule.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/capture/presentation/floating_capture_capsule.dart)
   - [`lib/features/notes/presentation/thought_card.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/presentation/thought_card.dart)
   - [`lib/features/notes/audio_playback_controller.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/audio_playback_controller.dart)
   - [`lib/features/home/presentation/smooth_processing_indicator.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/smooth_processing_indicator.dart)
-  - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
 - **Mechanics**:
-  - **Unified Reactive Feed**: `HomeScreen` synthesizes the `allThoughts` feed by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly captured audio enqueues immediately (<5ms) with `ThoughtState.enqueued` (pastel yellow, shimmer, date/time, audio play button), transitioning seamlessly to `ThoughtState.processed` (pastel blue) upon worker completion without requiring an app restart.
+  - **Unified Reactive Feed**: `CaptureScreen` synthesizes the feed by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly captured audio enqueues immediately (<5ms) with `ThoughtState.enqueued` (yellow, shimmer, date/time, audio play button), transitioning seamlessly to `ThoughtState.processed` (blue) upon worker completion without requiring an app restart. Rows are built lazily (`ListView.builder`) under per-day headers (`TODAY — DD/MM`, `YESTERDAY — DD/MM`, `DD/MM/YYYY`).
+  - **No Categorization on Capture (FR9.1, FR11.2)**: The Capture screen has no folder carousel and no per-folder list screen, and `ThoughtCard` renders no folder badge or category picker. Folders appear only on Synthesis sessions.
   - **ThoughtCard Lifecycle Rendering**:
-    - *Enqueued*: Light pastel yellow background (`#FEF3C7`), animated shimmer subtext, and active spinner.
-    - *Processed*: Soft blue background (`#DBEAFE`), category badge with 1-tap dropdown reassignment, inline text editor, and raw audio playback.
+    - *Enqueued*: Light pastel yellow background (`#FEF3C7`), animated shimmer subtext, active spinner, `⏳ Enqueued` footer badge.
+    - *Processed*: Soft blue background (`#DBEAFE`), footer `[ ✎ Edit ]` opening the inline text editor, and raw audio playback.
     - *Failed*: Soft red background (`#FEE2E2`), explicit failure message, 1-tap `Retry` button, and audio playback.
-    - *Synthesized*: Soft mint background (`#DCFCE7`) for clubbed or synthesized thoughts.
-  - **Dedicated Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>` over `MethodChannel('com.eudemonia/audio_playback')`. In Kotlin, `MediaPlayer` reads private audio files via `FileInputStream(file).use { fis -> player.setDataSource(fis.fd) }`, ensuring robust audio playback without sandbox permission failures.
+    - *Synthesized*: Soft mint background (`#DCFCE7`) with footer `🧩 Synthesized in #S-NN`, resolved by `CaptureScreen` from `synthesisRepositoryProvider`.
+    - Header order is strictly `[# Number]` → `[▶ Play Audio]` → `[• Unread Dot]` → `[🗑️ Delete]`; footer timestamp is `DD/MM  HH:MM AM/PM`.
+  - **Compact Dual Dropdown Filters (FR9.2)**: `capture_triage_filter_dropdown` (`All Triage`, `Unread`, `Read`) and `capture_status_filter_dropdown` (`All Statuses`, `Processing`, `Processed`, `Synthesized`, `Failed`) in a `Wrap`, replacing the former chip row. Both filters combine; an empty result reads `No thoughts matching active filters`.
+  - **Interactive Floating Capture Trigger (FR9.3)**: `FloatingCaptureCapsule` (pure presentational) floats above the feed: `[ 🎙️ / Press Vol Up + Down to Capture ]`. Tapping calls `CaptureController.handleTrigger()` (the same path as the hardware trigger). While recording it morphs into a stop icon, animated waveform and a live elapsed timer (`00:04 • Tap to Stop`). When the tap finishes a recording, the screen shows `Captured a new note [#0X]` using the sequence number of the item returned by the controller.
+  - **Machine Status Lives in the Shell**: The Capture screen carries no pending pill or processing banner; pipeline state is shown by the shell's Pipeline HUD pill (Subsystem I).
+  - **Recording Indicator**: `CaptureScreen` watches `captureControllerProvider` (Subsystem C); it does not own the hardware trigger channel.
+  - **Dedicated Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>` over `MethodChannel('com.eudemonia/audio_playback')`. A native playback error (`PlatformException`, e.g. missing file) resets the state instead of showing a card as playing. In Kotlin, `MediaPlayer` plays private audio files via `player.setDataSource(file.absolutePath)` with speech `AudioAttributes` (see Chronicle #12).
   - **Hardware-Accelerated Smooth Progress Indicator**: `SmoothProcessingIndicator` uses a GPU-accelerated `CustomPainter` with an internal `RepaintBoundary` and ticking `AnimationController`, guaranteeing locked 60/120fps sweep fluidity even during heavy CPU-bound background inference.
-  - **Unread Thought Status & In-Card Triage**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator. A horizontally scrollable chip row (`All`, `Unread (X)`, `Failed (X)`) above the feed allows instantaneous triage without `RenderFlex` overflows on narrow screens.
-  - **AppBar Queue Pill**: Displays real-time `X pending` pill with `SmoothProcessingIndicator` whenever thoughts are in queue (`pendingCount > 0`).
+  - **Unread Thought Status & In-Card Triage**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator.
   - **In-Card Failure Presentation**: Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`), eliminating intrusive full-screen error banners.
   - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
+  - **Known Deviation from FR5.2 (Capture-Time Folder Inference)**: The capture LLM turn still returns a folder alongside the cleaned text and stores it on the note as hidden metadata, because `SynthesisRepository.synthesizeRawNotes()` routes thoughts into sessions by that folder. It is never displayed on Capture. Moving classification into the synthesis turn belongs to the Milestone 9 clustering engine (TASK-049); removing it earlier would collapse every session into `Uncategorized`.
 
 ### H. Diagnostic Telemetry & Rotating Logging (2MB Capped Log File & Telemetry Dump)
 - **Files**:
@@ -161,8 +196,9 @@
     - *Stage 1 (Capture)*: Shows pending raw audio in queue and processing state.
     - *Stage 2 (Synthesis)*: Shows count of buffered thoughts awaiting clustering with an on-demand `[ ⚡ Synthesize Now ]` trigger button.
     - *Stages 3 & 4 (Insights & Action)*: Indicates synchronicity status.
+    - *Memory footer*: the sheet opens immediately and fills in a live OS reading (`describePipelineMemory`): model state, app memory (PSS) and device free/total RAM, or `live memory reading unavailable`. No estimated figures are shown.
   - **Four-Stage Tab Bar & Zero-Suppression**:
-    - `Capture (X)`: Zero-suppressed unconsumed thought count ($X = \text{unread} + \text{in-flight queue}$).
+    - `Capture (X)`: Zero-suppressed unconsumed thought count ($X = \text{unread processed} + \text{in-flight queue}$). Thoughts already consumed by a synthesis session (`ThoughtState.synthesized`) are excluded, matching the unread dot and `Unread` filter.
     - `Synthesis (Y)`: Zero-suppressed unconsumed session count ($Y = \text{unread clusters}$).
     - `Insights` & `Action`: Visually greyed out (`Opacity(0.38)`) and tap-intercepted to remain unclickable placeholders with friendly explanatory empty states until backend stages are activated.
 
@@ -170,14 +206,22 @@
 - **Files**:
   - [`lib/features/synthesis/domain/synthesis_cluster.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/domain/synthesis_cluster.dart)
   - [`lib/features/synthesis/data/synthesis_repository.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/data/synthesis_repository.dart)
+  - [`lib/features/synthesis/data/synthesis_session_store.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/data/synthesis_session_store.dart)
+  - [`lib/features/synthesis/data/synthesis_session_record.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/data/synthesis_session_record.dart)
   - [`lib/features/synthesis/presentation/synthesis_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/synthesis_screen.dart)
   - [`lib/features/synthesis/presentation/style_rewriter_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/style_rewriter_sheet.dart)
   - [`lib/features/synthesis/presentation/note_ejection_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/note_ejection_sheet.dart)
   - [`lib/features/synthesis/presentation/note_merge_sheet.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/presentation/note_merge_sheet.dart)
 - **Mechanics**:
   - **State Architecture**: `SynthesisRepository` extends Riverpod 3 `Notifier<List<SynthesisCluster>>` exposed via `synthesisRepositoryProvider`.
+  - **Durable Sessions (Write-Through Persistence)**:
+    - `SynthesisSessionRecord` is an Isar collection (indexed `clusterId`) holding every durable cluster field plus embedded `SynthesisOriginRecord` snapshots of the origin thoughts. `isExpanded` is transient view state and is not stored.
+    - `SynthesisSessionStore` wraps the collection (`loadAll`, `put`, `delete`) with an in-memory fallback that stores the same records, so both paths persist identical fields.
+    - `SynthesisRepository.build()` returns an empty list and hydrates from the store asynchronously (`hydrated`). Its `state` setter diffs the previous and next lists and writes changed sessions and deletions through to the store in order (`pendingWrites`), so every mutation (create, read, expand, folder, style, merge, eject, delete) is durable without per-method persistence code. `synthesizeRawNotes()` awaits hydration first so new `#S-NN` identifiers never collide with stored ones.
+    - **One-time orphan repair**: `recoverOrphanedSynthesizedNotes()` returns thoughts marked `synthesized` that no stored session contains to `processed`. `main()` runs it once (guarded by the `synthesis_orphan_recovery_done` preference) to repair data left by the earlier in-memory-only implementation.
+    - **Not yet implemented**: `isReprocessing` (yellow) is persisted but nothing clears it; re-synthesis is the Milestone 9 engine (TASK-049). Deleting a session leaves its thoughts marked `synthesized`.
   - **Cluster Cards**:
-    - Header shows sequence badge (e.g., `#S-01`), folder tag with dropdown reassignment, and unread indicator dot (`•`).
+    - Header shows sequence badge (e.g., `#S-01`), folder tag with dropdown reassignment, and unread indicator dot (`•`). New identifiers are derived from the highest existing `#S-NN`, so deleting or merging a session never yields a duplicate.
     - Expandable raw origin notes pill (`X Raw Notes ▾`) displaying constituent thought transcriptions and origin sequence numbers (`#01`, `#02`).
     - Actions: `[ ✨ Style ▾ ]` (Executive, Action-Oriented, Exploratory re-writing), `[ 🔗 Merge ]` (cross-cluster consolidation), and `[ 🗑️ Delete ]`.
     - **Single-Note Ejection Guard**: Single-thought clusters hide the `[ Move Out ]` button to prevent creating empty, orphaned synthesis sessions. In multi-note clusters, `[ Move Out ]` opens `NoteEjectionModal` offering to move the note into an existing cluster or spawn an independent session.
@@ -192,7 +236,11 @@
   - **Automatic Synthesis Trigger & Batching**: Configurable capture threshold ($X$ thoughts) and session quiet window ($Y$ minutes) plus instant buffer synthesis trigger.
   - **Folder Management & Semantic Manifestos**: Real-time display of folder manifestos (`Work`, `Ideas`, `Todos`, `Journal`) with an interactive dialog to add custom user folders and keyword anchors.
   - **Calendar Synchronization**: Toggle to automatically block out schedule commitments extracted from thoughts.
-  - **On-Device AI Memory & Thermal Telemetry**: Live thermal headroom display, model footprint monitor, and an instant `[ Evict Models Now (<60 MB) ]` memory reclamation button.
+  - **On-Device AI Memory & Thermal Telemetry (Live OS Readings)**:
+    - Files: `lib/features/settings/system_telemetry_service.dart`, `android/app/src/main/kotlin/com/eudemonia/eudemonia/SystemTelemetryCollector.kt`.
+    - `SystemTelemetryCollector.snapshot()` (served on `MethodChannel('com.eudemonia/system_telemetry')`, method `getSnapshot`, executed off the UI thread) reports: `PowerManager.currentThermalStatus` (API 29+), `PowerManager.getThermalHeadroom(10)` (API 30+, `NaN` → null), app process memory as total PSS from `Debug.getMemoryInfo`, and device `availMem` / `totalMem` / `lowMemory` from `ActivityManager.MemoryInfo`. A value the OS cannot provide is `null`, never estimated.
+    - `SystemTelemetry` derives display values: thermal summary `N% (Status)` where `N = (1 − headroom) × 100` clamped to 0–100 (headroom 1.0 = `THERMAL_STATUS_SEVERE`), `isThermallyThrottled` from Severe upwards, and byte formatting.
+    - `SettingsScreen` watches `systemTelemetryProvider` and invalidates it every 5 seconds while open (timer cancelled in `dispose`). Thermal headroom, app memory and device memory show the live values or `Unavailable`; the `[ Evict Models Now ]` button confirms with `AI models evicted from memory.` and the memory row updates from the next reading.
   - **Diagnostic Logging**: Rotating 2MB log inspector modal, one-click clipboard telemetry dump, and log clearing.
 
 ---
@@ -437,6 +485,50 @@
   1. Added `removeItemByAudioPath(String audioFilePath)` and `removeItemById(String id)` to `AudioQueueService` with storage persistence and temporary audio file cleanup.
   2. Updated `HomeScreen` to pass `onDelete` uniformly for all notes: deleting persisted notes via `NotesRepository.deleteNote` and queue items via `AudioQueueService.removeItemByAudioPath`.
   3. Placed the delete button in the top-right header row of `ThoughtCard` across all states (enqueued, processed, synthesized, and failed).
+
+### 18. UI Isolate Blocked by Synchronous STT Inference (Capture Latency Violation)
+- **Symptom**: While a queued thought was being transcribed, the UI froze and a new dual-volume trigger was only acted on after the decode finished, delaying the start of the next recording by up to seconds.
+- **Root Cause**: `STTService.transcribe()` was declared `async` but executed `readWave`, resampling and `OfflineRecognizer.decode` as synchronous FFI calls on the main isolate — the same isolate that receives `onHardwareTrigger`. Model loading (`OfflineRecognizer(config)`) blocked it too.
+- **Solution**: Moved all Sherpa-ONNX work into a dedicated worker isolate (`SttEngine` / `SherpaSttEngine` + message-passing `STTService`). Covered by `stt_service_isolate_test.dart`, which asserts the calling isolate keeps ticking during a blocking decode.
+
+### 19. Lost, Stuck & Unbounded Queue Items Across App Restarts
+- **Symptom**: (1) After the app was killed mid-processing, the affected thought stayed "pending" forever and was never transcribed. (2) Pending and failed thoughts from a previous session were invisible and unprocessed until the next recording. (3) A capture made during startup could wipe, or be wiped by, the persisted queue. (4) `queue.json` grew with every thought ever captured.
+- **Root Cause**:
+  1. Items persisted as `transcribing`/`categorizing` were counted as pending but the worker only picks `pending` items.
+  2. `audioQueueServiceProvider` was created lazily on the first trigger, and nothing called `processPending()` after hydration.
+  3. `_loadFromStorage()` cleared the in-memory list after an `enqueue()` had already appended to it, and unsynchronized `writeAsString` calls could interleave.
+  4. `completed` items were never removed.
+- **Solution**: Hydration resets interrupted items to `pending` and prunes `completed` ones; `main()` eagerly runs `resumePendingWork()`; `enqueue()` awaits hydration; saves are serialized and atomic (temp file + rename). Covered by `queue_resilience_test.dart`.
+
+### 20. Models Pinned in RAM After Failures, Partial Loads & Unsafe Eviction
+- **Symptom**: After a failed item (e.g. silent or corrupt audio) the ~1.6 GB models were never evicted. A failed LLM load left the STT model resident while the state reported `unloaded`. Model load failures surfaced as unhandled asynchronous errors. Tapping `Evict Models Now` during processing freed native handles under a running inference.
+- **Root Cause**: `touch()` ran only on the success path while `ensureModelsLoaded()` had already cancelled the inactivity timer; the load `catch` block did not dispose the already-initialized service; the shared `Completer` was completed with an error that had no listener; `evictModels()` had no notion of in-flight work.
+- **Solution**: Introduced `runWithModels()` leases (touch in `finally`, deferred eviction), disposal of both services on load failure, and a shared load `Future`. Covered by the `load failure & eviction safety` group in `model_lifecycle_manager_test.dart`.
+
+### 21. Phantom Recording State, Inverted Haptics & Stale Capture Notification
+- **Symptom**: If recording failed to start (microphone permission not yet granted), the UI still showed `Listening...` and the next trigger performed a "stop" with nothing to save. Start/stop haptic patterns could become permanently inverted. The lock screen notification did not reflect recordings started with the volume buttons, and `Stop & Save` could start a recording.
+- **Root Cause**: `HomeScreen` (a widget) owned the trigger channel and set `isRecording = true` unconditionally; `AudioRecordingService.startRecording()` swallowed failures; `ButtonInterceptorService` toggled a private boolean that the app never corrected; Flutter never called `setRecordingState`; both notification actions sent the same undirected toggle.
+- **Solution**: Extracted `CaptureController` (state reverts on failed start, reports authoritative state to native after every trigger, honors `desiredRecording`), added `RecordingStateTracker` + `RECORDING_STATE_CHANGED` broadcast, and removed the unused deferred `playHaptic` channel method. Covered by `capture_controller_test.dart` and `RecordingStateTrackerTest.kt`.
+
+### 22. Foreground Service Start Before Microphone Permission & Daily Sequence Reuse
+- **Symptom**: (1) On a fresh install the app started its `microphone` foreground service at launch, before `RECORD_AUDIO` was granted; on Android 14+ `startForeground()` throws, the exception was swallowed, and a service started via `startForegroundService()` that never reaches the foreground is terminated by the OS. The microphone prompt itself was only ever requested from the first trigger, which cannot display a dialog from a pocket or lock screen. (2) Deleting the newest thought of the day caused the next capture to reuse its number; every `enqueue()` scanned the full notes table on the capture path.
+- **Root Cause**: (1) No runtime-permission gate in front of the service start, and `isRunning` was set before `startForeground()`. (2) Sequence numbers were recomputed as `max(existing) + 1` from a full `getAllNotes()` read.
+- **Solution**: (1) `MainActivity.startCaptureServiceOrRequestPermissions()` + `onRequestPermissionsResult`; the service reports running only after entering the foreground. (2) In-memory per-day high-water mark seeded from `NotesRepository.maxDailySequenceFor()`.
+
+### 23. Synthesis Sessions Lost on Restart, Leaving Thoughts Permanently Orphaned
+- **Symptom**: After restarting the app the Synthesis tab was empty, while the thoughts that had been clustered stayed green ("synthesized") in Capture and could never be clustered again.
+- **Root Cause**: `SynthesisRepository` kept sessions only in Riverpod memory, but `synthesizeRawNotes()` persisted `ThoughtState.synthesized` on every origin note in Isar. The two halves of one operation had different lifetimes.
+- **Solution**: Added the `SynthesisSessionRecord` collection, `SynthesisSessionStore`, write-through persistence in the repository's `state` setter, a single shared Isar instance (`app_database.dart`), and a one-time repair that returns orphaned thoughts to `processed`. Covered by `synthesis_persistence_test.dart`.
+
+### 24. Capture Screen Diverged from the Four-Stage Specification
+- **Symptom**: The production Capture tab still showed the legacy `Folders` carousel with per-folder list screens, a folder picker on every card, a chip filter row, a duplicate pending pill and processing banner, and had no in-app capture trigger.
+- **Root Cause**: The four-stage shell was promoted around the pre-existing `HomeScreen` instead of promoting the approved `previews/screens/capture_screen_preview.dart` design; the legacy widget tests kept the old layout pinned.
+- **Solution**: Replaced `HomeScreen` and `NoteListScreen` with `CaptureScreen` + `FloatingCaptureCapsule` per FR9/FR11.2 and UX.md §5, removed folder UI from `ThoughtCard`, and migrated the affected widget tests to the new contracts (cold-start queue visibility is now asserted on the shell's pipeline pill).
+
+### 25. Fabricated Thermal and Memory Figures in Production UI
+- **Symptom**: Settings always displayed `84% (Nominal)` thermal headroom and `~1.58 GB` / `<60 MB` RAM regardless of the device; the Pipeline HUD and eviction confirmation repeated the same constants.
+- **Root Cause**: Mock values from the settings preview were copied into `lib/` as string literals.
+- **Solution**: Added `SystemTelemetryCollector` (Kotlin) and `SystemTelemetryService` (Dart) and replaced every literal with live OS readings or `Unavailable`. Covered by `system_telemetry_test.dart`.
 
 ---
 

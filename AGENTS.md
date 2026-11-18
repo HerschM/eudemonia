@@ -204,12 +204,14 @@ When executing operational engineering procedures, activate the dedicated skill:
 
 ```
 lib/
-├── core/                # Core utilities, logging, themes
+├── core/                # Core utilities, logging, shared database
 ├── features/
 │   ├── ai_processing/   # STT, LLM inference, model lifecycle & queues
-│   ├── home/            # Main capture screen & thought feed
+│   ├── capture/         # Capture controller, capture screen & floating capture trigger
+│   ├── home/            # Four-stage navigation shell & pipeline HUD
 │   ├── notes/           # Note models, repositories & database storage
-│   └── settings/        # Permissions, diagnostics & configuration
+│   ├── synthesis/       # Synthesis sessions, persistence & screen
+│   └── settings/        # Permissions, diagnostics, system telemetry & configuration
 previews/                # Isolated UI/UX Component Sandbox (0 prod boilerplate)
 ├── main_preview.dart    # Standalone launcher: flutter run -t previews/main_preview.dart
 ├── mock_data.dart       # Typed mock datasets for all edge cases

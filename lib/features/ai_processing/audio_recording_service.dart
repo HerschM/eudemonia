@@ -18,28 +18,33 @@ class AudioRecordingService {
     return requested.isGranted;
   }
 
-  Future<void> startRecording() async {
+  /// Starts microphone capture. Returns `false` when capture could not begin
+  /// (permission missing or recorder failure) so callers never report a phantom recording.
+  Future<bool> startRecording() async {
     try {
-      if (await checkPermission()) {
-        final dir = await getApplicationDocumentsDirectory();
-        final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.wav';
-        _currentFilePath = '${dir.path}/$fileName';
-
-        // Record to WAV format for STT compatibility
-        await _audioRecorder.start(
-          const RecordConfig(
-            encoder: AudioEncoder.wav,
-            sampleRate: 16000,
-            numChannels: 1,
-          ),
-          path: _currentFilePath!,
-        );
-        _logger?.info('[AudioRecordingService] Started recording to $_currentFilePath');
-      } else {
+      if (!await checkPermission()) {
         _logger?.warning('[AudioRecordingService] Microphone permission not granted');
+        return false;
       }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName = 'recording_${DateTime.now().millisecondsSinceEpoch}.wav';
+      _currentFilePath = '${dir.path}/$fileName';
+
+      // Record to WAV format for STT compatibility
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: _currentFilePath!,
+      );
+      _logger?.info('[AudioRecordingService] Started recording to $_currentFilePath');
+      return true;
     } catch (e, stack) {
       _logger?.error('[AudioRecordingService] Error starting recording', error: e, stackTrace: stack);
+      return false;
     }
   }
 

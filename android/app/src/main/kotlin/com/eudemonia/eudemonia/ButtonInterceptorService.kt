@@ -1,8 +1,10 @@
 package com.eudemonia.eudemonia
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
@@ -55,7 +57,32 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
             repeatIntervalMs = 110L,
             maxRepeatSteps = 25
         )
+        registerRecordingStateReceiver()
         Log.i(TAG, "ButtonInterceptorService connected successfully in dedicated process.")
+    }
+
+    private fun registerRecordingStateReceiver() {
+        if (recordingStateReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == RecordingStateTracker.ACTION_RECORDING_STATE_CHANGED) {
+                    recordingState.onAuthoritativeState(
+                        intent.getBooleanExtra(RecordingStateTracker.EXTRA_IS_RECORDING, false)
+                    )
+                }
+            }
+        }
+        try {
+            val filter = IntentFilter(RecordingStateTracker.ACTION_RECORDING_STATE_CHANGED)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(receiver, filter)
+            }
+            recordingStateReceiver = receiver
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering recording state receiver: ${e.message}")
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -70,6 +97,12 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "ButtonInterceptorService destroying.")
+        recordingStateReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            recordingStateReceiver = null
+        }
         if (::coordinator.isInitialized) {
             coordinator.reset()
         }
@@ -118,12 +151,13 @@ class ButtonInterceptorService : AccessibilityService(), VolumeActionHandler {
         }
     }
 
-    private var isRecordingActive = false
+    private val recordingState = RecordingStateTracker()
+    private var recordingStateReceiver: BroadcastReceiver? = null
 
     override fun triggerVoicePipeline() {
-        isRecordingActive = !isRecordingActive
-        Log.d(TAG, "Both volume buttons pressed simultaneously! Performing instant haptic (isStart=$isRecordingActive) & sending trigger broadcast.")
-        playInstantHaptic(isStart = isRecordingActive)
+        val isStart = recordingState.onTriggerFired()
+        Log.d(TAG, "Both volume buttons pressed simultaneously! Performing instant haptic (isStart=$isStart) & sending trigger broadcast.")
+        playInstantHaptic(isStart = isStart)
         sendTriggerToApp()
     }
 

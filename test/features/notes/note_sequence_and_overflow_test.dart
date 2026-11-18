@@ -120,8 +120,8 @@ void main() {
       // Verify formatted timestamp at footer: DD/MM  HH:MM AM/PM
       expect(find.text('08/11  09:42 AM'), findsOneWidget);
 
-      // Verify category dropdown in footer
-      expect(find.byKey(const Key('category_dropdown_button')), findsOneWidget);
+      // FR9.1: no category dropdown on capture cards
+      expect(find.byKey(const Key('category_dropdown_button')), findsNothing);
 
       // Verify edit button in footer
       expect(find.byKey(const Key('edit_text_button')), findsOneWidget);

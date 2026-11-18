@@ -26,6 +26,11 @@ class AudioQueueService {
   bool _isProcessing = false;
   File? _cachedFile;
   Future<void>? _loadingFuture;
+  Future<void> _saveChain = Future.value();
+
+  /// Highest daily sequence number handed out for [_sequenceDayKey].
+  int? _sequenceDayKey;
+  int _sequenceHighWater = 0;
 
   AudioQueueService(
     this._sttService,
@@ -87,13 +92,24 @@ class AudioQueueService {
         final content = await file.readAsString();
         if (content.trim().isNotEmpty) {
           final List<dynamic> jsonList = jsonDecode(content);
-          _items.clear();
+          final hydrated = <AudioQueueItem>[];
+          bool needsRewrite = false;
           for (final j in jsonList) {
             try {
-              if (j is Map<String, dynamic>) {
-                _items.add(AudioQueueItem.fromJson(j));
-              } else if (j is Map) {
-                _items.add(AudioQueueItem.fromJson(Map<String, dynamic>.from(j)));
+              if (j is Map) {
+                final item = AudioQueueItem.fromJson(Map<String, dynamic>.from(j));
+                if (item.status == AudioQueueStatus.completed) {
+                  // Already persisted as a note; keeping it would grow the queue file forever.
+                  needsRewrite = true;
+                  continue;
+                }
+                if (item.status == AudioQueueStatus.transcribing ||
+                    item.status == AudioQueueStatus.categorizing) {
+                  // The process died mid-inference: hand the item back to the worker.
+                  item.status = AudioQueueStatus.pending;
+                  needsRewrite = true;
+                }
+                hydrated.add(item);
               } else {
                 _logger?.warning('Quarantining invalid non-map queue entry: $j');
               }
@@ -101,22 +117,42 @@ class AudioQueueService {
               _logger?.warning('Quarantining corrupt queue item: $itemErr');
             }
           }
+          _items
+            ..clear()
+            ..addAll(hydrated);
+          if (needsRewrite) {
+            await _saveToStorage();
+          }
           _notifyState();
         }
       }
     } catch (e) {
       _logger?.error('Error loading queue from storage', error: e);
     }
+    // Warm the sequence counter so the first capture of the session skips the database.
+    await _refreshSequenceHighWater(DateTime.now());
   }
 
-  Future<void> _saveToStorage() async {
-    try {
-      final file = await _resolveStorageFile();
-      final jsonList = _items.map((i) => i.toJson()).toList();
-      await file.writeAsString(jsonEncode(jsonList), flush: true);
-    } catch (e) {
-      _logger?.error('Error saving queue to storage', error: e);
-    }
+  /// Hydrates the queue from disk and drains whatever a previous session left unfinished.
+  Future<void> resumePendingWork() async {
+    await loadFromStorage();
+    await processPending();
+  }
+
+  /// Persists a snapshot of the queue. Writes are serialized and atomic so a
+  /// process kill can never leave a truncated or interleaved queue file.
+  Future<void> _saveToStorage() {
+    final snapshot = jsonEncode(_items.map((i) => i.toJson()).toList());
+    return _saveChain = _saveChain.then((_) async {
+      try {
+        final file = await _resolveStorageFile();
+        final tmp = File('${file.path}.tmp');
+        await tmp.writeAsString(snapshot, flush: true);
+        await tmp.rename(file.path);
+      } catch (e) {
+        _logger?.error('Error saving queue to storage', error: e);
+      }
+    });
   }
 
   void _notifyState() {
@@ -124,31 +160,42 @@ class AudioQueueService {
     _onItemsChanged?.call(List.unmodifiable(_items));
   }
 
-  Future<AudioQueueItem> enqueue(String audioFilePath, {bool autoProcess = true}) async {
-    final now = DateTime.now();
-    int nextSeq = 1;
+  static int _dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
+
+  Future<void> _refreshSequenceHighWater(DateTime now) async {
+    final key = _dayKey(now);
+    if (_sequenceDayKey == key) return;
+    int highWater = 0;
     try {
-      final existingNotes = await _notesRepo.getAllNotes();
-      for (final n in existingNotes) {
-        final d = n.createdAt;
-        if (d != null && d.year == now.year && d.month == now.month && d.day == now.day) {
-          if (n.dailySequenceNumber != null && n.dailySequenceNumber! >= nextSeq) {
-            nextSeq = n.dailySequenceNumber! + 1;
-          }
-        }
-      }
-      for (final item in _items) {
-        final d = item.recordedAt;
-        if (d.year == now.year && d.month == now.month && d.day == now.day) {
-          if (item.sequenceNumber != null && item.sequenceNumber! >= nextSeq) {
-            nextSeq = item.sequenceNumber! + 1;
-          }
-        }
-      }
+      highWater = await _notesRepo.maxDailySequenceFor(now);
     } catch (_) {}
+    _sequenceDayKey = key;
+    _sequenceHighWater = highWater;
+  }
+
+  /// Next daily sequence number (FR9.4). Numbers are never reissued within a
+  /// day, so deleting a thought leaves a gap instead of renumbering (FR9.5).
+  Future<int> _nextSequenceNumber(DateTime now) async {
+    await _refreshSequenceHighWater(now);
+    final key = _dayKey(now);
+    for (final item in _items) {
+      final seq = item.sequenceNumber;
+      if (seq != null && seq > _sequenceHighWater && _dayKey(item.recordedAt) == key) {
+        _sequenceHighWater = seq;
+      }
+    }
+    return ++_sequenceHighWater;
+  }
+
+  Future<AudioQueueItem> enqueue(String audioFilePath, {bool autoProcess = true}) async {
+    // Hydration replaces the in-memory list, so it must settle before a new item joins it.
+    await loadFromStorage();
+
+    final now = DateTime.now();
+    final nextSeq = await _nextSequenceNumber(now);
 
     final item = AudioQueueItem(
-      id: now.millisecondsSinceEpoch.toString(),
+      id: now.microsecondsSinceEpoch.toString(),
       audioFilePath: audioFilePath,
       recordedAt: now,
       status: AudioQueueStatus.pending,
@@ -156,8 +203,9 @@ class AudioQueueService {
     );
 
     _items.add(item);
-    await _saveToStorage();
+    // Surface the card before touching the disk so the UI never waits on I/O.
     _notifyState();
+    await _saveToStorage();
     _logger?.info('[AudioQueue] Enqueued new thought: ${item.id} with sequence #$nextSeq (Total pending: $pendingCount)');
 
     if (autoProcess) {
@@ -235,66 +283,75 @@ class AudioQueueService {
     }
   }
 
+  /// True while [item] is still queued (the user may delete a thought mid-inference).
+  bool _isQueued(AudioQueueItem item) => _items.contains(item);
+
   Future<void> _processSingleItem(AudioQueueItem item) async {
     try {
-      // Step 1: Ensure models are loaded into memory via ModelLifecycleManager
+      // The lifecycle manager keeps both models resident for the whole item and
+      // restarts the inactivity eviction countdown when it finishes, pass or fail.
       _logger?.info('[AudioQueue] Ensuring AI models are loaded in memory for item ${item.id}...');
-      await _modelLifecycle.ensureModelsLoaded(reason: 'Queue worker item ${item.id}');
-
-      // Step 2: Transcribe
-      item.status = AudioQueueStatus.transcribing;
-      _notifyState();
-      await _saveToStorage();
-      _logger?.info('[AudioQueue] Transcribing item: ${item.id} (${item.audioFilePath})');
-
-      final rawTranscription = await _sttService.transcribe(item.audioFilePath);
-      item.rawTranscript = rawTranscription;
-
-      if (rawTranscription.trim().isEmpty) {
-        _logger?.warning('[AudioQueue] Empty transcript for item ${item.id}');
-        item.status = AudioQueueStatus.failed;
-        item.errorMessage = 'No speech detected in audio recording.';
-        await _saveToStorage();
-        _notifyState();
-        return;
-      }
-
-      // Step 3: Categorize with LLM
-      item.status = AudioQueueStatus.categorizing;
-      _notifyState();
-      await _saveToStorage();
-      _logger?.info('[AudioQueue] Categorizing item: ${item.id} with LLM');
-
-      final llmResponse = await _llmService.processText(rawTranscription);
-      item.folder = llmResponse.folder;
-      item.correctedText = llmResponse.correctedText;
-
-      // Step 4: Save to Isar Database
-      final note = Note()
-        ..rawText = rawTranscription
-        ..correctedText = llmResponse.correctedText
-        ..folder = llmResponse.folder
-        ..createdAt = item.recordedAt
-        ..originalAudioPath = item.audioFilePath
-        ..dailySequenceNumber = item.sequenceNumber;
-
-      await _notesRepo.saveNote(note);
-      item.status = AudioQueueStatus.completed;
-      _logger?.info('[AudioQueue] Completed processing note ${item.id} into folder: ${llmResponse.folder}');
-
-      await _saveToStorage();
-      _notifyState();
-      _onNoteSaved?.call();
-
-      // Reset inactivity eviction countdown
-      _modelLifecycle.touch(reason: 'Finished processing queued item ${item.id}');
+      await _modelLifecycle.runWithModels(
+        () => _transcribeAndSave(item),
+        reason: 'Queue worker item ${item.id}',
+      );
     } catch (e, stack) {
       _logger?.error('[AudioQueue] Failed to process item ${item.id}', error: e, stackTrace: stack);
+      if (!_isQueued(item)) return;
       item.status = AudioQueueStatus.failed;
       item.errorMessage = e.toString();
       await _saveToStorage();
       _notifyState();
     }
+  }
+
+  Future<void> _transcribeAndSave(AudioQueueItem item) async {
+    // Step 1: Transcribe
+    item.status = AudioQueueStatus.transcribing;
+    _notifyState();
+    await _saveToStorage();
+    _logger?.info('[AudioQueue] Transcribing item: ${item.id} (${item.audioFilePath})');
+
+    final rawTranscription = await _sttService.transcribe(item.audioFilePath);
+    if (!_isQueued(item)) return;
+    item.rawTranscript = rawTranscription;
+
+    if (rawTranscription.trim().isEmpty) {
+      _logger?.warning('[AudioQueue] Empty transcript for item ${item.id}');
+      item.status = AudioQueueStatus.failed;
+      item.errorMessage = 'No speech detected in audio recording.';
+      await _saveToStorage();
+      _notifyState();
+      return;
+    }
+
+    // Step 2: Categorize with LLM
+    item.status = AudioQueueStatus.categorizing;
+    _notifyState();
+    await _saveToStorage();
+    _logger?.info('[AudioQueue] Categorizing item: ${item.id} with LLM');
+
+    final llmResponse = await _llmService.processText(rawTranscription);
+    if (!_isQueued(item)) return;
+    item.folder = llmResponse.folder;
+    item.correctedText = llmResponse.correctedText;
+
+    // Step 3: Save to Isar Database
+    final note = Note()
+      ..rawText = rawTranscription
+      ..correctedText = llmResponse.correctedText
+      ..folder = llmResponse.folder
+      ..createdAt = item.recordedAt
+      ..originalAudioPath = item.audioFilePath
+      ..dailySequenceNumber = item.sequenceNumber;
+
+    await _notesRepo.saveNote(note);
+    item.status = AudioQueueStatus.completed;
+    _logger?.info('[AudioQueue] Completed processing note ${item.id} into folder: ${llmResponse.folder}');
+
+    await _saveToStorage();
+    _notifyState();
+    _onNoteSaved?.call();
   }
 
   void dispose() {}

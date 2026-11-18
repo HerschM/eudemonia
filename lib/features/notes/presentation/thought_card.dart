@@ -6,7 +6,6 @@ class ThoughtCard extends StatefulWidget {
   final bool isPlaying;
   final VoidCallback? onPlayAudio;
   final ValueChanged<String>? onEdit;
-  final ValueChanged<String>? onCategoryChanged;
   final VoidCallback? onRetry;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
@@ -15,13 +14,15 @@ class ThoughtCard extends StatefulWidget {
   final bool isSelected;
   final bool isSelectionMode;
 
+  /// Identifier of the synthesis session that consumed this thought (e.g. `#S-02`).
+  final String? synthesizedSessionLabel;
+
   const ThoughtCard({
     super.key,
     required this.note,
     this.isPlaying = false,
     this.onPlayAudio,
     this.onEdit,
-    this.onCategoryChanged,
     this.onRetry,
     this.onTap,
     this.onLongPress,
@@ -29,6 +30,7 @@ class ThoughtCard extends StatefulWidget {
     this.sequenceNumber,
     this.isSelected = false,
     this.isSelectionMode = false,
+    this.synthesizedSessionLabel,
   });
 
   @override
@@ -40,13 +42,9 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
   late Animation<double> _shimmerAnimation;
   bool _isEditing = false;
   late TextEditingController _textController;
-  String? _selectedFolder;
   String? _editedText;
 
-  String get _currentFolder => _selectedFolder ?? widget.note.folder;
   String get _currentText => _editedText ?? widget.note.correctedText;
-
-  static const List<String> availableFolders = ['Work', 'Ideas', 'Journal', 'Todos', 'Uncategorized'];
 
   @override
   void initState() {
@@ -75,9 +73,6 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     if (oldWidget.note.correctedText != widget.note.correctedText && !_isEditing) {
       _editedText = null;
       _textController.text = widget.note.correctedText;
-    }
-    if (oldWidget.note.folder != widget.note.folder) {
-      _selectedFolder = null;
     }
   }
 
@@ -136,13 +131,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
-          onTap: () {
-            if (widget.isSelectionMode) {
-              widget.onTap?.call();
-            } else {
-              widget.onTap?.call();
-            }
-          },
+          onTap: widget.onTap,
           onLongPress: widget.onLongPress,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -282,16 +271,18 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     }
   }
 
+  /// Footer trailing element. Capture cards never show a folder: thoughts are
+  /// only assigned to folders once they are synthesized into a session.
   Widget _buildFooterActions(BuildContext context) {
     final note = widget.note;
     switch (note.state) {
       case ThoughtState.enqueued:
-        return _buildStateOrCategoryBadge(context);
+        return _buildStateBadge('⏳ Enqueued', const Color(0xFFF59E0B), const Color(0xFFB45309));
       case ThoughtState.failed:
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildStateOrCategoryBadge(context),
+            _buildStateBadge('⚠️ Failed', const Color(0xFFEF4444), const Color(0xFFB91C1C)),
             const SizedBox(width: 6),
             ElevatedButton.icon(
               key: const Key('retry_button'),
@@ -312,128 +303,48 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
           ],
         );
       case ThoughtState.synthesized:
-        return _buildStateOrCategoryBadge(context);
+        final session = widget.synthesizedSessionLabel;
+        return _buildStateBadge(
+          session != null ? '🧩 Synthesized in $session' : '🧩 Synthesized',
+          const Color(0xFF10B981),
+          const Color(0xFF047857),
+          key: const Key('synthesized_badge'),
+        );
       case ThoughtState.processed:
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStateOrCategoryBadge(context),
-            if (!_isEditing) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                key: const Key('edit_text_button'),
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                padding: const EdgeInsets.only(left: 4),
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  setState(() {
-                    _isEditing = true;
-                  });
-                },
-                tooltip: 'Edit text',
-              ),
-            ],
-          ],
+        if (_isEditing) return const SizedBox.shrink();
+        return TextButton.icon(
+          key: const Key('edit_text_button'),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: const Icon(Icons.edit_outlined, size: 15),
+          label: const Text('Edit', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          onPressed: () {
+            setState(() {
+              _isEditing = true;
+            });
+          },
         );
     }
   }
 
-  Widget _buildStateOrCategoryBadge(BuildContext context) {
-    final note = widget.note;
-    switch (note.state) {
-      case ThoughtState.enqueued:
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Text(
-            '⏳ Enqueued',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
-          ),
-        );
-      case ThoughtState.failed:
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Text(
-            '⚠️ Failed',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB91C1C)),
-          ),
-        );
-      case ThoughtState.synthesized:
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Text(
-            '🧩 Clubbed Note',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
-          ),
-        );
-      case ThoughtState.processed:
-        return PopupMenuButton<String>(
-          key: const Key('category_dropdown_button'),
-          tooltip: 'Change Category',
-          initialValue: _currentFolder,
-          onSelected: (newFolder) {
-            setState(() {
-              _selectedFolder = newFolder;
-            });
-            widget.onCategoryChanged?.call(newFolder);
-          },
-          itemBuilder: (context) {
-            return availableFolders.map((folder) {
-              return PopupMenuItem<String>(
-                value: folder,
-                child: Row(
-                  children: [
-                    Icon(_getFolderIcon(folder), size: 18),
-                    const SizedBox(width: 8),
-                    Text(folder),
-                  ],
-                ),
-              );
-            }).toList();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _currentFolder,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.arrow_drop_down,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ],
-            ),
-          ),
-        );
-    }
+  Widget _buildStateBadge(String label, Color tint, Color textColor, {Key? key}) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColor),
+      ),
+    );
   }
 
   Widget _buildBodyContent(BuildContext context) {
@@ -532,21 +443,6 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
             height: 1.4,
           ),
     );
-  }
-
-  IconData _getFolderIcon(String folder) {
-    switch (folder.toLowerCase()) {
-      case 'ideas':
-        return Icons.lightbulb_outline;
-      case 'work':
-        return Icons.work_outline;
-      case 'journal':
-        return Icons.book_outlined;
-      case 'todos':
-        return Icons.check_circle_outline;
-      default:
-        return Icons.folder_outlined;
-    }
   }
 
   String _formatDate(DateTime? date) {

@@ -3,14 +3,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
-import 'package:eudemonia/features/home/home_screen.dart';
+import 'package:eudemonia/features/settings/system_telemetry_service.dart';
+import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
 import 'package:eudemonia/features/insights/presentation/insights_placeholder_screen.dart';
 import 'package:eudemonia/features/action/presentation/action_placeholder_screen.dart';
 import 'package:eudemonia/features/home/presentation/pipeline_hud_modal.dart';
+
+/// Live memory line for the Pipeline HUD, built from an OS reading taken when the HUD opens.
+String describePipelineMemory({required bool modelsLoaded, SystemTelemetry? telemetry}) {
+  final parts = <String>[modelsLoaded ? 'AI models loaded' : 'AI models unloaded'];
+  final appMemory = telemetry?.appMemoryLabel;
+  final deviceMemory = telemetry?.deviceMemoryLabel;
+  if (appMemory != null) parts.add('App memory $appMemory');
+  if (deviceMemory != null) parts.add('Device $deviceMemory');
+  if (appMemory == null && deviceMemory == null) parts.add('live memory reading unavailable');
+  return parts.join(' • ');
+}
 
 class MainNavigationShell extends ConsumerStatefulWidget {
   final int initialIndex;
@@ -60,8 +73,12 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     required int queueCount,
     required int readyToClusterCount,
     required VoidCallback onSynthesizeNow,
-    required String memoryTelemetry,
+    required bool modelsLoaded,
   }) {
+    final memoryTelemetry = ref
+        .read(systemTelemetryServiceProvider)
+        .read()
+        .then((telemetry) => describePipelineMemory(modelsLoaded: modelsLoaded, telemetry: telemetry));
     PipelineHudModal.show(
       context,
       captureTranscribingCount: queueCount,
@@ -97,24 +114,23 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     final notesAsync = ref.watch(recentNotesProvider);
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final synthesisClusters = ref.watch(synthesisRepositoryProvider);
-    final modelLifecycle = ref.watch(modelLifecycleManagerProvider);
+    final modelState = ref.watch(modelLifecycleStateProvider);
 
     final readyToClusterCount = rawNotesCountAsync.value ?? 0;
     final totalPipelinePending = pendingQueueCount + readyToClusterCount;
     final hasActivePipeline = totalPipelinePending > 0;
 
     // Unread count for Capture
-    final unreadCaptureNotesCount = notesAsync.value?.where((n) => !n.isRead).length ?? 0;
+    final unreadCaptureNotesCount = notesAsync.value
+            ?.where((n) => !n.isRead && n.state == ThoughtState.processed)
+            .length ??
+        0;
     final totalCaptureUnread = unreadCaptureNotesCount + pendingQueueCount;
 
     // Unread count for Synthesis
     final totalSynthesisUnread = synthesisClusters.where((c) => c.isUnread).length;
 
-    // Memory status
-    final isReady = modelLifecycle.areModelsLoaded;
-    final memTelemetry = isReady
-        ? 'Ready: ~1.58 GB RAM • 3m Inactivity Eviction Active'
-        : 'Baseline: <60 MB RAM • Models Unloaded';
+    final modelsLoaded = modelState == ModelLifecycleState.ready;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -157,7 +173,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
                       ref.invalidate(rawNotesReadyToClusterCountProvider);
                       ref.invalidate(recentNotesProvider);
                     },
-                    memoryTelemetry: memTelemetry,
+                    modelsLoaded: modelsLoaded,
                   ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -280,7 +296,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
       body: IndexedStack(
         index: _currentIndex,
         children: const [
-          HomeScreen(showAppBar: false),
+          CaptureScreen(),
           SynthesisScreen(),
           InsightsPlaceholderScreen(),
           ActionPlaceholderScreen(),

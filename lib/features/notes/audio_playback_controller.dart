@@ -58,8 +58,12 @@ class AudioPlaybackController extends Notifier<AudioPlaybackState> {
 
     try {
       await _channel.invokeMethod('playAudio', {'path': path});
-    } catch (_) {
+    } on MissingPluginException {
       // Gracefully continue in mock/test environments
+    } catch (_) {
+      // Native playback failed (e.g. recording file missing): never show a phantom "playing" state.
+      state = const AudioPlaybackState();
+      return;
     }
 
     state = AudioPlaybackState(currentAudioPath: path, isPlaying: true);

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_recording_service.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 
@@ -17,16 +18,14 @@ class BatchPipelineService {
     this._queueService,
   );
 
-  Future<void> startRecording() async {
-    await _audioService.startRecording();
-  }
+  /// Returns `false` when microphone capture could not start.
+  Future<bool> startRecording() => _audioService.startRecording();
 
-  Future<void> stopRecordingAndProcess() async {
+  /// Returns the queued capture, or `null` when the recording produced no audio.
+  Future<AudioQueueItem?> stopRecordingAndProcess() async {
     final audioPath = await _audioService.stopRecording();
-
-    if (audioPath != null) {
-      await _queueService.enqueue(audioPath);
-    }
+    if (audioPath == null) return null;
+    return _queueService.enqueue(audioPath);
   }
 }
 

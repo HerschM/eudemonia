@@ -2,7 +2,7 @@
 
 > **Purpose**: This document tracks active and pending engineering tasks bridging [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) (the *What* & *Why*) and [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) (the *How* & *Architecture*).
 >
-> **Archive Reference**: Completed historical tasks (TASK-001 through TASK-036, TASK-047) are archived in [TASKS_archive.md](./TASKS_archive.md).
+> **Archive Reference**: Completed historical tasks (TASK-001 through TASK-036, TASK-047) are archived in [TASKS_archive.md](./TASKS_archive.md). Milestones 11 and 12 (TASK-052 through TASK-059) are complete and await archiving once their on-device checks are done.
 >
 > **Context Optimization Rule**:
 > - Never load the entire tasks file if you only need the active milestone.
@@ -134,6 +134,195 @@
         3. Source card is removed from feed and target card transitions to Yellow re-processing.
     - **Integration / Command Tests**:
       - `~/flutter/bin/flutter test test/features/synthesis/synthesis_merge_test.dart`
+
+---
+
+## Milestone 11: Capture Pipeline Hardening — Queue Recovery, Off-Thread STT, Model Eviction Safety & Native State Sync (Completed)
+
+- [x] **TASK-052: Off-Thread Speech Recognition via Dedicated STT Worker Isolate**
+  - **Area**: `lib/features/ai_processing/stt_service.dart`, `lib/features/ai_processing/stt_engine.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr2-non-blocking-audio-capture`](./PRODUCT_SPEC.md#fr2-non-blocking-audio-capture) (`FR2.3: Audio capture must never await model loading`) and [`PRODUCT_SPEC.md#fr4-on-device-speech-recognition-stt`](./PRODUCT_SPEC.md#fr4-on-device-speech-recognition-stt)
+  - **Details**: Run Sherpa-ONNX model loading and decoding inside a long-lived worker isolate so the UI isolate that services capture triggers is never blocked by inference. Preserve resampling, tail padding, and native stream cleanup.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/stt_service_isolate_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/stt_service_isolate_test.dart)
+      - Cases:
+        1. Transcribe before initialize throws; initialize then transcribe returns engine text.
+        2. Load failure propagates and leaves the service uninitialized; a later load succeeds.
+        3. Engine failure fails only that request.
+        4. Decoding does not block the calling isolate.
+        5. Dispose during an in-flight transcription lets it finish; reinitialize works.
+        6. `resampleLinear` passthrough and 48kHz → 16kHz reduction.
+    - **Widget Tests**:
+      - N/A — Non-UI component.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/stt_service_isolate_test.dart`
+      - **Pending on-device check**: transcribe a real recording on hardware (no device was attached during implementation).
+
+- [x] **TASK-053: Audio Queue Cold-Start Recovery, Atomic Persistence & Stable Daily Sequence Numbers**
+  - **Area**: `lib/features/ai_processing/audio_queue_service.dart`, `lib/features/notes/data/notes_repository.dart`, `lib/main.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue`](./PRODUCT_SPEC.md#fr3-persistent-fifo-audio-queue) (`FR3.1, FR3.2, FR3.4`), [`PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers`](./PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers) (`FR13.3`), and [`PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters) (`FR9.4, FR9.5`)
+  - **Details**: Reset interrupted items to `pending` and prune `completed` items on hydration; resume the queue on app launch; make `enqueue()` wait for hydration; serialize and atomically write `queue.json`; issue daily sequence numbers from an in-memory high-water mark without scanning the database on the capture path; never save a note for a thought deleted mid-processing; delete the raw audio file when a note is deleted.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/queue_resilience_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/queue_resilience_test.dart)
+      - Cases:
+        1. Items interrupted mid-inference are handed back to the worker as pending.
+        2. Completed items are pruned on hydration.
+        3. A capture enqueued before hydration settles does not drop persisted items.
+        4. `resumePendingWork` hydrates and drains the leftover queue.
+        5. Rapid successive mutations always leave a parseable queue file.
+        6. Sequence continues from the highest number persisted today; deleting the newest thought leaves a gap.
+        7. A thought deleted mid-inference is not resurrected as a note.
+        8. A failing item does not block the items behind it.
+      - File: [`test/features/notes/notes_repository_cleanup_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/notes/notes_repository_cleanup_test.dart)
+      - Cases:
+        1. `deleteNote` removes the raw audio recording; succeeds when the file is already gone.
+        2. `maxDailySequenceFor` only considers notes from the given calendar day.
+    - **Widget Tests**:
+      - N/A — Non-UI component.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/queue_resilience_test.dart test/features/notes/notes_repository_cleanup_test.dart`
+
+- [x] **TASK-054: Model Lifecycle Eviction Safety, Partial-Load Cleanup & Reactive Memory State**
+  - **Area**: `lib/features/ai_processing/model_lifecycle_manager.dart`, `lib/features/settings/settings_screen.dart`, `lib/features/home/presentation/main_navigation_shell.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management`](./PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management) (`FR6.1–FR6.4`)
+  - **Details**: Restart the inactivity countdown after failed items; dispose both models when a load fails part-way; share one load future across callers; defer eviction while inference is in flight; expose lifecycle state through a synchronous `NotifierProvider` for the HUD and Settings.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/ai_processing/model_lifecycle_manager_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/model_lifecycle_manager_test.dart)
+      - Cases:
+        1. A failed LLM load releases the already-loaded STT model.
+        2. Every concurrent caller observes a load failure and a retry can succeed.
+        3. Eviction requested during inference is deferred until the task completes.
+        4. Eviction requested while loading waits for the load, then unloads.
+        5. `runWithModels` restarts the inactivity countdown even when the task throws.
+        6. State transitions are reported to the `onStateChanged` listener.
+      - File: [`test/features/ai_processing/queue_resilience_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/ai_processing/queue_resilience_test.dart)
+      - Cases:
+        1. Models are still evicted after the TTL when every item fails.
+    - **Widget Tests**:
+      - File: [`test/features/settings/production_settings_screen_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/production_settings_screen_test.dart)
+      - Cases:
+        1. Evict button reports reclaimed memory (existing case, unchanged).
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/ai_processing/model_lifecycle_manager_test.dart`
+
+- [x] **TASK-055: Capture Controller Extraction & Truthful Recording State with Native Sync**
+  - **Area**: `lib/features/capture/capture_controller.dart`, `lib/features/home/home_screen.dart`, `lib/features/ai_processing/audio_recording_service.dart`, `android/app/src/main/kotlin/com/eudemonia/eudemonia/RecordingStateTracker.kt`, `ButtonInterceptorService.kt`, `MainActivity.kt`, `EudemoniaForegroundService.kt`
+  - **Spec**: [`PRODUCT_SPEC.md#fr1-hardware-key-trigger--volume-safety`](./PRODUCT_SPEC.md#fr1-hardware-key-trigger--volume-safety) (`FR1.3`), [`PRODUCT_SPEC.md#fr2-non-blocking-audio-capture`](./PRODUCT_SPEC.md#fr2-non-blocking-audio-capture) (`FR2.1, FR2.2`), and [`PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger`](./PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger) (`FR10.2, FR10.3`)
+  - **Details**: Move hardware trigger handling out of `HomeScreen` into a Riverpod `CaptureController`; revert recording state when the microphone fails to start; report the authoritative state to native so the interceptor's start/stop haptic and the notification stay correct; make notification actions idempotent via `desiredRecording`.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/capture/capture_controller_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/capture/capture_controller_test.dart)
+      - Cases:
+        1. Trigger starts recording; second trigger stops and enqueues.
+        2. Recording state reverts when the microphone could not start.
+        3. Native side is told the authoritative state after every trigger, including failed starts.
+        4. Explicit stop while idle and explicit start while recording are no-ops.
+        5. A bounce within the 500ms cooldown is dropped.
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/RecordingStateTrackerTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/RecordingStateTrackerTest.kt)
+      - Cases:
+        1. Triggers alternate between start and stop.
+        2. A dropped trigger is corrected by the authoritative state.
+        3. A recording started elsewhere makes the next trigger a stop.
+      - File: [`android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt`](file:///Users/harshmavani/Documents/Eudemonia/android/app/src/test/kotlin/com/eudemonia/eudemonia/EudemoniaForegroundServiceTest.kt)
+      - Cases:
+        1. `deliverTrigger` forwards `desiredRecording` for explicit notification actions.
+    - **Widget Tests**:
+      - N/A — Controller and native components; existing `HomeScreen` widget suites remain green.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/capture/capture_controller_test.dart`
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+      - **Pending on-device check**: cross-process `RECORDING_STATE_CHANGED` delivery and haptic patterns.
+
+- [x] **TASK-056: Foreground Service Microphone Permission Gate & Offline-Only Release Manifest**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/MainActivity.kt`, `EudemoniaForegroundService.kt`, `android/app/src/main/AndroidManifest.xml`
+  - **Spec**: [`PRODUCT_SPEC.md#fr8-background-reliability--permissions`](./PRODUCT_SPEC.md#fr8-background-reliability--permissions) (`FR8.1`) and [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`Privacy: 0 bytes network transmission`, `App Crash-Free Rate`)
+  - **Details**: Request `RECORD_AUDIO` (and `POST_NOTIFICATIONS` on API 33+) while the activity is visible and start the `microphone` foreground service only once the microphone is granted; report the service as running only after `startForeground()` succeeds; remove the `INTERNET` permission from the release manifest.
+  - **Verification**:
+    - **Unit Tests**:
+      - N/A — Android framework permission and service-start paths are not reachable from JVM unit tests (no Robolectric in the project); existing service suites remain green.
+    - **Widget Tests**:
+      - N/A — Native Android component.
+    - **Integration / Command Tests**:
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+      - `~/flutter/bin/flutter build apk --debug`
+      - **Pending on-device check**: fresh-install launch on Android 14+ (permission prompt, then service start).
+
+---
+
+## Milestone 12: Durable Synthesis Sessions, Spec-Conformant Capture Screen & Live System Telemetry (Completed)
+
+- [x] **TASK-057: Persist Synthesis Sessions with Write-Through Storage & Orphaned Thought Repair**
+  - **Area**: `lib/features/synthesis/data/synthesis_session_record.dart`, `lib/features/synthesis/data/synthesis_session_store.dart`, `lib/features/synthesis/data/synthesis_repository.dart`, `lib/core/database/app_database.dart`, `lib/main.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr7-local-persistence`](./PRODUCT_SPEC.md#fr7-local-persistence) (`FR7.1: Raw and synthesized thoughts must be saved to an embedded local database`) and [`PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering`](./PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering) (`FR11.4, FR11.10`)
+  - **Details**: Store synthesis sessions in a new Isar collection (schema change approved by the user), write every repository mutation through to it, hydrate on launch, share one Isar instance across repositories, and repair thoughts orphaned by the previous in-memory implementation.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/synthesis/synthesis_persistence_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/synthesis/synthesis_persistence_test.dart)
+      - Cases:
+        1. Sessions created in one launch are restored in the next, with their origin thoughts.
+        2. Read, folder, style, merge and delete edits are durable.
+        3. A session created after a restart continues the identifier sequence.
+        4. Transient view state (`isExpanded`) is not persisted.
+        5. Orphaned synthesized thoughts return to the clustering buffer; claimed thoughts stay put.
+        6. `SynthesisSessionRecord` round-trips every durable field.
+    - **Widget Tests**:
+      - File: [`test/features/synthesis/synthesis_screen_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/synthesis/synthesis_screen_test.dart)
+      - Cases:
+        1. Existing synthesis screen suites remain green on the persisted repository.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/synthesis/`
+      - **Pending on-device check**: the Isar-backed path (host tests exercise the in-memory store, which holds the same records).
+
+- [x] **TASK-058: Capture Screen per FR9 — Dual Dropdown Filters, Floating Capture Trigger & No Folder Categorization**
+  - **Area**: `lib/features/capture/presentation/capture_screen.dart`, `lib/features/capture/presentation/floating_capture_capsule.dart`, `lib/features/notes/presentation/thought_card.dart`, `lib/features/home/presentation/main_navigation_shell.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters`](./PRODUCT_SPEC.md#fr9-capture-screen-presentation-status-colors--dual-filters) (`FR9.1–FR9.8`) and [`PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering`](./PRODUCT_SPEC.md#fr11-synthesis-predefined-folders--session-clustering) (`FR11.2: The horizontal folder carousel is removed`)
+  - **Details**: Promote the approved capture preview into production: replace `HomeScreen`/`NoteListScreen` with `CaptureScreen`, remove folder UI from capture cards, add triage and status dropdowns, per-day headers, the clickable floating capture capsule with waveform and elapsed timer, and `Captured a new note [#0X]` feedback. Capture-time folder inference stays as hidden metadata until TASK-049 (documented deviation from FR5.2).
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/capture/capture_controller_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/capture/capture_controller_test.dart)
+      - Cases:
+        1. `handleTrigger` returns the queued capture only when it finishes a recording.
+    - **Widget Tests**:
+      - File: [`test/features/capture/capture_screen_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/capture/capture_screen_test.dart)
+      - Cases:
+        1. Renders dual dropdown filters and floating capsule without the folder carousel, on 360dp with 0 overflows.
+        2. Groups thoughts under a day header and shows no folder on any card.
+        3. Ambient permission banner appears while permissions are missing.
+        4. Failed item renders in-card with Retry and is isolated by the Failed status filter.
+        5. Synthesized filter shows only clubbed thoughts, labelled with their session.
+        6. Filters that match nothing explain themselves.
+        7. Capsule tap starts listening with an elapsed timer; tapping again captures with clean SnackBar feedback.
+      - File: [`test/features/home/pipeline_pill_cold_start_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/home/pipeline_pill_cold_start_test.dart)
+      - Cases:
+        1. Pipeline pill and Capture badge show hydrated pending items immediately on launch (supersedes the TASK-024/TASK-025/TASK-031 AppBar pill and in-body banner cases).
+      - Files: `test/features/home/thought_card_interaction_test.dart`, `thought_card_states_test.dart`, `unread_triage_test.dart`, `feed_immediate_hydration_and_playback_test.dart`, `test/features/notes/note_sequence_and_overflow_test.dart` (migrated from chips and category picker to the FR9 contracts).
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/capture/ test/features/home/`
+
+- [x] **TASK-059: Live Device Thermal & Memory Telemetry in Settings and Pipeline HUD**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/SystemTelemetryCollector.kt`, `MainActivity.kt`, `lib/features/settings/system_telemetry_service.dart`, `lib/features/settings/settings_screen.dart`, `lib/features/home/presentation/pipeline_hud_modal.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#fr12-thermal--resource-aware-adaptive-queue-gating`](./PRODUCT_SPEC.md#fr12-thermal--resource-aware-adaptive-queue-gating) (`FR12.1: query Android native thermal status`) and [`PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers`](./PRODUCT_SPEC.md#fr13-system-observability--telemetry-visualizers)
+  - **Details**: Replace hardcoded thermal headroom and RAM figures with readings from `PowerManager`, `Debug.getMemoryInfo` and `ActivityManager.MemoryInfo`; show `Unavailable` when the OS cannot provide a value. Display only — thermal gating of the queue remains TASK-038.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: [`test/features/settings/system_telemetry_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/system_telemetry_test.dart)
+      - Cases:
+        1. Maps a full OS reading and derives display values; clamps past the severe threshold.
+        2. Values the device cannot report stay unavailable.
+        3. Service reads a snapshot and returns null when the platform cannot be queried.
+    - **Widget Tests**:
+      - File: [`test/features/settings/system_telemetry_test.dart`](file:///Users/harshmavani/Documents/Eudemonia/test/features/settings/system_telemetry_test.dart)
+      - Cases:
+        1. Settings shows OS thermal headroom and memory and refreshes while open (360dp).
+        2. Settings shows `Unavailable` rather than invented figures.
+        3. Pipeline HUD opens immediately and fills in the live reading.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test test/features/settings/system_telemetry_test.dart`
+      - `cd android && ./gradlew :app:testDebugUnitTest`
+      - **Pending on-device check**: `SystemTelemetryCollector` values on real hardware (framework calls are not reachable from JVM unit tests).
 
 ---
 

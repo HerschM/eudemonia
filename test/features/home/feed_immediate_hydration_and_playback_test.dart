@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:eudemonia/features/home/home_screen.dart';
+import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/notes/presentation/thought_card.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
@@ -100,7 +100,7 @@ void main() {
             queueItemsProvider.overrideWith(() => queueNotifier),
           ],
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -148,7 +148,7 @@ void main() {
             ],
           ),
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -176,7 +176,8 @@ void main() {
       // Verify enqueued state is gone and processed card is immediately displayed
       expect(find.text('⏳ Enqueued'), findsNothing);
       expect(find.text('Schedule meeting tomorrow at 3:00 PM.'), findsOneWidget);
-      expect(find.widgetWithText(ThoughtCard, 'Work'), findsOneWidget);
+      // FR9.1: the processed card carries no folder tag
+      expect(find.widgetWithText(ThoughtCard, 'Work'), findsNothing);
       expect(find.byKey(const Key('play_audio_button')), findsOneWidget);
     });
 
@@ -217,7 +218,7 @@ void main() {
             ],
           ),
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -285,7 +286,7 @@ void main() {
             queueItemsProvider.overrideWith(() => queueNotifier),
           ],
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -300,22 +301,29 @@ void main() {
       expect(find.text('Audio level too low or background noise too loud.'), findsOneWidget);
       expect(find.byKey(const Key('retry_button')), findsOneWidget);
 
-      // Filter chips verify
-      expect(find.byKey(const Key('filter_chip_all')), findsOneWidget);
-      expect(find.byKey(const Key('filter_chip_unread')), findsOneWidget);
-      expect(find.byKey(const Key('filter_chip_failed')), findsOneWidget);
-      expect(find.text('Failed (1)'), findsOneWidget);
+      // Compact dual dropdown filters replace the legacy chip row (FR9.2)
+      expect(find.byKey(const Key('capture_triage_filter_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('capture_status_filter_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('filter_chip_failed')), findsNothing);
 
-      // Tap Failed filter chip
-      await tester.tap(find.byKey(const Key('filter_chip_failed')));
+      // Select the Failed status
+      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Failed').last);
       await tester.pumpAndSettle();
 
       // Only failed card should be visible
       expect(find.text('Audio level too low or background noise too loud.'), findsOneWidget);
       expect(find.text('Regular note.'), findsNothing);
 
-      // Tap Unread filter chip
-      await tester.tap(find.byKey(const Key('filter_chip_unread')));
+      // Back to all statuses, then triage by Unread
+      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('All Statuses').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unread').last);
       await tester.pumpAndSettle();
 
       // Regular note (unread) is shown, failed note is not shown in unread

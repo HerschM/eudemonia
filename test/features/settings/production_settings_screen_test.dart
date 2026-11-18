@@ -161,10 +161,9 @@ void main() {
         await tester.tap(evictBtn);
         await tester.pumpAndSettle();
 
-        expect(
-            find.textContaining(
-                'Memory reclaimed: ~1.58 GB RAM. Baseline: <60 MB.'),
-            findsOneWidget);
+        expect(find.text('AI models evicted from memory.'), findsOneWidget);
+        // No fabricated memory figures.
+        expect(find.textContaining('1.58 GB'), findsNothing);
       },
     );
 

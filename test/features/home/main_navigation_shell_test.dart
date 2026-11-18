@@ -45,6 +45,26 @@ void main() {
 
   group('MainNavigationShell 4-Stage UX & Pipeline HUD Tests', () {
     testWidgets(
+      'Capture badge ignores thoughts already consumed by a synthesis session',
+      (WidgetTester tester) async {
+        final notesRepo = NotesRepository();
+        await notesRepo.saveNote(Note(correctedText: 'Fresh', state: ThoughtState.processed));
+        await notesRepo.saveNote(Note(correctedText: 'Clubbed', state: ThoughtState.synthesized));
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [notesRepositoryProvider.overrideWithValue(notesRepo)],
+            child: const MaterialApp(home: MainNavigationShell()),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.text('Capture (1)'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'MainNavigationShell renders branding, HUD pill, and 4-stage tabs with zero-suppression on 360dp narrow viewport',
       (WidgetTester tester) async {
         tester.view.physicalSize = const Size(360, 800);

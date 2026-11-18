@@ -7,7 +7,8 @@ class PipelineHudModal extends StatelessWidget {
   final String insightsNextRefresh;
   final int actionPendingCount;
   final VoidCallback onSynthesizeNow;
-  final String memoryTelemetry;
+  /// Live memory line. Resolves after the sheet is already on screen so opening never waits on it.
+  final Future<String> memoryTelemetry;
 
   const PipelineHudModal({
     super.key,
@@ -16,7 +17,7 @@ class PipelineHudModal extends StatelessWidget {
     this.insightsNextRefresh = '14h',
     this.actionPendingCount = 0,
     required this.onSynthesizeNow,
-    this.memoryTelemetry = 'Ready: ~1.58 GB RAM • 3m Inactivity Eviction Active',
+    required this.memoryTelemetry,
   });
 
   static void show(
@@ -26,7 +27,7 @@ class PipelineHudModal extends StatelessWidget {
     String insightsNextRefresh = '14h',
     int actionPendingCount = 0,
     required VoidCallback onSynthesizeNow,
-    String memoryTelemetry = 'Ready: ~1.58 GB RAM • 3m Inactivity Eviction Active',
+    required Future<String> memoryTelemetry,
   }) {
     showModalBottomSheet(
       context: context,
@@ -198,12 +199,16 @@ class PipelineHudModal extends StatelessWidget {
                   const Icon(Icons.memory, size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      memoryTelemetry,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
+                    child: FutureBuilder<String>(
+                      future: memoryTelemetry,
+                      builder: (context, snapshot) => Text(
+                        snapshot.data ?? 'Reading device memory…',
+                        key: const Key('hud_memory_telemetry'),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ),
                   ),

@@ -15,7 +15,13 @@ class MainActivity: FlutterActivity() {
         const val AUDIO_CHANNEL = "com.eudemonia/audio_playback"
         var activeMethodChannel: MethodChannel? = null
         var activeAudioChannel: MethodChannel? = null
+
+        private const val CAPTURE_PERMISSIONS_REQUEST_CODE = 4201
     }
+
+    private var notificationPermissionRequested = false
+    private val telemetryCollector by lazy { SystemTelemetryCollector(applicationContext) }
+    private val telemetryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private var methodChannel: MethodChannel? = null
     private var audioChannel: MethodChannel? = null
@@ -96,15 +102,7 @@ class MainActivity: FlutterActivity() {
                     result.success(null)
                 }
                 "startForegroundService" -> {
-                    val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
-                        action = ForegroundServiceCoordinator.ACTION_START
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(serviceIntent)
-                    } else {
-                        startService(serviceIntent)
-                    }
-                    result.success(true)
+                    result.success(startCaptureServiceOrRequestPermissions())
                 }
                 "stopForegroundService" -> {
                     val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
@@ -137,33 +135,9 @@ class MainActivity: FlutterActivity() {
                     }
                     result.success(null)
                 }
-                "playHaptic" -> {
-                    val isStart = call.argument<Boolean>("isStart") ?: true
-                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
-                        vibratorManager?.defaultVibrator
-                    } else {
-                        @Suppress("DEPRECATION")
-                        getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
-                    }
-                    if (vibrator?.hasVibrator() == true) {
-                        if (isStart) {
-                            val effect = android.os.VibrationEffect.createWaveform(longArrayOf(0, 50, 100, 50), -1)
-                            vibrator.vibrate(effect)
-                        } else {
-                            val effect = android.os.VibrationEffect.createOneShot(150, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
-                            vibrator.vibrate(effect)
-                        }
-                    }
-                    result.success(null)
-                }
                 "setRecordingState" -> {
                     val isRecording = call.argument<Boolean>("isRecording") ?: false
-                    val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
-                        action = ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE
-                        putExtra("isRecording", isRecording)
-                    }
-                    startService(serviceIntent)
+                    publishRecordingState(isRecording)
                     result.success(null)
                 }
                 "playAudio", "pauseAudio", "stopAudio" -> {
@@ -179,6 +153,24 @@ class MainActivity: FlutterActivity() {
             handleAudioCall(call, result)
         }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SystemTelemetryCollector.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method == SystemTelemetryCollector.METHOD_GET_SNAPSHOT) {
+                    // Reading process memory walks /proc; keep it off the UI thread.
+                    telemetryExecutor.execute {
+                        val snapshot = try {
+                            telemetryCollector.snapshot()
+                        } catch (e: Exception) {
+                            android.util.Log.w("MainActivity", "Telemetry snapshot failed: ${e.message}")
+                            null
+                        }
+                        runOnUiThread { result.success(snapshot) }
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
+
         // Register the receiver
         val filter = IntentFilter("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -188,18 +180,108 @@ class MainActivity: FlutterActivity() {
         }
 
         // Check if activity was launched by service trigger
-        if (intent?.getBooleanExtra("autoTrigger", false) == true) {
-            val isLocked = intent.getBooleanExtra("isLocked", false)
-            methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
-        }
+        intent?.let { forwardAutoTrigger(it) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra("autoTrigger", false)) {
-            val isLocked = intent.getBooleanExtra("isLocked", false)
-            methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
+        forwardAutoTrigger(intent)
+    }
+
+    private fun forwardAutoTrigger(intent: Intent) {
+        if (!intent.getBooleanExtra("autoTrigger", false)) return
+        val args = mutableMapOf<String, Any>("isLocked" to intent.getBooleanExtra("isLocked", false))
+        if (intent.hasExtra("desiredRecording")) {
+            args["desiredRecording"] = intent.getBooleanExtra("desiredRecording", false)
+        }
+        methodChannel?.invokeMethod("onHardwareTrigger", args)
+        // Consume the trigger so an activity recreation does not replay it.
+        intent.removeExtra("autoTrigger")
+    }
+
+    private fun isGranted(permission: String): Boolean =
+        checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Starts the keep-alive service, or asks for the runtime permissions it depends on.
+     *
+     * A `microphone` foreground service may only enter the foreground once RECORD_AUDIO is
+     * granted (Android 14+ throws otherwise, and a service that never reaches the foreground
+     * crashes the app). The prompt is shown here, while the activity is visible, because it
+     * cannot be shown later from a pocket or lock screen trigger.
+     */
+    private fun startCaptureServiceOrRequestPermissions(): Boolean {
+        val micGranted = isGranted(android.Manifest.permission.RECORD_AUDIO)
+        val missing = mutableListOf<String>()
+        if (!micGranted) {
+            missing.add(android.Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !isGranted(android.Manifest.permission.POST_NOTIFICATIONS) &&
+            (!micGranted || !notificationPermissionRequested)
+        ) {
+            // Without it the lock screen capture notification is silently hidden.
+            notificationPermissionRequested = true
+            missing.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), CAPTURE_PERMISSIONS_REQUEST_CODE)
+        }
+        return micGranted && startCaptureService()
+    }
+
+    private fun startCaptureService(): Boolean {
+        val serviceIntent = Intent(this, EudemoniaForegroundService::class.java).apply {
+            action = ForegroundServiceCoordinator.ACTION_START
+        }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Unable to start keep-alive service", e)
+            false
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CAPTURE_PERMISSIONS_REQUEST_CODE &&
+            isGranted(android.Manifest.permission.RECORD_AUDIO)
+        ) {
+            startCaptureService()
+        }
+    }
+
+    /**
+     * Mirrors Flutter's recording state into the lock screen notification and into the
+     * isolated interceptor process, which picks the start/stop haptic pattern from it.
+     */
+    private fun publishRecordingState(isRecording: Boolean) {
+        sendBroadcast(
+            Intent(RecordingStateTracker.ACTION_RECORDING_STATE_CHANGED).apply {
+                setPackage(packageName)
+                putExtra(RecordingStateTracker.EXTRA_IS_RECORDING, isRecording)
+            }
+        )
+        if (!EudemoniaForegroundService.isRunning) return
+        try {
+            startService(
+                Intent(this, EudemoniaForegroundService::class.java).apply {
+                    action = ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE
+                    putExtra("isRecording", isRecording)
+                }
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Unable to update capture notification: ${e.message}")
         }
     }
 
@@ -290,6 +372,7 @@ class MainActivity: FlutterActivity() {
         super.onDestroy()
         activeMethodChannel = null
         activeAudioChannel = null
+        telemetryExecutor.shutdown()
         try {
             mediaPlayer?.release()
             mediaPlayer = null

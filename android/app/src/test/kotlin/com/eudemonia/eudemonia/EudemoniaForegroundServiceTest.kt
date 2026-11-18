@@ -222,4 +222,16 @@ class EudemoniaForegroundServiceTest {
         assertEquals(true, updatedState)
         assertTrue(testCoordinator.isRecording)
     }
+
+    @Test
+    fun testDeliverTriggerForwardsDesiredRecordingForExplicitNotificationActions() {
+        val mockChannel = mock(MethodChannel::class.java)
+
+        service.deliverTrigger(isLocked = true, channel = mockChannel, desiredRecording = false)
+
+        verify(mockChannel).invokeMethod(
+            "onHardwareTrigger",
+            mapOf("isLocked" to true, "desiredRecording" to false)
+        )
+    }
 }

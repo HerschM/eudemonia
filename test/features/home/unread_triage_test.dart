@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:eudemonia/features/home/home_screen.dart';
+import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
@@ -86,7 +86,7 @@ void main() {
             failedQueueCountProvider.overrideWith(() => FakeFailedCountNotifier()),
           ],
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -124,7 +124,7 @@ void main() {
             failedQueueCountProvider.overrideWith(() => FakeFailedCountNotifier()),
           ],
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -174,7 +174,7 @@ void main() {
             failedQueueCountProvider.overrideWith(() => FakeFailedCountNotifier()),
           ],
           child: const MaterialApp(
-            home: HomeScreen(),
+            home: CaptureScreen(),
           ),
         ),
       );
@@ -185,10 +185,12 @@ void main() {
       expect(find.text('Only unread note'), findsOneWidget);
       expect(find.text('Read note that should be filtered'), findsOneWidget);
 
-      // Tap 'Unread' filter chip
-      final unreadChip = find.byKey(const Key('filter_chip_unread'));
-      expect(unreadChip, findsOneWidget);
-      await tester.tap(unreadChip);
+      // Select 'Unread' in the triage dropdown
+      final triageDropdown = find.byKey(const Key('capture_triage_filter_dropdown'));
+      expect(triageDropdown, findsOneWidget);
+      await tester.tap(triageDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unread').last);
       await tester.pumpAndSettle();
 
       // Only unread note should be visible
