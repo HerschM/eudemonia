@@ -46,6 +46,20 @@ class LLMConfig {
   /// Maps to `ContextParams.nThreads`. Default is 4 threads.
   final int threads;
 
+  /// Number of model layers offloaded to the GPU (Vulkan).
+  /// Maps to `ModelParams.nGpuLayers`. `0` = CPU only. Default is 99 (full offload,
+  /// the llama_cpp_dart library default).
+  final int gpuLayers;
+
+  /// Whether sampling is greedy (always picks the most likely token).
+  /// Maps to `SamplerParams.greedy`. Default is `true`: the reply is structured JSON, so deterministic output is preferred; measured speed is the same as sampled.
+  final bool greedySampling;
+
+  /// Maximum time to wait for a single completion before generation is stopped
+  /// and the partial output is parsed (falling back to the heuristic classifier
+  /// if unparseable). Default is 60 seconds.
+  final Duration generationTimeout;
+
   const LLMConfig({
     this.kvCacheMaxSize = 2048,
     this.inputTokenLimit = 1536,
@@ -56,12 +70,16 @@ class LLMConfig {
     this.modelInactivityTtl = const Duration(minutes: 3),
     this.batchSize = 512,
     this.threads = 4,
+    this.gpuLayers = 99,
+    this.greedySampling = true,
+    this.generationTimeout = const Duration(seconds: 60),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
         assert(inputTokenLimit > 0, 'inputTokenLimit must be positive'),
         assert(inputTokenLimit < kvCacheMaxSize,
             'inputTokenLimit must be smaller than kvCacheMaxSize to leave headroom for output generation'),
         assert(maxOutputTokens > 0, 'maxOutputTokens must be positive'),
-        assert(threads > 0, 'threads must be positive');
+        assert(threads > 0, 'threads must be positive'),
+        assert(gpuLayers >= 0, 'gpuLayers must be non-negative');
 
   LLMConfig copyWith({
     int? kvCacheMaxSize,
@@ -73,6 +91,9 @@ class LLMConfig {
     Duration? modelInactivityTtl,
     int? batchSize,
     int? threads,
+    int? gpuLayers,
+    bool? greedySampling,
+    Duration? generationTimeout,
   }) {
     return LLMConfig(
       kvCacheMaxSize: kvCacheMaxSize ?? this.kvCacheMaxSize,
@@ -85,6 +106,9 @@ class LLMConfig {
       modelInactivityTtl: modelInactivityTtl ?? this.modelInactivityTtl,
       batchSize: batchSize ?? this.batchSize,
       threads: threads ?? this.threads,
+      gpuLayers: gpuLayers ?? this.gpuLayers,
+      greedySampling: greedySampling ?? this.greedySampling,
+      generationTimeout: generationTimeout ?? this.generationTimeout,
     );
   }
 
@@ -101,7 +125,10 @@ class LLMConfig {
           kvCacheTtl == other.kvCacheTtl &&
           modelInactivityTtl == other.modelInactivityTtl &&
           batchSize == other.batchSize &&
-          threads == other.threads;
+          threads == other.threads &&
+          gpuLayers == other.gpuLayers &&
+          greedySampling == other.greedySampling &&
+          generationTimeout == other.generationTimeout;
 
   @override
   int get hashCode =>
@@ -113,14 +140,17 @@ class LLMConfig {
       kvCacheTtl.hashCode ^
       modelInactivityTtl.hashCode ^
       batchSize.hashCode ^
-      threads.hashCode;
+      threads.hashCode ^
+      gpuLayers.hashCode ^
+      greedySampling.hashCode ^
+      generationTimeout.hashCode;
 
   @override
   String toString() {
     return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, inputTokenLimit: $inputTokenLimit, '
         'maxOutputTokens: $maxOutputTokens, kvCacheType: ${kvCacheType.name}, '
         'clearKvCacheEveryXTurns: $clearKvCacheEveryXTurns, kvCacheTtl: ${kvCacheTtl.inSeconds}s, '
-        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads)';
+        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, gpuLayers: $gpuLayers, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
   }
 }
 

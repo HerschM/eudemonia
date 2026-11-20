@@ -11,6 +11,26 @@
 
 ---
 
+## Active Work Handoff (Read First After Compaction or When Starting a New Agent)
+
+> Maintained by the orchestrating agent. Updated at every stopping point so no context lives only in a conversation.
+
+- **Working model**: An orchestrator (top-tier model) designs, briefs, reviews diffs and owns docs/git; `eudemonia-implementer` (Sonnet, Opus for native/concurrency work) writes code and tests; `eudemonia-verifier` (Haiku, read-only) runs the gate. See `AGENTS.md` Section 9.
+- **Agreed order of work**: (B) TASK-062 LLM latency → (A) TASK-063 native capture core → (C) TASK-064 inference in its own process. A and C implement the target architecture in `IMPLEMENTATION.md` Section 4.C.
+- **Verified on device (Pixel 7a, Android 17, 4 KB pages, serial `38031JEHN08164`)**: launch without crash, Isar on `isar_community` opens the existing database, STT worker isolate loads in ~5s and transcribes a short clip in ~1.6s, new Capture screen and floating capsule work, no 16 KB dialog.
+- **Still unverified on device**: cross-process `RECORDING_STATE_CHANGED` haptic sync, first-launch permission prompt → foreground service start on a fresh install, `SystemTelemetryCollector` readings, crash-loop guard against a real native abort.
+- **Current task**: TASK-062 is NOT closed (user decision 2026-11-20). Measured so far: 31.6s → 14.5s per ~40-word thought. User positions: 12–15s processing time is acceptable (results are not needed immediately); NO loss of grammar-correction quality or functionality is acceptable; smaller-model trials are deferred; a device-based model recommendation feature (low/mid/high tier, validated for output quality and resource use) is wanted as a FUTURE task; the user wants memory numbers for any KV-cache retention; the user asked for a robust voice-to-text test setup with real voice samples.
+- **Plan awaiting user approval (proposed 2026-11-20, nothing below is started)**:
+  1. *Test foundation*: voice-sample fixtures (16 kHz mono WAV + reference transcripts: synthetic via macOS `say`, plus real recordings from the user) and an on-device evaluation harness run via `flutter drive --keep-app-running` that reports STT word error rate, end-to-end WAV → STT → LLM → note results, LLM cleanup quality checks (valid JSON, no fallback, no dropped content, fillers removed, folder), per-stage timings and app memory (PSS via `SystemTelemetryService`).
+  2. *Close TASK-062 against that harness*: (a) memory numbers at baseline / models loaded / during a turn / after eviction; (b) investigate whether `llama_cpp_dart` can keep the system-prompt prefix in the KV cache between turns without carrying earlier thoughts over, then implement it and amend FR5.6 if it works and the measured memory cost is acceptable; (c) long thoughts: scale the output budget with input length (today 256 tokens truncates ~180+ words into the fallback); (d) iterate the cleanup prompt until the quality checks pass, with greedy sampling.
+  3. *Then* TASK-049, TASK-063, TASK-064. Orchestrator's assessment: TASK-049 does not make the per-thought cleanup turn faster (models already stay loaded for 3 minutes; clustering batches the synthesis turn, not the capture turn), so it need not go first; when it lands the capture prompt loses the folder and the harness is simply re-run.
+  4. *Future task to add on approval*: device-tier model recommendation (needs a PRODUCT_SPEC entry first).
+- **Open questions to the user**: approve the plan and order; supply ~10 real voice recordings or accept synthetic-only for now; whether to commit the current uncommitted work; confirm that FR5.6 may be relaxed if the measurements support it.
+- **Device rule**: never run `flutter test integration_test/... -d <device>` (it uninstalls the app and wipes its data and models); use `flutter drive ... --keep-app-running` as documented in `test_driver/integration_test.dart`.
+- **Known open product gaps (not started)**: `isReprocessing` (yellow) is never cleared; deleting a synthesis session leaves its thoughts `synthesized`; placeholders remain in Settings/HUD (`Google Calendar`, `Next refresh in 14h`, unsaved synthesis thresholds, no-op `Keep Raw Audio`, in-memory folder manifestos); capture-time folder inference deviates from FR5.2 until TASK-049.
+
+---
+
 ## Task Status Legend
 - `[x]` **Completed**: Implemented, verified with unit/widget tests, and passing all quality gates.
 - `[/]` **In Progress**: Active development or test coverage underway.
@@ -323,6 +343,72 @@
       - `~/flutter/bin/flutter test test/features/settings/system_telemetry_test.dart`
       - `cd android && ./gradlew :app:testDebugUnitTest`
       - **Pending on-device check**: `SystemTelemetryCollector` values on real hardware (framework calls are not reachable from JVM unit tests).
+
+---
+
+## Milestone 14: On-Device LLM Latency & Capture-Independent Architecture (In-Scope Active)
+
+- [/] **TASK-062: Bring On-Device LLM Turn Latency Within Budget (Measured, CPU vs GPU Offload, Sampling & Prompt Size)**
+  - **Area**: `lib/features/ai_processing/llm_config.dart`, `lib/features/ai_processing/llm_service.dart`, `lib/features/ai_processing/note_classifier.dart`, `integration_test/llm_latency_benchmark_test.dart`
+  - **Spec**: [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`Latency: On-Device LLM Classification < 1.8s`) and [`PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing`](./PRODUCT_SPEC.md#fr5-on-device-llm-pipeline-two-tier-post-processing)
+  - **Details**: Measured on the Pixel 7a before any change: model load ~28s, one capture turn 24.6s (the generation timeout is 25s, after which the heuristic fallback is used silently). Evidence so far: `LLMService` passes library-default `ModelParams()` whose `nGpuLayers = 99` offloads every layer to the bundled Vulkan backend, and library-default `SamplerParams()` (temperature 0.8, non-greedy) for a strict-JSON task. Plan: (1) make GPU offload and greedy sampling explicit `LLMConfig` fields and add an on-device benchmark; (2) choose defaults from the measurements; (3) if still over budget, shrink the prompt and the output schema (the `reasoning` and `confidence_scores` fields are generated tokens). FR5.6 (purge KV cache every turn) stays in force, so prompt-prefix caching is not an option without a spec change.
+  - **Progress Log**:
+    - Step 1 (done, uncommitted): `LLMConfig.gpuLayers` (default 99) and `LLMConfig.greedySampling` (default false) added and wired into `LLMService.initialize()`; `integration_test/llm_latency_benchmark_test.dart` added (`integration_test` dev dependency).
+    - Benchmark run 1 on Pixel 7a (2 turns per variant, ~40-word transcript; the run took 18 min and heated the phone):
+
+      | Variant | Load | Turn 1 | Turn 2 | Fallback |
+      | :--- | :--- | :--- | :--- | :--- |
+      | GPU offload 99, 4 threads, sampled (current) | 34.4s | 30.5s | 49.4s | yes |
+      | CPU only, 4 threads, sampled | 5.9s | 85.1s | 99.7s | yes |
+      | CPU only, 4 threads, greedy | 13.0s | 85.2s | 111.4s | yes |
+      | CPU only, 2 threads, greedy | 7.5s | 85.2s | 504.5s (outlier, likely thermal) | yes |
+
+    - Findings from run 1: (a) the GPU-offload hypothesis is refuted — Vulkan offload is ~3x faster per turn than CPU on this device, at the cost of a ~30s load; keep `gpuLayers = 99`. (b) Every turn fell back to the heuristic and the numbers are not real latencies: `processText()` times out at 25s but never stops generation; `clearKvCache()` → `disposeScope()` then waits for the model to run to `maxOutputTokens`, and the partial buffer captured at the timeout fails JSON parsing. This is a production bug: a slow turn blocks the queue well past 25s and yields only the fallback. (c) Greedy vs sampled made no measurable difference to speed.
+    - Step 2 (done, uncommitted): `LLMConfig.generationTimeout` (default 25s); on timeout `processText()` now calls `LlamaParent.stop()` so the turn ends promptly; `LlmTurnMetrics` (`lastTurnMetrics`: time to first token, total, chunks, timedOut, usedFallback, rawOutput) logged per turn; benchmark rewritten (one turn per variant, 240s timeout, 30s cool-down); `test_driver/integration_test.dart` added.
+    - **Device safety rule learned the hard way**: `flutter test integration_test/... -d <device>` UNINSTALLS the app when it finishes, wiping its database, recordings and the model files under `/sdcard/Android/data/com.eudemonia.eudemonia/files`. Run 1 did this to the user's phone (test notes lost). Always use `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/<file> -d <device> --keep-app-running`, then reinstall the normal build with `adb install -r build/app/outputs/flutter-apk/app-debug.apk`. Models are restored with `bash download_models.sh`.
+    - Benchmark run 2 on Pixel 7a (real completions, no timeout, ~40-word transcript, greedy):
+
+      | Variant | Load | Time to first token (prompt eval) | Generation | Total | Speed |
+      | :--- | :--- | :--- | :--- | :--- | :--- |
+      | GPU offload 99, 4 threads | 3.9s (warm) | 11.3s | 20.3s for 148 chunks | 31.6s | 7.3 chunks/s |
+      | CPU only, 4 threads | 6.9s | 15.0s | 115.1s for 137 chunks | 130.1s | 1.2 chunks/s |
+      | CPU only, 6 threads | 5.3s | 13.6s | 148.5s for 137 chunks | 162.0s | 0.9 chunks/s |
+
+    - Findings from run 2: GPU offload is 6x faster at generation; keep it. A ~40-word thought takes 31.6s, which exceeds the 25s timeout, so in the shipped configuration such thoughts always fall back to the heuristic. Of the 148 output chunks only ~55 are the corrected text; the rest are a markdown fence, `confidence_scores` (~45) and `reasoning` (~35), none of which is shown to the user. The system prompt costs ~11s of evaluation every turn because FR5.6 forbids keeping its KV state.
+    - Step 3 (done, uncommitted): `NoteClassifier.buildPrompt()` shortened and reduced to a two-key reply with the folder first (`{"folder": ..., "corrected_text": ...}`); `generationTimeout` default raised to 60s; `greedySampling` default set to `true`; a reply with no folder and no keyword evidence now resolves to `Uncategorized` instead of silently becoming `Work`. The benchmark now runs only the two GPU variants and prints the raw reply of each.
+    - Benchmark run 3 (first trimmed prompt, text-first reply): 13.1s greedy / 10.4s sampled, but the model omitted the `folder` key entirely — rejected, led to the folder-first format.
+    - Benchmark run 4 on Pixel 7a (final prompt, same ~40-word transcript):
+
+      | Variant | Load | Time to first token | Generation | Total | Reply |
+      | :--- | :--- | :--- | :--- | :--- | :--- |
+      | GPU offload, greedy (**shipped default**) | 2.7s (warm) | 8.7s | 5.8s for 60 chunks (10.4/s) | **14.5s** | folder present, every sentence kept |
+      | GPU offload, sampled | 9.6s | 7.2s | 4.7s for 48 chunks | 11.9s | folder present, **dropped the final sentence** |
+
+    - Outcome: 31.6s (and always timing out into the fallback) → 14.5s with a real LLM result. Greedy is the default because sampling lost content. Known residue: the 1.5B model still leaves some discourse fillers ("basically", "so yeah") while removing "um"/"uh".
+    - **Residual gap and open decision (user)**: the 1.8s NFR is not reachable with this model on this device (rewriting ~55 tokens at ~10 tokens/s is ~6s on its own, plus ~8s re-evaluating the prompt because FR5.6 purges the KV cache each turn). Options put to the user on 2026-11-19: (1) accept ~12–15s and revise the NFR; (2) relax FR5.6 to cache the system-prompt prefix; (3) try a smaller model; (4) rule-based cleanup with LLM for folder only. Orchestrator recommendation: 1 + 2. No option is implemented until the user chooses.
+    - Not yet addressed: `maxOutputTokens = 256` truncates the rewrite of thoughts longer than roughly 180 words, which then fall back to the heuristic.
+  - **Verification**:
+    - **Unit Tests**:
+      - File: `test/features/ai_processing/llm_config_test.dart`
+      - Cases:
+        1. New fields have documented defaults, participate in equality/`copyWith`, and reject invalid values.
+    - **Widget Tests**:
+      - N/A — Inference configuration.
+    - **Integration / Command Tests**:
+      - `~/flutter/bin/flutter test integration_test/llm_latency_benchmark_test.dart -d 38031JEHN08164` (on-device; prints load and per-turn timings for each variant).
+      - Acceptance: record the measured table in this task and in `IMPLEMENTATION.md`; the chosen default must not exceed the 25s timeout and should approach the 1.8s target as far as the hardware allows, with the residual gap stated.
+
+- [ ] **TASK-063: Native Capture Core — Foreground Service Owns Microphone, WAV Writing & Capture Inbox**
+  - **Area**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/` (new capture recorder + inbox), `lib/features/ai_processing/audio_queue_service.dart` (inbox ingestion), `lib/features/capture/`
+  - **Spec**: [`PRODUCT_SPEC.md#fr2-non-blocking-audio-capture`](./PRODUCT_SPEC.md#fr2-non-blocking-audio-capture), [`PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger`](./PRODUCT_SPEC.md#fr10-lock-screen--notification-center-capture-trigger), and Scenario 2 in [`PRODUCT_SPEC.md#3-target-personas--user-scenarios`](./PRODUCT_SPEC.md#3-target-personas--user-scenarios)
+  - **Details**: Implement Phase 1 of `IMPLEMENTATION.md` Section 4.C. Detailed design and task breakdown to be written by the orchestrator before pickup.
+  - **Verification**: To be specified with the design.
+
+- [ ] **TASK-064: Run Model Inference in a Dedicated Process Started on Demand**
+  - **Area**: To be specified with the design (Phase 2 of `IMPLEMENTATION.md` Section 4.C).
+  - **Spec**: [`PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management`](./PRODUCT_SPEC.md#fr6-model-lifecycle--memory-management) and [`PRODUCT_SPEC.md#d-non-functional-requirements-nfr`](./PRODUCT_SPEC.md#d-non-functional-requirements-nfr) (`Memory: Baseline Idle RAM`, `App Crash-Free Rate`)
+  - **Details**: Depends on TASK-063 and on the model/runtime settings chosen in TASK-062.
+  - **Verification**: To be specified with the design.
 
 ---
 

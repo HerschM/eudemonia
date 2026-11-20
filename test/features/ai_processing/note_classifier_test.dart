@@ -17,6 +17,45 @@ void main() {
       expect(prompt, contains('"Todos"'));
       expect(prompt, contains('"Journal"'));
     });
+
+    test('asks only for the fields the app uses, to keep on-device generation short', () {
+      final prompt = NoteClassifier.buildPrompt('some thought');
+
+      expect(prompt, contains('"corrected_text"'));
+      expect(prompt, contains('"folder"'));
+      expect(prompt, isNot(contains('confidence_scores')));
+      expect(prompt, isNot(contains('reasoning')));
+      // Every prompt character is re-evaluated on each turn; keep the instructions compact.
+      expect(prompt.length, lessThan(1000));
+    });
+
+    test('asks for the folder before the text so it cannot be omitted or cut off', () {
+      final prompt = NoteClassifier.buildPrompt('some thought');
+      expect(prompt.indexOf('{"folder"'), greaterThan(0));
+      expect(prompt.indexOf('"folder": "Todos"'), lessThan(prompt.indexOf('"corrected_text": "Call')));
+    });
+
+    test('a reply without a folder and without keyword evidence is Uncategorized, not a guess', () {
+      final result = NoteClassifier.parseResponse(
+        'the sky looked unusual',
+        '{"corrected_text": "The sky looked unusual."}',
+      );
+
+      expect(result.usedFallback, isFalse);
+      expect(result.correctedText, 'The sky looked unusual.');
+      expect(result.folder, NoteClassifier.defaultFolder);
+    });
+
+    test('the compact reply format parses into corrected text and a single folder', () {
+      final result = NoteClassifier.parseResponse(
+        'um call the dentist tomorrow',
+        '{"folder": "Todos", "corrected_text": "Call the dentist tomorrow."}',
+      );
+
+      expect(result.usedFallback, isFalse);
+      expect(result.correctedText, 'Call the dentist tomorrow.');
+      expect(result.folder, 'Todos');
+    });
   });
 
   group('NoteClassifier - parseResponse', () {

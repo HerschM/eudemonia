@@ -54,40 +54,24 @@ class NoteClassifier {
   static const String defaultFolder = 'Uncategorized';
 
   /// Construct a ChatML prompt formatted for Qwen 2.5 Instruct.
+  ///
+  /// Kept deliberately short, and asks for only the two fields the app uses:
+  /// every prompt token is re-evaluated on each turn (the KV cache is purged
+  /// per FR5.6) and every output token costs generation time on device.
   static String buildPrompt(String rawText) {
     return '''<|im_start|>system
-You are an expert voice note editor and classifier.
-Your task has two strict requirements:
-1. LANGUAGE CORRECTION:
-   - Fix grammar, punctuation, and capitalization.
-   - Remove conversational disfluencies and filler words ("um", "uh", "er", "ah", "like", "you know", "basically", "so yeah").
-   - Preserve the speaker's authentic voice, tone, and specific details. Do NOT summarize or invent new information.
-2. FOLDER CATEGORIZATION:
-   Categorize the note into EXACTLY ONE of the following 4 folders:
-   - "Work": Professional projects, meetings, colleagues, clients, career, business communications.
-   - "Ideas": Creative concepts, inventions, startup or product brainstorms, hypotheses, design ideas.
-   - "Todos": Action items, chores, errands, shopping lists, immediate tasks to do or buy.
-   - "Journal": Personal reflections, diary entries, emotions, mood, gratitude, wellness, daily life memories.
-
-Provide confidence scores between 0.0 and 1.0 for each of the 4 folders (they should sum to approximately 1.0).
-Select the single folder with the highest confidence as "folder". The "folder" value MUST be a single folder name, NOT a list or combination.
-
-Output STRICTLY valid JSON with no markdown wrapping and no additional explanation:
-{
-  "corrected_text": "<grammar-corrected text without filler words>",
-  "confidence_scores": {
-    "Work": 0.05,
-    "Ideas": 0.85,
-    "Todos": 0.05,
-    "Journal": 0.05
-  },
-  "folder": "Ideas",
-  "reasoning": "<brief one-sentence rationale>"
-}
+You file and clean up voice note transcripts. Reply with only a JSON object with exactly two keys, "folder" then "corrected_text", no markdown and no other text.
+"folder" is EXACTLY ONE of:
+- "Work": job, projects, meetings, colleagues, clients, business.
+- "Ideas": creative concepts, inventions, product or startup brainstorms.
+- "Todos": tasks, errands, reminders, shopping, things to do or buy.
+- "Journal": personal reflections, feelings, mood, daily life.
+"corrected_text" is the transcript with grammar, punctuation and capitalization fixed and ALL filler words deleted ("um", "uh", "er", "so", "like", "you know", "basically", "so yeah"). Keep the speaker's own wording and every detail. Do not summarize or add anything.
+Example reply:
+{"folder": "Todos", "corrected_text": "Call the dentist tomorrow morning."}
 <|im_end|>
 <|im_start|>user
-Raw speech transcript:
-"$rawText"
+$rawText
 <|im_end|>
 <|im_start|>assistant
 ''';
@@ -306,7 +290,8 @@ Raw speech transcript:
       return bestByKeyword;
     }
 
-    return bestByScore;
+    // No usable folder, no confidence scores and no keyword evidence: do not guess.
+    return maxScore > 0.0 ? bestByScore : defaultFolder;
   }
 
   /// Calculates folder scores based on domain keywords and intent patterns.

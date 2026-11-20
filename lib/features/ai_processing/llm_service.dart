@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
@@ -11,6 +12,39 @@ export 'note_classifier.dart';
 
 /// Legacy alias for NoteClassificationResult for backwards compatibility.
 typedef LLMResponse = NoteClassificationResult;
+
+/// Timing and outcome measurements for a single LLM inference turn.
+@immutable
+class LlmTurnMetrics {
+  /// Milliseconds from prompt submission to the first streamed chunk
+  /// (null if no token arrived).
+  final int? timeToFirstTokenMs;
+  final int totalMs;
+
+  /// Number of stream events received during the turn.
+  final int outputChunks;
+  final bool timedOut;
+  final bool usedFallback;
+  final String rawOutput;
+
+  const LlmTurnMetrics({
+    required this.timeToFirstTokenMs,
+    required this.totalMs,
+    required this.outputChunks,
+    required this.timedOut,
+    required this.usedFallback,
+    required this.rawOutput,
+  });
+
+  int? get generationMs =>
+      timeToFirstTokenMs == null ? null : totalMs - timeToFirstTokenMs!;
+
+  double? get chunksPerSecond {
+    final g = generationMs;
+    if (g == null || g <= 0) return null;
+    return outputChunks / (g / 1000.0);
+  }
+}
 
 class LLMService {
   final LLMConfig config;
@@ -27,6 +61,11 @@ class LLMService {
   bool get isInitialized => _isInitialized;
   int get completedTurnsCount => _completedTurnsCount;
   bool get hasActiveKvScope => _currentScope != null;
+
+  LlmTurnMetrics? _lastTurnMetrics;
+
+  /// Metrics of the most recent turn that reached the model.
+  LlmTurnMetrics? get lastTurnMetrics => _lastTurnMetrics;
 
   Future<void> initialize(String modelPath) async {
     if (_isInitialized) return;
@@ -48,9 +87,9 @@ class LLMService {
 
     final loadCommand = LlamaLoad(
       path: modelPath,
-      modelParams: ModelParams(),
+      modelParams: ModelParams()..nGpuLayers = config.gpuLayers,
       contextParams: contextParams,
-      samplingParams: SamplerParams(),
+      samplingParams: SamplerParams()..greedy = config.greedySampling,
     );
 
     _llama = LlamaParent(loadCommand);
@@ -109,12 +148,17 @@ class LLMService {
 
     final prompt = NoteClassifier.buildPrompt(sanitizedText);
     final buffer = StringBuffer();
+    final stopwatch = Stopwatch()..start();
+    int? firstChunkMs;
+    var chunkCount = 0;
+    var timedOut = false;
     final streamSub = _llama!.stream.listen((response) {
+      firstChunkMs ??= stopwatch.elapsedMilliseconds;
+      chunkCount++;
       buffer.write(response);
     });
 
     String fullResponse = '';
-    final stopwatch = Stopwatch()..start();
 
     try {
       // Allocate or reuse active scope slot
@@ -123,7 +167,18 @@ class LLMService {
       final promptId = await _llama!.sendPrompt(prompt, scope: _currentScope);
       await _llama!.completions
           .firstWhere((e) => e.promptId == promptId)
-          .timeout(const Duration(seconds: 25));
+          .timeout(config.generationTimeout);
+      fullResponse = buffer.toString();
+    } on TimeoutException catch (e) {
+      timedOut = true;
+      _logger?.warning(
+          '[LLMService] LLM generation timed out after ${config.generationTimeout.inSeconds}s. Stopping generation.');
+      try {
+        await _llama!.stop();
+      } catch (stopError) {
+        _logger?.warning('[LLMService] Error stopping generation after timeout: $stopError');
+      }
+      _logger?.error('[LLMService] LLM generation error or timeout', error: e);
       fullResponse = buffer.toString();
     } catch (e) {
       _logger?.error('[LLMService] LLM generation error or timeout', error: e);
@@ -147,6 +202,20 @@ class LLMService {
 
     final result = NoteClassifier.parseResponse(rawText, fullResponse);
     result.printDebugLog(_logger);
+
+    final metrics = LlmTurnMetrics(
+      timeToFirstTokenMs: firstChunkMs,
+      totalMs: stopwatch.elapsedMilliseconds,
+      outputChunks: chunkCount,
+      timedOut: timedOut,
+      usedFallback: result.usedFallback,
+      rawOutput: fullResponse,
+    );
+    _lastTurnMetrics = metrics;
+    _logger?.info('[LLMService] Turn #$_completedTurnsCount metrics: '
+        'ttft=${metrics.timeToFirstTokenMs ?? 'none'} total=${metrics.totalMs} '
+        'chunks=${metrics.outputChunks} timedOut=${metrics.timedOut} '
+        'fallback=${metrics.usedFallback}');
     return result;
   }
 

@@ -231,3 +231,18 @@ test/                    # Unit, widget, and architecture tests mirroring lib/
 > [!IMPORTANT]
 > **`IMPLEMENTATION.md` is a Living Blueprint, Not Absolute Dogma**:
 > Treat [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) as a point-in-time snapshot of the codebase, not an immutable truth set in stone. When touching any subsystem, **always question existing patterns, audit them, and seek to improve them** to meet new requirements rather than accepting legacy choices as rigid constraints. When you make changes to a subsystem, you **must** update [`IMPLEMENTATION.md`](file:///Users/harshmavani/Documents/Eudemonia/IMPLEMENTATION.md) to keep the documentation aligned with the active codebase.
+
+---
+
+## 9. Delegated Agent Workflow, Token Economy & Context Hand-off
+
+When a session orchestrates subagents (definitions in `.claude/agents/`):
+
+- **Roles**: The orchestrator designs each change, writes a narrow brief with decisions already made, reviews the returned diff (never just the summary), and owns documentation, git and all communication with the user. `eudemonia-implementer` writes code and tests. `eudemonia-verifier` runs the gate read-only. Verification must be independent of the agent that wrote the code.
+- **Escalation**: If a delegated piece is not correct after two attempts, the orchestrator finishes it directly.
+- **Token Economy**: Do not delegate a handful of edits; do not run agents in parallel on overlapping files; measure before optimizing; keep replies short.
+- **Documentation Before Compaction (Zero Knowledge Gap)**: Before any stopping point, and before the conversation is compacted or a new agent is started, the orchestrator must bring these up to date so that no decision, measurement or open question exists only in conversation:
+  1. `TASKS.md` → **Active Work Handoff** block and the current task's status, **Progress Log** and measured evidence.
+  2. `IMPLEMENTATION.md` → Section 1 for anything now true in code, Section 3 for root causes found, Section 4 for approved designs not yet built.
+  3. This file only when an invariant or the workflow itself changes.
+- A new agent starts by reading this file, then the **Active Work Handoff** block in `TASKS.md`.

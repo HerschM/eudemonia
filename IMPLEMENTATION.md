@@ -135,9 +135,14 @@
      - ChatML prompt instructs Qwen 2.5 Instruct to perform:
        1. *Language Correction*: Grammar, capitalization, punctuation, and removal of conversational filler words (*"um"*, *"uh"*, *"like"*).
        2. *Classification*: Categorize into exactly **one** allowed folder (`Work`, `Ideas`, `Todos`, `Journal`, or `Uncategorized`).
-       3. *JSON Schema Enforcement*: Output strictly structured JSON containing `corrected_text`, `folder`, `confidence_scores`, and `reasoning`.
+       3. *JSON Schema Enforcement*: Output strictly structured JSON with exactly two keys, folder first: `{"folder": ..., "corrected_text": ...}`. The folder comes first so it cannot be omitted or truncated. `confidence_scores` and `reasoning` are no longer requested (they were ~60% of the generated tokens and never shown); `parseResponse()` still accepts them if present. A reply with no folder, no scores and no keyword evidence resolves to `Uncategorized`.
+     - The prompt is kept under 1000 characters because every prompt token is re-evaluated on each turn (see KV purge below).
+     - **Runtime settings (`LLMConfig`)**: `gpuLayers = 99` (full Vulkan offload; measured ~6–8x faster generation than CPU on a Pixel 7a), `greedySampling = true` (deterministic; sampled output dropped a sentence in testing), `generationTimeout = 60s`. On timeout `processText()` calls `LlamaParent.stop()` so the turn actually ends, then falls back to the heuristic.
+     - **Per-turn metrics**: `LLMService.lastTurnMetrics` (`LlmTurnMetrics`: time to first token, total, chunk count, timedOut, usedFallback, raw output) is logged for every turn.
+     - **Measured latency (Pixel 7a, ~40-word thought)**: ~14.5s per turn (8.7s prompt evaluation + 5.8s generation at ~10 tokens/s), against the 1.8s NFR. The gap is a pending product decision recorded under TASK-062.
+     - **On-device benchmark**: `integration_test/llm_latency_benchmark_test.dart`, run only via `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/llm_latency_benchmark_test.dart -d <device> --keep-app-running`. `flutter test integration_test/... -d <device>` uninstalls the app and wipes its data and model files.
   3. **Stateless Turn Execution & KV Cache Hygiene**:
-     - `LLMConfig` defines `kvCacheMaxSize` (2048), `inputTokenLimit` (1536), `maxOutputTokens` (256), and `clearKvCacheEveryXTurns` (default `1`).
+     - `LLMConfig` defines `kvCacheMaxSize` (2048), `inputTokenLimit` (1536), `maxOutputTokens` (256), `clearKvCacheEveryXTurns` (default `1`), `gpuLayers` (99), `greedySampling` (true), and `generationTimeout` (60s).
      - After every inference turn, `LLMService.clearKvCache()` invokes `_llama.disposeScope()` to release native KV tensor allocations.
   4. **Heuristic Fallback Classifier**:
      - If the LLM is uninitialized or in rapid unit-test environments, `NoteClassifier.classifyWithHeuristic()` evaluates keyword dictionaries to assign confidence scores and folder tags.
@@ -552,6 +557,15 @@
 - **Root Cause**: Inspecting the APK with `llvm-readelf` showed every arm64 library had 16 KB (or 64 KB) `LOAD` alignment and correct zip alignment except `libisar.so` from `isar_flutter_libs 3.1.0+1`, which was linked for 4 KB pages.
 - **Solution**: Migrated to `isar_community 3.4.1` and regenerated the schemas. All 16 arm64 libraries in the rebuilt APK are 16 KB aligned, the existing on-device database opened unchanged, and the dialog no longer appears.
 
+### 28. LLM Turns Always Timing Out into the Heuristic Fallback (31s per Thought, Broken Timeout)
+- **Symptom**: On a Pixel 7a a ~40-word thought took 31.6s of LLM time and produced only the keyword-heuristic result; the queue stayed blocked far longer than the 25s timeout.
+- **Root Cause**:
+  1. The prompt asked for `confidence_scores` and `reasoning`, so ~95 of 148 generated tokens were never used, and its ~11s evaluation is repeated every turn because the KV cache is purged per FR5.6.
+  2. The 25s timeout did not stop generation: `clearKvCache()` → `disposeScope()` waited for the model to run to `maxOutputTokens`, and the buffer captured at the timeout was truncated JSON.
+  3. Assumed but refuted by measurement: GPU (Vulkan) offload was suspected of being the slow path; it is in fact ~6–8x faster than CPU on this device.
+- **Solution**: Two-key folder-first prompt, `LlamaParent.stop()` on timeout, 60s configurable timeout, greedy sampling, per-turn metrics, and an on-device benchmark. Result: 14.5s with a real LLM reply. Benchmark tables are under TASK-062.
+- **Process Incident**: The first benchmark was run with `flutter test integration_test/... -d <device>`, which uninstalled the app from the user's phone and deleted its notes, recordings and model files. The app and models were restored; the notes were not recoverable. Benchmarks now go through `flutter drive --keep-app-running`.
+
 ---
 
 ## 4. Architectural Decisions & Target Engineering Blueprints
@@ -589,3 +603,19 @@
 5. **Future Scope / Non-Goals for V1**:
    - **AI-Assisted Topical Merge Suggestions**: Zero-LLM entity and keyword set-intersection matching across the last 48 hours to display proactive suggestion pills without LLM compute overhead.
    - **User Persona & Custom Prompt Editing**: Formally excluded for V1 to guarantee strict JSON output compliance, prevent mobile token/KV-cache overflow, and avoid breaking backend parsers.
+
+### C. Capture-Independent Three-Part Runtime Architecture (Approved Direction, Not Yet Implemented — TASK-063 & TASK-064)
+> [!NOTE]
+> **TARGET ARCHITECTURE**: Chosen by the user on 2026-11-19 as the long-term answer to the foreground service launching the activity. Nothing in this section is in `lib/` or `android/` yet. Promote to Section 1 as each phase lands.
+
+- **Problem Being Solved**: The Flutter engine is owned by `MainActivity`. When the activity is destroyed (swiped from recents, reclaimed by the OS) while `EudemoniaForegroundService` keeps the process alive, no Dart code exists to record. `deliverTrigger()` then calls `startActivity()`, which (1) pulls the app over whatever the user is doing, contradicting Scenario 2 and the "No Rogue Launches" invariant, (2) loses the first seconds of speech during cold start, and (3) may be blocked by Android's background-activity-start restrictions, leaving a haptic with no recording. Separately, because capture, UI and inference share one process, a native abort in a model library (Chronicle #26) takes capture down with it.
+- **Decision**: Split the runtime into three parts with independent lifetimes.
+  1. **Native capture core (Kotlin, in the foreground service)**: owns the microphone, haptics, notification and the capture hand-off end to end. A trigger becomes a WAV file on disk with no Flutter involvement. The only always-on part.
+  2. **Inference in its own process**: started when work exists, killed when idle. Process death is the guaranteed way back to the memory baseline, and a native crash kills only this worker.
+  3. **Flutter as UI only**: reads the database and renders; opening or closing the app does not affect capture or processing.
+- **Alternatives Rejected**:
+  - *Keep launching the activity*: the status quo and its three defects.
+  - *Service-owned Flutter engine (activity attaches to a cached engine)*: least new code and removes the launch, but keeps everything in one process, so it would not have contained the corrupt-model crash, and capture still depends on Dart being responsive.
+  - *Notify instead of recording*: loses the thought.
+- **Phasing**: Phase 1 = native capture core (TASK-063): self-contained and fixes the user-facing problem. Phase 2 = inference process (TASK-064): hosted either by a headless Flutter engine running the existing Dart pipeline (cheaper) or by the native sherpa-onnx / llama.cpp APIs directly (removes Flutter from background work); decide after TASK-062 fixes the runtime settings.
+- **Constraints to Honor**: the hand-off between processes is files plus the database (a capture inbox directory), with exactly one writer per file; the inference process must be started by the foreground service (Android background-start limits); FR3 queue semantics, FR9.4/FR9.5 sequence numbering and the <5ms capture budget are unchanged contracts.
