@@ -2298,15 +2298,14 @@ const SynthesisOriginRecordSchema = Schema(
       name: r'cleanedText',
       type: IsarType.string,
     ),
-    r'folder': PropertySchema(id: 2, name: r'folder', type: IsarType.string),
     r'formattedSequence': PropertySchema(
-      id: 3,
+      id: 2,
       name: r'formattedSequence',
       type: IsarType.string,
     ),
-    r'noteId': PropertySchema(id: 4, name: r'noteId', type: IsarType.long),
+    r'noteId': PropertySchema(id: 3, name: r'noteId', type: IsarType.long),
     r'timestamp': PropertySchema(
-      id: 5,
+      id: 4,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
@@ -2331,7 +2330,6 @@ int _synthesisOriginRecordEstimateSize(
     }
   }
   bytesCount += 3 + object.cleanedText.length * 3;
-  bytesCount += 3 + object.folder.length * 3;
   bytesCount += 3 + object.formattedSequence.length * 3;
   return bytesCount;
 }
@@ -2344,10 +2342,9 @@ void _synthesisOriginRecordSerialize(
 ) {
   writer.writeString(offsets[0], object.audioPath);
   writer.writeString(offsets[1], object.cleanedText);
-  writer.writeString(offsets[2], object.folder);
-  writer.writeString(offsets[3], object.formattedSequence);
-  writer.writeLong(offsets[4], object.noteId);
-  writer.writeDateTime(offsets[5], object.timestamp);
+  writer.writeString(offsets[2], object.formattedSequence);
+  writer.writeLong(offsets[3], object.noteId);
+  writer.writeDateTime(offsets[4], object.timestamp);
 }
 
 SynthesisOriginRecord _synthesisOriginRecordDeserialize(
@@ -2359,10 +2356,9 @@ SynthesisOriginRecord _synthesisOriginRecordDeserialize(
   final object = SynthesisOriginRecord();
   object.audioPath = reader.readStringOrNull(offsets[0]);
   object.cleanedText = reader.readString(offsets[1]);
-  object.folder = reader.readString(offsets[2]);
-  object.formattedSequence = reader.readString(offsets[3]);
-  object.noteId = reader.readLong(offsets[4]);
-  object.timestamp = reader.readDateTimeOrNull(offsets[5]);
+  object.formattedSequence = reader.readString(offsets[2]);
+  object.noteId = reader.readLong(offsets[3]);
+  object.timestamp = reader.readDateTimeOrNull(offsets[4]);
   return object;
 }
 
@@ -2380,10 +2376,8 @@ P _synthesisOriginRecordDeserializeProp<P>(
     case 2:
       return (reader.readString(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
-    case 4:
       return (reader.readLong(offset)) as P;
-    case 5:
+    case 4:
       return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -2781,187 +2775,6 @@ extension SynthesisOriginRecordQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'cleanedText', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderEqualTo(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(
-          include: include,
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderLessThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.lessThan(
-          include: include,
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.between(
-          property: r'folder',
-          lower: lower,
-          includeLower: includeLower,
-          upper: upper,
-          includeUpper: includeUpper,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderStartsWith(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.startsWith(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderEndsWith(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.endsWith(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderContains(String value, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.contains(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderMatches(String pattern, {bool caseSensitive = true}) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.matches(
-          property: r'folder',
-          wildcard: pattern,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(property: r'folder', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<
-    SynthesisOriginRecord,
-    SynthesisOriginRecord,
-    QAfterFilterCondition
-  >
-  folderIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(property: r'folder', value: ''),
       );
     });
   }

@@ -19,9 +19,6 @@ class Note {
   
   late String correctedText;
   
-  @Index()
-  late String folder;
-  
   DateTime? createdAt;
 
   int? dailySequenceNumber;
@@ -37,7 +34,6 @@ class Note {
     this.originalAudioPath,
     this.rawText = '',
     this.correctedText = '',
-    this.folder = 'Uncategorized',
     DateTime? createdAt,
     this.dailySequenceNumber,
     this.state = ThoughtState.processed,

@@ -23,8 +23,8 @@ void main() {
     return container;
   }
 
-  Future<Note> savedNote(String text, String folder) async {
-    final note = Note(correctedText: text, folder: folder);
+  Future<Note> savedNote(String text, DateTime at) async {
+    final note = Note(correctedText: text, createdAt: at);
     await notesRepo.saveNote(note);
     return note;
   }
@@ -36,9 +36,9 @@ void main() {
 
   group('Synthesis sessions survive an app restart', () {
     test('sessions created in one launch are restored in the next, with their origin thoughts', () async {
-      await savedNote('Refactor the queue.', 'Work');
-      await savedNote('Ship the capsule.', 'Work');
-      await savedNote('Feeling good today.', 'Journal');
+      await savedNote('Refactor the queue.', DateTime(2026, 11, 5, 9, 0));
+      await savedNote('Ship the capsule.', DateTime(2026, 11, 5, 9, 10));
+      await savedNote('Feeling good today.', DateTime(2026, 11, 5, 18, 0));
 
       final first = launchApp();
       final repo = first.read(synthesisRepositoryProvider.notifier);
@@ -52,28 +52,30 @@ void main() {
       final restored = second.read(synthesisRepositoryProvider);
 
       expect(restored.map((c) => c.sequenceNumber), ['#S-02', '#S-01']);
-      final work = restored.firstWhere((c) => c.folder == 'Work');
+      final work = restored.firstWhere((c) => c.originNotes.length == 2);
       expect(work.originNotes.map((n) => n.cleanedText).toSet(), {'Refactor the queue.', 'Ship the capsule.'});
       expect(work.isUnread, isTrue);
       expect(work.synthesizedContent, contains('Consolidated 2 thoughts'));
     });
 
     test('edits made to a session (read, folder, style, merge, delete) are durable', () async {
-      await savedNote('A', 'Work');
-      await savedNote('B', 'Ideas');
-      await savedNote('C', 'Todos');
+      await savedNote('A', DateTime(2026, 11, 5, 6, 0));
+      await savedNote('B', DateTime(2026, 11, 5, 9, 30));
+      await savedNote('C', DateTime(2026, 11, 5, 13, 0));
 
       final first = launchApp();
       final repo = first.read(synthesisRepositoryProvider.notifier);
       await repo.synthesizeRawNotes();
-      String idOf(String folder) =>
-          first.read(synthesisRepositoryProvider).firstWhere((c) => c.folder == folder).clusterId;
+      String idOf(String text) => first
+          .read(synthesisRepositoryProvider)
+          .firstWhere((c) => c.originNotes.any((n) => n.cleanedText == text))
+          .clusterId;
 
-      repo.markClusterAsRead(idOf('Work'));
-      repo.reassignFolder(idOf('Work'), 'Journal');
-      repo.applyStyle(idOf('Journal'), 'bullets');
-      repo.mergeClusters(idOf('Ideas'), idOf('Journal'));
-      repo.deleteCluster(idOf('Todos'));
+      repo.markClusterAsRead(idOf('A'));
+      repo.reassignFolder(idOf('A'), 'Journal');
+      repo.applyStyle(idOf('A'), 'bullets');
+      repo.mergeClusters(idOf('B'), idOf('A'));
+      await repo.deleteCluster(idOf('C'));
       await repo.pendingWrites;
 
       final second = launchApp();
@@ -91,12 +93,12 @@ void main() {
     });
 
     test('a session created after a restart continues the identifier sequence', () async {
-      await savedNote('A', 'Work');
+      await savedNote('A', DateTime(2026, 11, 5, 9, 0));
       final first = launchApp();
       await first.read(synthesisRepositoryProvider.notifier).synthesizeRawNotes();
       await first.read(synthesisRepositoryProvider.notifier).pendingWrites;
 
-      await savedNote('B', 'Ideas');
+      await savedNote('B', DateTime(2026, 11, 5, 15, 0));
       final second = launchApp();
       // Synthesizing right at launch must still see the stored session.
       await second.read(synthesisRepositoryProvider.notifier).synthesizeRawNotes();
@@ -105,7 +107,7 @@ void main() {
     });
 
     test('transient view state is not persisted', () async {
-      await savedNote('A', 'Work');
+      await savedNote('A', DateTime(2026, 11, 5, 9, 0));
       final first = launchApp();
       final repo = first.read(synthesisRepositoryProvider.notifier);
       await repo.synthesizeRawNotes();
@@ -120,28 +122,43 @@ void main() {
     });
   });
 
-  group('Orphaned synthesized thoughts', () {
-    test('thoughts whose session was lost return to the clustering buffer; claimed thoughts stay put',
-        () async {
-      final claimed = await savedNote('Kept in a session', 'Work');
+  group('Deleting a session', () {
+    test('returns its thoughts to processed so the next synthesis picks them up', () async {
+      final a = await savedNote('A', DateTime(2026, 11, 5, 9, 0));
+      final b = await savedNote('B', DateTime(2026, 11, 5, 9, 10));
       final container = launchApp();
       final repo = container.read(synthesisRepositoryProvider.notifier);
       await repo.synthesizeRawNotes();
-      await repo.pendingWrites;
+      expect((await notesRepo.getNoteById(a.id))!.state, ThoughtState.synthesized);
 
-      // Left behind by a session that was never persisted.
-      final orphan = Note(correctedText: 'Lost session thought', state: ThoughtState.synthesized);
-      await notesRepo.saveNote(orphan);
+      await repo.deleteCluster(container.read(synthesisRepositoryProvider).single.clusterId);
 
-      final relaunched = launchApp();
-      relaunched.read(synthesisRepositoryProvider);
-      final recovered =
-          await relaunched.read(synthesisRepositoryProvider.notifier).recoverOrphanedSynthesizedNotes();
+      expect(container.read(synthesisRepositoryProvider), isEmpty);
+      expect((await notesRepo.getNoteById(a.id))!.state, ThoughtState.processed);
+      expect((await notesRepo.getNoteById(b.id))!.state, ThoughtState.processed);
 
-      expect(recovered, 1);
-      expect((await notesRepo.getNoteById(orphan.id))!.state, ThoughtState.processed);
-      expect((await notesRepo.getNoteById(claimed.id))!.state, ThoughtState.synthesized);
-      expect(await relaunched.read(rawNotesReadyToClusterCountProvider.future), 1);
+      await repo.synthesizeRawNotes();
+      expect(container.read(synthesisRepositoryProvider).single.originNotes.length, 2);
+    });
+  });
+
+  group('Time-based sessions', () {
+    test('thoughts 3 hours apart become two sessions', () async {
+      await savedNote('A', DateTime(2026, 11, 5, 9, 0));
+      await savedNote('B', DateTime(2026, 11, 5, 12, 0));
+      final container = launchApp();
+      await container.read(synthesisRepositoryProvider.notifier).synthesizeRawNotes();
+      final sessions = container.read(synthesisRepositoryProvider);
+      expect(sessions.length, 2);
+      expect(sessions.every((c) => c.folder == 'Uncategorized'), isTrue);
+    });
+
+    test('thoughts 10 minutes apart become one session', () async {
+      await savedNote('A', DateTime(2026, 11, 5, 9, 0));
+      await savedNote('B', DateTime(2026, 11, 5, 9, 10));
+      final container = launchApp();
+      await container.read(synthesisRepositoryProvider.notifier).synthesizeRawNotes();
+      expect(container.read(synthesisRepositoryProvider).single.originNotes.length, 2);
     });
   });
 
@@ -161,7 +178,6 @@ void main() {
             id: 42,
             formattedSequence: '#03',
             cleanedText: 'Origin text',
-            folder: 'Ideas',
             timestamp: start,
             audioPath: '/a.wav',
           ),

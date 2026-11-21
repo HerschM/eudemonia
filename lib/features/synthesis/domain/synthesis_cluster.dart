@@ -5,7 +5,6 @@ class SynthesisOriginNote {
   final int id;
   final String formattedSequence;
   final String cleanedText;
-  final String folder;
   final DateTime timestamp;
   final String? audioPath;
 
@@ -13,7 +12,6 @@ class SynthesisOriginNote {
     required this.id,
     required this.formattedSequence,
     required this.cleanedText,
-    required this.folder,
     required this.timestamp,
     this.audioPath,
   });
@@ -26,7 +24,6 @@ class SynthesisOriginNote {
       id: note.id,
       formattedSequence: formattedSeq,
       cleanedText: text,
-      folder: note.folder,
       timestamp: note.createdAt ?? DateTime.now(),
       audioPath: note.originalAudioPath,
     );

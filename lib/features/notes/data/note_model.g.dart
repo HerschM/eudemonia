@@ -37,16 +37,15 @@ const NoteSchema = CollectionSchema(
       name: r'failureReason',
       type: IsarType.string,
     ),
-    r'folder': PropertySchema(id: 4, name: r'folder', type: IsarType.string),
-    r'isRead': PropertySchema(id: 5, name: r'isRead', type: IsarType.bool),
+    r'isRead': PropertySchema(id: 4, name: r'isRead', type: IsarType.bool),
     r'originalAudioPath': PropertySchema(
-      id: 6,
+      id: 5,
       name: r'originalAudioPath',
       type: IsarType.string,
     ),
-    r'rawText': PropertySchema(id: 7, name: r'rawText', type: IsarType.string),
+    r'rawText': PropertySchema(id: 6, name: r'rawText', type: IsarType.string),
     r'state': PropertySchema(
-      id: 8,
+      id: 7,
       name: r'state',
       type: IsarType.string,
       enumMap: _NotestateEnumValueMap,
@@ -58,21 +57,7 @@ const NoteSchema = CollectionSchema(
   deserialize: _noteDeserialize,
   deserializeProp: _noteDeserializeProp,
   idName: r'id',
-  indexes: {
-    r'folder': IndexSchema(
-      id: 4117413726152065984,
-      name: r'folder',
-      unique: false,
-      replace: false,
-      properties: [
-        IndexPropertySchema(
-          name: r'folder',
-          type: IndexType.hash,
-          caseSensitive: true,
-        ),
-      ],
-    ),
-  },
+  indexes: {},
   links: {},
   embeddedSchemas: {},
 
@@ -95,7 +80,6 @@ int _noteEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
-  bytesCount += 3 + object.folder.length * 3;
   {
     final value = object.originalAudioPath;
     if (value != null) {
@@ -117,11 +101,10 @@ void _noteSerialize(
   writer.writeDateTime(offsets[1], object.createdAt);
   writer.writeLong(offsets[2], object.dailySequenceNumber);
   writer.writeString(offsets[3], object.failureReason);
-  writer.writeString(offsets[4], object.folder);
-  writer.writeBool(offsets[5], object.isRead);
-  writer.writeString(offsets[6], object.originalAudioPath);
-  writer.writeString(offsets[7], object.rawText);
-  writer.writeString(offsets[8], object.state.name);
+  writer.writeBool(offsets[4], object.isRead);
+  writer.writeString(offsets[5], object.originalAudioPath);
+  writer.writeString(offsets[6], object.rawText);
+  writer.writeString(offsets[7], object.state.name);
 }
 
 Note _noteDeserialize(
@@ -135,12 +118,11 @@ Note _noteDeserialize(
     createdAt: reader.readDateTimeOrNull(offsets[1]),
     dailySequenceNumber: reader.readLongOrNull(offsets[2]),
     failureReason: reader.readStringOrNull(offsets[3]),
-    folder: reader.readStringOrNull(offsets[4]) ?? 'Uncategorized',
-    isRead: reader.readBoolOrNull(offsets[5]) ?? false,
-    originalAudioPath: reader.readStringOrNull(offsets[6]),
-    rawText: reader.readStringOrNull(offsets[7]) ?? '',
+    isRead: reader.readBoolOrNull(offsets[4]) ?? false,
+    originalAudioPath: reader.readStringOrNull(offsets[5]),
+    rawText: reader.readStringOrNull(offsets[6]) ?? '',
     state:
-        _NotestateValueEnumMap[reader.readStringOrNull(offsets[8])] ??
+        _NotestateValueEnumMap[reader.readStringOrNull(offsets[7])] ??
         ThoughtState.processed,
   );
   object.id = id;
@@ -163,14 +145,12 @@ P _noteDeserializeProp<P>(
     case 3:
       return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readStringOrNull(offset) ?? 'Uncategorized') as P;
-    case 5:
       return (reader.readBoolOrNull(offset) ?? false) as P;
-    case 6:
+    case 5:
       return (reader.readStringOrNull(offset)) as P;
-    case 7:
+    case 6:
       return (reader.readStringOrNull(offset) ?? '') as P;
-    case 8:
+    case 7:
       return (_NotestateValueEnumMap[reader.readStringOrNull(offset)] ??
               ThoughtState.processed)
           as P;
@@ -278,56 +258,6 @@ extension NoteQueryWhere on QueryBuilder<Note, Note, QWhereClause> {
           includeUpper: includeUpper,
         ),
       );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterWhereClause> folderEqualTo(String folder) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addWhereClause(
-        IndexWhereClause.equalTo(indexName: r'folder', value: [folder]),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterWhereClause> folderNotEqualTo(String folder) {
-    return QueryBuilder.apply(this, (query) {
-      if (query.whereSort == Sort.asc) {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'folder',
-                lower: [],
-                upper: [folder],
-                includeUpper: false,
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'folder',
-                lower: [folder],
-                includeLower: false,
-                upper: [],
-              ),
-            );
-      } else {
-        return query
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'folder',
-                lower: [folder],
-                includeLower: false,
-                upper: [],
-              ),
-            )
-            .addWhereClause(
-              IndexWhereClause.between(
-                indexName: r'folder',
-                lower: [],
-                upper: [folder],
-                includeUpper: false,
-              ),
-            );
-      }
     });
   }
 }
@@ -786,152 +716,6 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'failureReason', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderEqualTo(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderGreaterThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(
-          include: include,
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderLessThan(
-    String value, {
-    bool include = false,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.lessThan(
-          include: include,
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderBetween(
-    String lower,
-    String upper, {
-    bool includeLower = true,
-    bool includeUpper = true,
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.between(
-          property: r'folder',
-          lower: lower,
-          includeLower: includeLower,
-          upper: upper,
-          includeUpper: includeUpper,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderStartsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.startsWith(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderEndsWith(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.endsWith(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderContains(
-    String value, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.contains(
-          property: r'folder',
-          value: value,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderMatches(
-    String pattern, {
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.matches(
-          property: r'folder',
-          wildcard: pattern,
-          caseSensitive: caseSensitive,
-        ),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderIsEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.equalTo(property: r'folder', value: ''),
-      );
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterFilterCondition> folderIsNotEmpty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addFilterCondition(
-        FilterCondition.greaterThan(property: r'folder', value: ''),
       );
     });
   }
@@ -1510,18 +1294,6 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
     });
   }
 
-  QueryBuilder<Note, Note, QAfterSortBy> sortByFolder() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'folder', Sort.asc);
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterSortBy> sortByFolderDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'folder', Sort.desc);
-    });
-  }
-
   QueryBuilder<Note, Note, QAfterSortBy> sortByIsRead() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'isRead', Sort.asc);
@@ -1617,18 +1389,6 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
   QueryBuilder<Note, Note, QAfterSortBy> thenByFailureReasonDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'failureReason', Sort.desc);
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterSortBy> thenByFolder() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'folder', Sort.asc);
-    });
-  }
-
-  QueryBuilder<Note, Note, QAfterSortBy> thenByFolderDesc() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addSortBy(r'folder', Sort.desc);
     });
   }
 
@@ -1728,14 +1488,6 @@ extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
     });
   }
 
-  QueryBuilder<Note, Note, QDistinct> distinctByFolder({
-    bool caseSensitive = true,
-  }) {
-    return QueryBuilder.apply(this, (query) {
-      return query.addDistinctBy(r'folder', caseSensitive: caseSensitive);
-    });
-  }
-
   QueryBuilder<Note, Note, QDistinct> distinctByIsRead() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'isRead');
@@ -1798,12 +1550,6 @@ extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
   QueryBuilder<Note, String?, QQueryOperations> failureReasonProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'failureReason');
-    });
-  }
-
-  QueryBuilder<Note, String, QQueryOperations> folderProperty() {
-    return QueryBuilder.apply(this, (query) {
-      return query.addPropertyName(r'folder');
     });
   }
 

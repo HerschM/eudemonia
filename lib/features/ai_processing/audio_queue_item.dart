@@ -1,7 +1,6 @@
 enum AudioQueueStatus {
   pending,
   transcribing,
-  categorizing, // Legacy: no longer emitted, only read from queues stored by older builds.
   completed,
   failed,
 }
@@ -12,7 +11,6 @@ class AudioQueueItem {
   final DateTime recordedAt;
   AudioQueueStatus status;
   String? rawTranscript;
-  String? folder;
   String? correctedText;
   String? errorMessage;
   int? sequenceNumber;
@@ -23,7 +21,6 @@ class AudioQueueItem {
     required this.recordedAt,
     this.status = AudioQueueStatus.pending,
     this.rawTranscript,
-    this.folder,
     this.correctedText,
     this.errorMessage,
     this.sequenceNumber,
@@ -35,7 +32,6 @@ class AudioQueueItem {
         'recordedAt': recordedAt.toIso8601String(),
         'status': status.name,
         'rawTranscript': rawTranscript,
-        'folder': folder,
         'correctedText': correctedText,
         'errorMessage': errorMessage,
         'sequenceNumber': sequenceNumber,
@@ -47,10 +43,10 @@ class AudioQueueItem {
         recordedAt: DateTime.parse(json['recordedAt'] as String),
         status: AudioQueueStatus.values.firstWhere(
           (e) => e.name == json['status'],
+          // An unrecognised stored status waits for transcription again.
           orElse: () => AudioQueueStatus.pending,
         ),
         rawTranscript: json['rawTranscript'] as String?,
-        folder: json['folder'] as String?,
         correctedText: json['correctedText'] as String?,
         errorMessage: json['errorMessage'] as String?,
         sequenceNumber: json['sequenceNumber'] as int?,

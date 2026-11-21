@@ -13,7 +13,6 @@ void main() {
     test('1. New notes are created with isRead = false', () async {
       final note = Note(
         correctedText: 'Fresh unread thought',
-        folder: 'Ideas',
       );
       expect(note.isRead, isFalse);
 
@@ -26,7 +25,6 @@ void main() {
     test('2. markAsRead(id) updates note in database', () async {
       final note = Note(
         correctedText: 'Thought to be marked read',
-        folder: 'Work',
       );
       await repo.saveNote(note);
 
@@ -38,9 +36,9 @@ void main() {
     });
 
     test('3. getUnreadNotes() queries only notes where isRead == false', () async {
-      final note1 = Note(correctedText: 'Note 1', folder: 'Work');
-      final note2 = Note(correctedText: 'Note 2', folder: 'Ideas');
-      final note3 = Note(correctedText: 'Note 3', folder: 'Todos');
+      final note1 = Note(correctedText: 'Note 1');
+      final note2 = Note(correctedText: 'Note 2');
+      final note3 = Note(correctedText: 'Note 3');
 
       await repo.saveNote(note1);
       await repo.saveNote(note2);

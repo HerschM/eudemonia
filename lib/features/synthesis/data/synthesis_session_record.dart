@@ -9,7 +9,6 @@ class SynthesisOriginRecord {
   int noteId = 0;
   String formattedSequence = '';
   String cleanedText = '';
-  String folder = 'Uncategorized';
   DateTime? timestamp;
   String? audioPath;
 }
@@ -51,7 +50,6 @@ class SynthesisSessionRecord {
             ..noteId = n.id
             ..formattedSequence = n.formattedSequence
             ..cleanedText = n.cleanedText
-            ..folder = n.folder
             ..timestamp = n.timestamp
             ..audioPath = n.audioPath,
       ]
@@ -76,7 +74,6 @@ class SynthesisSessionRecord {
             id: n.noteId,
             formattedSequence: n.formattedSequence,
             cleanedText: n.cleanedText,
-            folder: n.folder,
             timestamp: n.timestamp ?? sessionStart,
             audioPath: n.audioPath,
           ),

@@ -32,14 +32,6 @@ class FakeNotesRepository implements NotesRepository {
       note.correctedText = newText;
     }
   }
-
-  @override
-  Future<void> updateNoteFolder(int id, String newFolder) async {
-    final note = notes.where((n) => n.id == id).firstOrNull;
-    if (note != null) {
-      note.folder = newFolder;
-    }
-  }
 }
 
 class FakeQueueCountNotifier extends PendingQueueCountNotifier {
@@ -57,14 +49,12 @@ void main() {
     testWidgets('1. Unread cards display electric blue dot beside timestamp', (tester) async {
       final unreadNote = Note(
         correctedText: 'Unread thought text',
-        folder: 'Work',
         state: ThoughtState.processed,
         isRead: false,
       )..id = 1;
 
       final readNote = Note(
         correctedText: 'Read thought text',
-        folder: 'Ideas',
         state: ThoughtState.processed,
         isRead: true,
       )..id = 2;
@@ -102,7 +92,6 @@ void main() {
     testWidgets('2. Tapping unread card clears indicator dot', (tester) async {
       final unreadNote = Note(
         correctedText: 'Tappable unread thought',
-        folder: 'Work',
         state: ThoughtState.processed,
         isRead: false,
       )..id = 1;
@@ -145,14 +134,12 @@ void main() {
     testWidgets('3. Selecting Unread filter chip shows only unread notes', (tester) async {
       final unreadNote = Note(
         correctedText: 'Only unread note',
-        folder: 'Work',
         state: ThoughtState.processed,
         isRead: false,
       )..id = 1;
 
       final readNote = Note(
         correctedText: 'Read note that should be filtered',
-        folder: 'Ideas',
         state: ThoughtState.processed,
         isRead: true,
       )..id = 2;

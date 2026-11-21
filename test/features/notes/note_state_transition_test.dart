@@ -96,11 +96,9 @@ void main() {
       
       note.state = ThoughtState.processed;
       note.correctedText = fakeNotesRepo.savedNotes.first.correctedText;
-      note.folder = fakeNotesRepo.savedNotes.first.folder;
 
       expect(note.state, ThoughtState.processed);
       expect(note.correctedText, 'Clean speech text');
-      expect(note.folder, 'Uncategorized');
     });
 
     test('2. State updates to failed with error description when worker throws', () async {

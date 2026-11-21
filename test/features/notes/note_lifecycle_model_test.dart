@@ -11,7 +11,6 @@ void main() {
         originalAudioPath: '/data/user/0/com.eudemonia/queue/thought_123.wav',
         rawText: '',
         correctedText: '',
-        folder: 'Uncategorized',
         state: ThoughtState.enqueued,
       );
 

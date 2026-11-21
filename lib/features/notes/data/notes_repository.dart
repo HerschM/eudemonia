@@ -118,23 +118,6 @@ class NotesRepository {
     }
   }
 
-  Future<void> updateNoteFolder(Id id, String newFolder) async {
-    if (_isar != null) {
-      await _isar!.writeTxn(() async {
-        final note = await _isar!.notes.get(id);
-        if (note != null) {
-          note.folder = newFolder;
-          await _isar!.notes.put(note);
-        }
-      });
-    } else {
-      final note = _inMemoryNotes.where((n) => n.id == id).firstOrNull;
-      if (note != null) {
-        note.folder = newFolder;
-      }
-    }
-  }
-
   Future<void> markAsRead(Id id) async {
     if (_isar != null) {
       await _isar!.writeTxn(() async {
@@ -198,50 +181,16 @@ class NotesRepository {
       return await _isar!.notes
           .filter()
           .correctedTextContains(query, caseSensitive: false)
-          .or()
-          .folderContains(query, caseSensitive: false)
           .sortByCreatedAtDesc()
           .findAll();
     } else {
       final q = query.toLowerCase();
       return _inMemoryNotes
-          .where((n) =>
-              n.correctedText.toLowerCase().contains(q) ||
-              n.folder.toLowerCase().contains(q))
+          .where((n) => n.correctedText.toLowerCase().contains(q))
           .toList()
         ..sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
             .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
     }
-  }
-
-  Future<List<Note>> getNotesByFolder(String folder) async {
-    if (_isar != null) {
-      return await _isar!.notes
-          .filter()
-          .folderEqualTo(folder)
-          .sortByCreatedAtDesc()
-          .findAll();
-    } else {
-      return _inMemoryNotes
-          .where((n) => n.folder == folder)
-          .toList()
-        ..sort((a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-            .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
-    }
-  }
-
-  Future<List<String>> getAllFolders() async {
-    List<Note> notes;
-    if (_isar != null) {
-      notes = await _isar!.notes.where().findAll();
-    } else {
-      notes = _inMemoryNotes;
-    }
-    final folders = notes.map((n) => n.folder).toSet().toList();
-    if (folders.isEmpty) {
-      folders.addAll(['Work', 'Ideas', 'Todos', 'Journal']);
-    }
-    return folders;
   }
 }
 

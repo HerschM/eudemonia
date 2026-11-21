@@ -50,13 +50,12 @@ class AudioQueueService {
 
   int get pendingCount => _items.where((i) =>
       i.status == AudioQueueStatus.pending ||
-      i.status == AudioQueueStatus.transcribing ||
-      i.status == AudioQueueStatus.categorizing).length;
+      i.status == AudioQueueStatus.transcribing).length;
 
   int get failedCount => _items.where((i) => i.status == AudioQueueStatus.failed).length;
 
   AudioQueueItem? get currentProcessingItem => _items.cast<AudioQueueItem?>().firstWhere(
-        (i) => i?.status == AudioQueueStatus.transcribing || i?.status == AudioQueueStatus.categorizing,
+        (i) => i?.status == AudioQueueStatus.transcribing,
         orElse: () => null,
       );
 
@@ -100,8 +99,7 @@ class AudioQueueService {
                   needsRewrite = true;
                   continue;
                 }
-                if (item.status == AudioQueueStatus.transcribing ||
-                    item.status == AudioQueueStatus.categorizing) {
+                if (item.status == AudioQueueStatus.transcribing) {
                   // The process died mid-inference: hand the item back to the worker.
                   item.status = AudioQueueStatus.pending;
                   needsRewrite = true;

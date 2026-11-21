@@ -136,11 +136,8 @@ void main() {
     expect(note.rawText, '  So um I think we should, um, ship it  ');
     expect(note.correctedText, 'So um I think we should, um, ship it');
     expect(note.correctedText, note.rawText.trim());
-    expect(note.folder, 'Uncategorized');
     expect(service.items.single.correctedText, note.correctedText);
-    expect(service.items.single.folder, isNull);
     expect(seen, contains(AudioQueueStatus.transcribing));
-    expect(seen, isNot(contains(AudioQueueStatus.categorizing)));
     service.dispose();
   });
 

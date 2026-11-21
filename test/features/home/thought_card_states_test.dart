@@ -10,7 +10,6 @@ void main() {
         originalAudioPath: '/data/audio/recording_1.wav',
         rawText: 'Schedule team sync for next week',
         correctedText: 'Schedule team sync for next week.',
-        folder: 'Work',
         state: ThoughtState.processed,
       );
 

@@ -90,15 +90,15 @@ void main() {
       addTearDown(container.dispose);
       final synthesis = container.read(synthesisRepositoryProvider.notifier);
 
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'a', folder: 'Work')]);
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'b', folder: 'Ideas')]);
+      await synthesis.synthesizeRawNotes([Note(correctedText: 'a')]);
+      await synthesis.synthesizeRawNotes([Note(correctedText: 'b')]);
       final firstId = container
           .read(synthesisRepositoryProvider)
           .firstWhere((c) => c.sequenceNumber == '#S-01')
           .clusterId;
-      synthesis.deleteCluster(firstId);
+      await synthesis.deleteCluster(firstId);
 
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'c', folder: 'Todos')]);
+      await synthesis.synthesizeRawNotes([Note(correctedText: 'c')]);
 
       final ids = container.read(synthesisRepositoryProvider).map((c) => c.sequenceNumber).toList();
       expect(ids.toSet().length, ids.length);

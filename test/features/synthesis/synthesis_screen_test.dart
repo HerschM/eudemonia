@@ -32,14 +32,12 @@ void main() {
                 id: 1,
                 formattedSequence: '#01',
                 cleanedText: 'Need to implement foreground keep-alive service',
-                folder: 'Work',
                 timestamp: DateTime.now().subtract(const Duration(minutes: 30)),
               ),
               SynthesisOriginNote(
                 id: 2,
                 formattedSequence: '#02',
                 cleanedText: 'Add notification start and stop buttons',
-                folder: 'Work',
                 timestamp: DateTime.now().subtract(const Duration(minutes: 10)),
               ),
             ],
@@ -59,7 +57,6 @@ void main() {
                 id: 3,
                 formattedSequence: '#03',
                 cleanedText: 'Single origin note in this session',
-                folder: 'Ideas',
                 timestamp:
                     DateTime.now().subtract(const Duration(minutes: 50)),
               ),

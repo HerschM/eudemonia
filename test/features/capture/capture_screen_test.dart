@@ -116,7 +116,7 @@ void main() {
 
     testWidgets('groups thoughts under a day header and shows no folder on any card', (tester) async {
       final repo = NotesRepository();
-      await repo.saveNote(Note(correctedText: 'Fresh thought.', folder: 'Work'));
+      await repo.saveNote(Note(correctedText: 'Fresh thought.'));
 
       await pumpCapture(tester, notesRepo: repo);
 

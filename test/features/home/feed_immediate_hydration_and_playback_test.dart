@@ -44,15 +44,6 @@ class FakeNotesRepository implements NotesRepository {
       }
     }
   }
-
-  @override
-  Future<void> updateNoteFolder(int id, String folder) async {
-    for (final note in notes) {
-      if (note.id == id) {
-        note.folder = folder;
-      }
-    }
-  }
 }
 
 class FakeQueueItemsNotifier extends QueueItemsNotifier {
@@ -162,7 +153,6 @@ void main() {
         originalAudioPath: '/data/user/0/recording_1002.wav',
         rawText: 'Schedule meeting tomorrow at 3pm',
         correctedText: 'Schedule meeting tomorrow at 3:00 PM.',
-        folder: 'Work',
         createdAt: DateTime(2026, 10, 29, 14, 5),
         state: ThoughtState.processed,
       )..id = 1;
@@ -264,7 +254,6 @@ void main() {
           originalAudioPath: '/data/user/0/ok_audio.wav',
           rawText: 'Regular note',
           correctedText: 'Regular note.',
-          folder: 'Ideas',
           createdAt: DateTime(2026, 10, 29, 14, 0),
           state: ThoughtState.processed,
         )..id = 2,

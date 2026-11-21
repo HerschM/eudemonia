@@ -13,7 +13,6 @@ void main() {
     test('1. updateNoteText(id, newText) persists updated text to database', () async {
       final note = Note(
         correctedText: 'Original thought text',
-        folder: 'Ideas',
       );
       await repo.saveNote(note);
       expect(note.id, isNotNull);
@@ -25,24 +24,9 @@ void main() {
       expect(updated!.correctedText, equals('Edited thought text'));
     });
 
-    test('2. updateNoteFolder(id, newFolder) persists updated folder to database', () async {
-      final note = Note(
-        correctedText: 'Meeting notes',
-        folder: 'Ideas',
-      );
-      await repo.saveNote(note);
-
-      await repo.updateNoteFolder(note.id, 'Work');
-
-      final updated = await repo.getNoteById(note.id);
-      expect(updated, isNotNull);
-      expect(updated!.folder, equals('Work'));
-    });
-
     test('3. deleteNote(id) permanently removes note from repository', () async {
       final note = Note(
         correctedText: 'Note to be deleted',
-        folder: 'Journal',
       );
       await repo.saveNote(note);
       expect(await repo.getNoteById(note.id), isNotNull);

@@ -10,7 +10,6 @@ void main() {
       final note = Note(
         rawText: 'Original text',
         correctedText: 'Original text.',
-        folder: 'Ideas',
         state: ThoughtState.processed,
       );
 
@@ -59,7 +58,6 @@ void main() {
       final note = Note(
         rawText: 'Test note',
         correctedText: 'Test note.',
-        folder: 'Ideas',
         state: ThoughtState.processed,
       );
 
@@ -83,7 +81,6 @@ void main() {
       final note = Note(
         rawText: 'Clubbed',
         correctedText: 'Clubbed.',
-        folder: 'Work',
         state: ThoughtState.synthesized,
       );
 

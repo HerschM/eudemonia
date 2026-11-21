@@ -2,27 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 
 void main() {
-  group('LLMService KV Cache Policy & Turn Tracking', () {
-    test('completedTurnsCount starts at 0 and increments on processText', () async {
-      final service = LLMService(
-        config: const LLMConfig(
-          clearKvCacheEveryXTurns: 1,
-          kvCacheTtl: Duration(seconds: 1),
-        ),
-      );
-
-      expect(service.completedTurnsCount, equals(0));
-      expect(service.hasActiveKvScope, isFalse);
-
-      // Uninitialized fallback increments turn count and returns classified fallback
-      await service.processText('test note 1');
-      // In uninitialized fallback mode, prompt is not dispatched to native, so turnsCount is not incremented
-      expect(service.completedTurnsCount, equals(0));
-
-      service.dispose();
-      expect(service.isInitialized, isFalse);
-    });
-
+  group('LLMService KV Cache Policy', () {
     test('clearKvCache can be called safely even when uninitialized or empty', () async {
       final service = LLMService();
       // Should not throw

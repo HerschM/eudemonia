@@ -4,6 +4,7 @@ import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_session_store.dart';
+import 'package:eudemonia/features/synthesis/domain/session_clock.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 /// Synthesis sessions, held in memory for the UI and written through to
@@ -75,28 +76,6 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
         logger.error('[Synthesis] Failed to persist sessions', error: e, stackTrace: stack);
       }
     });
-  }
-
-  /// Returns thoughts marked as synthesized that no stored session contains to
-  /// the `processed` state, so they can be clustered again. Sessions created
-  /// before they were persisted left such thoughts behind after a restart.
-  Future<int> recoverOrphanedSynthesizedNotes() async {
-    await hydrated;
-    final notesRepo = ref.read(notesRepositoryProvider);
-    final claimed = {for (final c in state) ...c.originNotes.map((n) => n.id)};
-    int recovered = 0;
-    for (final note in await notesRepo.getAllNotes()) {
-      if (note.state == ThoughtState.synthesized && !claimed.contains(note.id)) {
-        note.state = ThoughtState.processed;
-        await notesRepo.saveNote(note);
-        recovered++;
-      }
-    }
-    if (recovered > 0) {
-      ref.invalidate(recentNotesProvider);
-      ref.invalidate(rawNotesReadyToClusterCountProvider);
-    }
-    return recovered;
   }
 
   int get unreadCount => state.where((c) => c.isUnread).length;
@@ -239,7 +218,7 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
     final newCluster = SynthesisCluster(
       clusterId: 'cluster_${DateTime.now().millisecondsSinceEpoch}',
       sequenceNumber: '#S-${newClusterSeq.toString().padLeft(2, '0')}',
-      folder: noteToMove.folder,
+      folder: sourceCluster.folder,
       synthesizedContent: noteToMove.cleanedText,
       sessionStart: noteToMove.timestamp,
       sessionEnd: noteToMove.timestamp.add(const Duration(minutes: 5)),
@@ -258,8 +237,22 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
     ];
   }
 
-  void deleteCluster(String clusterId) {
+  /// Removes a session and returns its thoughts to `processed` so they can be
+  /// clustered again.
+  Future<void> deleteCluster(String clusterId) async {
+    final cluster = state.where((c) => c.clusterId == clusterId).firstOrNull;
+    if (cluster == null) return;
     state = state.where((c) => c.clusterId != clusterId).toList();
+
+    final notesRepo = ref.read(notesRepositoryProvider);
+    for (final origin in cluster.originNotes) {
+      final note = await notesRepo.getNoteById(origin.id);
+      if (note == null || note.state != ThoughtState.synthesized) continue;
+      note.state = ThoughtState.processed;
+      await notesRepo.saveNote(note);
+    }
+    ref.invalidate(recentNotesProvider);
+    ref.invalidate(rawNotesReadyToClusterCountProvider);
   }
 
   /// Synthesizes raw notes from NotesRepository into structured sessions
@@ -280,19 +273,15 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
       await notesRepo.saveNote(note);
     }
 
-    // Group notes by folder to preserve 2D routing (Time Window ∩ Target Folder)
-    final byFolder = <String, List<Note>>{};
-    for (final n in notesToCluster) {
-      byFolder.putIfAbsent(n.folder, () => []).add(n);
-    }
+    final sessions = splitIntoSessions<Note>(
+      notesToCluster,
+      timeOf: (n) => n.createdAt ?? DateTime.now(),
+    );
 
     final newClusters = <SynthesisCluster>[];
     int nextSeqIndex = _nextSequenceIndex();
 
-    for (final entry in byFolder.entries) {
-      final folder = entry.key;
-      final folderNotes = entry.value;
-
+    for (final folderNotes in sessions) {
       final originNotes = folderNotes
           .map((n) => SynthesisOriginNote.fromNote(n))
           .toList();
@@ -318,7 +307,8 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
         clusterId:
             'cluster_${DateTime.now().millisecondsSinceEpoch}_$nextSeqIndex',
         sequenceNumber: '#S-${nextSeqIndex.toString().padLeft(2, '0')}',
-        folder: folder,
+        // Interim until the LLM organise turn assigns a session folder.
+        folder: 'Uncategorized',
         synthesizedContent:
             'Consolidated ${folderNotes.length} thoughts:\n$combinedNarrative',
         sessionStart: earliest,
