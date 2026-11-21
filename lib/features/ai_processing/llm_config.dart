@@ -2,19 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 
-/// Configuration for on-device LLM inference and KV cache lifecycle.
+/// Configuration for on-device LLM inference.
 @immutable
 class LLMConfig {
   /// Maximum token capacity for the Key-Value (KV) cache / context window.
-  /// Maps directly to `ContextParams.nCtx`. Default is 2048 tokens.
+  /// Maps directly to `ContextParams.nCtx`; selectable per load. Default is 2048 tokens.
   final int kvCacheMaxSize;
 
-  /// Guardrail limit on raw input prompt tokens before truncation.
-  /// Ensures sufficient remaining headroom within `kvCacheMaxSize` for generation.
-  final int inputTokenLimit;
-
-  /// Maximum tokens to generate per completion.
-  /// Maps to `ContextParams.nPredict`. Default is 256 tokens.
+  /// Default output budget for callers that have no per-call estimate. Not passed to the
+  /// engine: `LLMService.generate` enforces its own per-call `maxOutputTokens`.
   final int maxOutputTokens;
 
   /// Quantization type for Key and Value cache tensors.
@@ -22,24 +18,13 @@ class LLMConfig {
   /// reduces KV cache RAM usage while preserving high context length.
   final LlamaKvCacheType kvCacheType;
 
-  /// Frequency (in turns/calls) after which the KV cache slot is completely emptied.
-  /// - `1` (default): Pure stateless single-turn call. KV cache is cleared immediately
-  ///   after each note classification so no leftover context consumes RAM.
-  /// - `x > 1`: Retains cache for `x` turns to benchmark token generation latency differences.
-  /// - `<= 0`: Disables turn-based purging (relies purely on TTL).
-  final int clearKvCacheEveryXTurns;
-
-  /// Inactivity Time-To-Live for the Key-Value cache slot.
-  /// If no LLM calls occur for this duration, the KV cache slot is freed even if
-  /// the base model weights remain loaded in RAM. Default is 2 minutes.
-  final Duration kvCacheTtl;
-
   /// Full model eviction Time-To-Live.
   /// If the app remains idle for this duration, both LLM and STT models are completely
   /// unloaded from RAM, reclaiming ~1.6 GB of memory. Default is 3 minutes.
   final Duration modelInactivityTtl;
 
-  /// Batch size for prompt evaluation tokens. Maps to `ContextParams.nBatch`.
+  /// Minimum batch size for prompt evaluation. `LLMService` raises `ContextParams.nBatch`
+  /// to at least `kvCacheMaxSize`, because the binding rejects prompts longer than nBatch.
   final int batchSize;
 
   /// Number of CPU threads used for prompt evaluation and generation.
@@ -52,12 +37,12 @@ class LLMConfig {
   final int gpuLayers;
 
   /// Whether sampling is greedy (always picks the most likely token).
-  /// Maps to `SamplerParams.greedy`. Default is `true`: the reply is structured JSON, so deterministic output is preferred; measured speed is the same as sampled.
+  /// Maps to `SamplerParams.greedy`. Default is `true`: replies are structured text, so deterministic output is preferred; measured speed is the same as sampled.
   final bool greedySampling;
 
   /// Maximum time to wait for a single completion before generation is stopped
-  /// and the partial output is parsed (falling back to the heuristic classifier
-  /// if unparseable). Default is 60 seconds.
+  /// and the call fails with a `TimeoutException` (partial text is discarded).
+  /// Default is 60 seconds.
   final Duration generationTimeout;
 
   /// Longest time to wait for the model to finish loading. The first load after an
@@ -68,11 +53,8 @@ class LLMConfig {
 
   const LLMConfig({
     this.kvCacheMaxSize = 2048,
-    this.inputTokenLimit = 1536,
     this.maxOutputTokens = 256,
     this.kvCacheType = LlamaKvCacheType.f16,
-    this.clearKvCacheEveryXTurns = 1,
-    this.kvCacheTtl = const Duration(minutes: 2),
     this.modelInactivityTtl = const Duration(minutes: 3),
     this.batchSize = 512,
     this.threads = 4,
@@ -81,20 +63,14 @@ class LLMConfig {
     this.generationTimeout = const Duration(seconds: 60),
     this.modelLoadTimeout = const Duration(seconds: 180),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
-        assert(inputTokenLimit > 0, 'inputTokenLimit must be positive'),
-        assert(inputTokenLimit < kvCacheMaxSize,
-            'inputTokenLimit must be smaller than kvCacheMaxSize to leave headroom for output generation'),
         assert(maxOutputTokens > 0, 'maxOutputTokens must be positive'),
         assert(threads > 0, 'threads must be positive'),
         assert(gpuLayers >= 0, 'gpuLayers must be non-negative');
 
   LLMConfig copyWith({
     int? kvCacheMaxSize,
-    int? inputTokenLimit,
     int? maxOutputTokens,
     LlamaKvCacheType? kvCacheType,
-    int? clearKvCacheEveryXTurns,
-    Duration? kvCacheTtl,
     Duration? modelInactivityTtl,
     int? batchSize,
     int? threads,
@@ -105,12 +81,8 @@ class LLMConfig {
   }) {
     return LLMConfig(
       kvCacheMaxSize: kvCacheMaxSize ?? this.kvCacheMaxSize,
-      inputTokenLimit: inputTokenLimit ?? this.inputTokenLimit,
       maxOutputTokens: maxOutputTokens ?? this.maxOutputTokens,
       kvCacheType: kvCacheType ?? this.kvCacheType,
-      clearKvCacheEveryXTurns:
-          clearKvCacheEveryXTurns ?? this.clearKvCacheEveryXTurns,
-      kvCacheTtl: kvCacheTtl ?? this.kvCacheTtl,
       modelInactivityTtl: modelInactivityTtl ?? this.modelInactivityTtl,
       batchSize: batchSize ?? this.batchSize,
       threads: threads ?? this.threads,
@@ -127,11 +99,8 @@ class LLMConfig {
       other is LLMConfig &&
           runtimeType == other.runtimeType &&
           kvCacheMaxSize == other.kvCacheMaxSize &&
-          inputTokenLimit == other.inputTokenLimit &&
           maxOutputTokens == other.maxOutputTokens &&
           kvCacheType == other.kvCacheType &&
-          clearKvCacheEveryXTurns == other.clearKvCacheEveryXTurns &&
-          kvCacheTtl == other.kvCacheTtl &&
           modelInactivityTtl == other.modelInactivityTtl &&
           batchSize == other.batchSize &&
           threads == other.threads &&
@@ -143,11 +112,8 @@ class LLMConfig {
   @override
   int get hashCode =>
       kvCacheMaxSize.hashCode ^
-      inputTokenLimit.hashCode ^
       maxOutputTokens.hashCode ^
       kvCacheType.hashCode ^
-      clearKvCacheEveryXTurns.hashCode ^
-      kvCacheTtl.hashCode ^
       modelInactivityTtl.hashCode ^
       batchSize.hashCode ^
       threads.hashCode ^
@@ -158,9 +124,8 @@ class LLMConfig {
 
   @override
   String toString() {
-    return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, inputTokenLimit: $inputTokenLimit, '
+    return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, '
         'maxOutputTokens: $maxOutputTokens, kvCacheType: ${kvCacheType.name}, '
-        'clearKvCacheEveryXTurns: $clearKvCacheEveryXTurns, kvCacheTtl: ${kvCacheTtl.inSeconds}s, '
         'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, gpuLayers: $gpuLayers, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
   }
 }

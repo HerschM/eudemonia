@@ -2,26 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 
 void main() {
-  group('LLMService KV Cache Policy', () {
-    test('clearKvCache can be called safely even when uninitialized or empty', () async {
-      final service = LLMService();
-      // Should not throw
-      await service.clearKvCache(reason: 'unit test');
-      expect(service.hasActiveKvScope, isFalse);
+  group('LLMService config plumbing', () {
+    test('custom LLMConfig is retained by the service', () {
+      const customConfig = LLMConfig(kvCacheMaxSize: 8192, threads: 2);
+      final service = LLMService(config: customConfig);
+      expect(service.config.kvCacheMaxSize, equals(8192));
+      expect(service.config.threads, equals(2));
       service.dispose();
     });
 
-    test('custom LLMConfig is properly retained by service', () {
-      const customConfig = LLMConfig(
-        kvCacheMaxSize: 1024,
-        inputTokenLimit: 512,
-        clearKvCacheEveryXTurns: 3,
-        threads: 2,
+    test('initialize fails clearly for a missing model file', () async {
+      final service = LLMService(config: const LLMConfig(kvCacheMaxSize: 4096));
+      await expectLater(
+        service.initialize('/nonexistent/model.gguf'),
+        throwsA(isA<Exception>()),
       );
-      final service = LLMService(config: customConfig);
-      expect(service.config.kvCacheMaxSize, equals(1024));
-      expect(service.config.clearKvCacheEveryXTurns, equals(3));
-      expect(service.config.threads, equals(2));
+      expect(service.isInitialized, isFalse);
       service.dispose();
     });
   });
