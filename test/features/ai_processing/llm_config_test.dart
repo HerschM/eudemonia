@@ -121,5 +121,15 @@ void main() {
     test('toString includes generationTimeout in seconds', () {
       expect(const LLMConfig().toString(), contains('generationTimeout: 60s'));
     });
+
+    test('modelLoadTimeout defaults to 180s and takes part in copyWith and equality', () {
+      const base = LLMConfig();
+      expect(base.modelLoadTimeout, equals(const Duration(seconds: 180)));
+
+      final longer = base.copyWith(modelLoadTimeout: const Duration(seconds: 300));
+      expect(longer.modelLoadTimeout, equals(const Duration(seconds: 300)));
+      expect(longer.generationTimeout, equals(base.generationTimeout));
+      expect(longer, isNot(equals(base)));
+    });
   });
 }

@@ -6,7 +6,7 @@ import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
-import 'package:eudemonia/features/ai_processing/llm_service.dart';
+import 'package:eudemonia/features/ai_processing/llm_config.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 
@@ -42,49 +42,15 @@ class FakeSTTService implements STTService {
   }
 }
 
-class FakeLLMService implements LLMService {
-  @override
-  bool isInitialized = false;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-
-  @override
-  int get completedTurnsCount => 0;
-
-  @override
-  Future<void> initialize(String modelPath) async {
-    isInitialized = true;
-  }
-
-  @override
-  Future<LLMResponse> processText(String rawTranscript) async {
-    if (!isInitialized) throw StateError('LLM Service not initialized');
-    return LLMResponse(
-      rawText: rawTranscript,
-      correctedText: '$rawTranscript.',
-      selectedFolder: 'Ideas',
-      folderScores: const {'Ideas': 0.9},
-    );
-  }
-
-  @override
-  void dispose() {
-    isInitialized = false;
-  }
-}
-
 void main() {
   late Directory tempDir;
   late File queueFile;
   late FakeSTTService stt;
-  late FakeLLMService llm;
   late NotesRepository notesRepo;
   late ModelLifecycleManager lifecycle;
 
   AudioQueueService buildService({ModelLifecycleManager? manager}) => AudioQueueService(
         stt,
-        llm,
         notesRepo,
         manager ?? lifecycle,
         storageFileResolver: () async => queueFile,
@@ -104,9 +70,8 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('queue_resilience_test_');
     queueFile = File('${tempDir.path}/queue.json');
     stt = FakeSTTService();
-    llm = FakeLLMService();
     notesRepo = NotesRepository();
-    lifecycle = ModelLifecycleManager(stt, llm, modelsDirResolver: () async => tempDir.path);
+    lifecycle = ModelLifecycleManager(stt, modelsDirResolver: () async => tempDir.path);
   });
 
   tearDown(() async {
@@ -234,7 +199,6 @@ void main() {
     test('models are still evicted after the TTL when every item fails', () async {
       final shortTtl = ModelLifecycleManager(
         stt,
-        llm,
         config: const LLMConfig(modelInactivityTtl: Duration(milliseconds: 60)),
         modelsDirResolver: () async => tempDir.path,
       );
@@ -250,7 +214,6 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(shortTtl.state, ModelLifecycleState.unloaded);
       expect(stt.isInitialized, isFalse);
-      expect(llm.isInitialized, isFalse);
     });
 
     test('a failing item does not block the items behind it', () async {

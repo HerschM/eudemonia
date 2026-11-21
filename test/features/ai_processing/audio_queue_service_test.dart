@@ -4,7 +4,6 @@ import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
-import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 
@@ -53,48 +52,10 @@ class FakeSTTService implements STTService {
   }
 }
 
-class FakeLLMService implements LLMService {
-  LLMResponse stubResponse = const LLMResponse(
-    rawText: 'Hello world thought',
-    correctedText: 'Hello world thought.',
-    selectedFolder: 'Ideas',
-    folderScores: {'Ideas': 0.95},
-  );
-  int processTextCallCount = 0;
-  @override
-  bool isInitialized = false;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-
-  @override
-  int get completedTurnsCount => processTextCallCount;
-
-  @override
-  Future<void> initialize(String modelPath) async {
-    isInitialized = true;
-  }
-
-  @override
-  Future<LLMResponse> processText(String rawTranscript) async {
-    if (!isInitialized) {
-      throw Exception('LLM Service not initialized');
-    }
-    processTextCallCount++;
-    return stubResponse;
-  }
-
-  @override
-  void dispose() {
-    isInitialized = false;
-  }
-}
-
 void main() {
   late Directory tempDir;
   late File queueStorageFile;
   late FakeSTTService fakeSTT;
-  late FakeLLMService fakeLLM;
   late FakeNotesRepository fakeNotesRepo;
   late ModelLifecycleManager modelLifecycle;
   late AudioQueueService queueService;
@@ -103,17 +64,14 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('queue_test_');
     queueStorageFile = File('${tempDir.path}/queue.json');
     fakeSTT = FakeSTTService();
-    fakeLLM = FakeLLMService();
     fakeNotesRepo = FakeNotesRepository();
     modelLifecycle = ModelLifecycleManager(
       fakeSTT,
-      fakeLLM,
       modelsDirResolver: () async => tempDir.path,
     );
 
     queueService = AudioQueueService(
       fakeSTT,
-      fakeLLM,
       fakeNotesRepo,
       modelLifecycle,
       storageFileResolver: () async => queueStorageFile,
@@ -145,7 +103,6 @@ void main() {
 
   test('processQueue initializes models via ModelLifecycleManager and completes all items', () async {
     expect(fakeSTT.isInitialized, isFalse);
-    expect(fakeLLM.isInitialized, isFalse);
 
     await queueService.enqueue('/path/to/audio1.m4a', autoProcess: false);
     await queueService.enqueue('/path/to/audio2.m4a', autoProcess: false);
@@ -155,12 +112,36 @@ void main() {
 
     // Verify models were initialized by queue worker
     expect(fakeSTT.isInitialized, isTrue);
-    expect(fakeLLM.isInitialized, isTrue);
     expect(fakeSTT.wasCalled, isTrue);
-    expect(fakeLLM.processTextCallCount, 2);
     expect(fakeNotesRepo.savedNotes.length, 2);
     expect(queueService.pendingCount, 0);
     expect(queueService.items.every((i) => i.status == AudioQueueStatus.completed), isTrue);
+  });
+
+  test('a processed item is saved exactly as transcribed, fillers kept, in Uncategorized', () async {
+    fakeSTT.stubTranscript = '  So um I think we should, um, ship it  ';
+    final seen = <AudioQueueStatus>{};
+    final service = AudioQueueService(
+      fakeSTT,
+      fakeNotesRepo,
+      modelLifecycle,
+      storageFileResolver: () async => queueStorageFile,
+      onItemsChanged: (items) => seen.addAll(items.map((i) => i.status)),
+    );
+
+    await service.enqueue('/path/to/um.m4a', autoProcess: false);
+    await service.processPending();
+
+    final note = fakeNotesRepo.savedNotes.single;
+    expect(note.rawText, '  So um I think we should, um, ship it  ');
+    expect(note.correctedText, 'So um I think we should, um, ship it');
+    expect(note.correctedText, note.rawText.trim());
+    expect(note.folder, 'Uncategorized');
+    expect(service.items.single.correctedText, note.correctedText);
+    expect(service.items.single.folder, isNull);
+    expect(seen, contains(AudioQueueStatus.transcribing));
+    expect(seen, isNot(contains(AudioQueueStatus.categorizing)));
+    service.dispose();
   });
 
   test('failed item due to empty speech transitions to failed status and does not block queue', () async {
@@ -168,13 +149,11 @@ void main() {
     failingSTT.stubTranscript = ''; // Empty transcription
     final customLifecycle = ModelLifecycleManager(
       failingSTT,
-      fakeLLM,
       modelsDirResolver: () async => tempDir.path,
     );
 
     final service = AudioQueueService(
       failingSTT,
-      fakeLLM,
       fakeNotesRepo,
       customLifecycle,
       storageFileResolver: () async => queueStorageFile,

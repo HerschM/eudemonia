@@ -1,0 +1,1008 @@
+[
+  {
+    "id": "r01",
+    "file": "real/01.wav",
+    "reference": "Remind me to call the dentist tomorrow at nine thirty and book a cleaning.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "numbers"
+    ],
+    "mustKeep": [
+      [
+        "dentist"
+      ],
+      [
+        "nine thirty",
+        "9:30",
+        "9 30"
+      ],
+      [
+        "cleaning"
+      ],
+      [
+        "tomorrow"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "r02",
+    "file": "real/02.wav",
+    "reference": "Um, so I was thinking, uh, what if the app could, like, suggest a folder automatically based on, you know, what I actually said.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "fillers"
+    ],
+    "mustKeep": [
+      [
+        "folder"
+      ],
+      [
+        "automatically"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r03",
+    "file": "real/03.wav",
+    "reference": "Meeting with Priya on Thursday at three PM to review the fourth quarter budget. It's around forty two thousand dollars.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "numbers"
+    ],
+    "mustKeep": [
+      [
+        "priya"
+      ],
+      [
+        "thursday"
+      ],
+      [
+        "three pm",
+        "3 pm",
+        "3:00 pm",
+        "3pm",
+        "three p m"
+      ],
+      [
+        "fourth quarter",
+        "4th quarter",
+        "q4"
+      ],
+      [
+        "budget"
+      ],
+      [
+        "forty two thousand",
+        "42,000",
+        "42000",
+        "$42,000"
+      ]
+    ],
+    "expectedFolder": "Work"
+  },
+  {
+    "id": "r04",
+    "file": "real/04.wav",
+    "reference": "I felt really calm after the walk this morning. Honestly, it's the best I've felt all week.",
+    "expectSpeech": true,
+    "tags": [
+      "short"
+    ],
+    "mustKeep": [
+      [
+        "calm"
+      ],
+      [
+        "walk"
+      ]
+    ],
+    "expectedFolder": "Journal"
+  },
+  {
+    "id": "r05",
+    "file": "real/05.wav",
+    "reference": "Buy milk.",
+    "expectSpeech": true,
+    "tags": [
+      "short"
+    ],
+    "mustKeep": [
+      [
+        "milk"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "r06",
+    "file": "real/06.wav",
+    "reference": "I need to fix the Riverpod provider that rebuilds the database query on every frame, and then check the Kotlin foreground service.",
+    "expectSpeech": true,
+    "tags": [
+      "medium"
+    ],
+    "mustKeep": [
+      [
+        "riverpod"
+      ],
+      [
+        "kotlin"
+      ],
+      [
+        "foreground service"
+      ],
+      [
+        "database"
+      ]
+    ],
+    "expectedFolder": "Work"
+  },
+  {
+    "id": "r07",
+    "file": "real/07.wav",
+    "reference": "Okay, a few things for the weekend. First, pick up the dry cleaning before noon on Saturday. Second, order a birthday cake for Anjali, chocolate, for about twelve people. Third, renew the car insurance, it expires on the thirtieth. And, uh, don't forget to water the plants.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "numbers"
+    ],
+    "mustKeep": [
+      [
+        "dry cleaning"
+      ],
+      [
+        "saturday"
+      ],
+      [
+        "noon",
+        "12 pm",
+        "12:00"
+      ],
+      [
+        "anjali"
+      ],
+      [
+        "chocolate"
+      ],
+      [
+        "twelve",
+        "12"
+      ],
+      [
+        "thirtieth",
+        "30th",
+        "30"
+      ],
+      [
+        "car insurance"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "r08",
+    "file": "real/08.wav",
+    "reference": "Let's schedule the design review for Tuesday. No wait, not Tuesday, make it Wednesday at eleven, because Rahul is out on Tuesday. And send the invite to the whole team, not just the designers.",
+    "expectSpeech": true,
+    "tags": [
+      "medium"
+    ],
+    "mustKeep": [
+      [
+        "wednesday"
+      ],
+      [
+        "eleven",
+        "11",
+        "11:00",
+        "11 am"
+      ],
+      [
+        "rahul"
+      ],
+      [
+        "tuesday"
+      ],
+      [
+        "design review"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r09",
+    "file": "real/09.wav",
+    "reference": "So, um, two unrelated things. The onboarding screen feels too long, I think we should cut it down to, like, three steps. And separately, I keep forgetting to stretch in the evenings, which is basically why my back hurts.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "fillers"
+    ],
+    "mustKeep": [
+      [
+        "onboarding"
+      ],
+      [
+        "three steps",
+        "3 steps"
+      ],
+      [
+        "stretch"
+      ],
+      [
+        "back"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r10",
+    "file": "real/10.wav",
+    "reference": null,
+    "expectSpeech": true,
+    "tags": [
+      "medium"
+    ],
+    "mustKeep": [],
+    "expectedFolder": null
+  },
+  {
+    "id": "r11",
+    "file": "real/11.wav",
+    "reference": "I've been thinking about how I capture ideas during the day, and the problem is not that I don't have ideas. The problem is that by the time I get my phone out, unlock it, find the right app and start typing, the thought has already changed shape. What I remember is a summary of the idea, not the idea itself. So the whole point of this app is to remove every step between having a thought and saving it. I press two buttons, I talk, and I'm done. Everything else, the transcription, the cleanup, the sorting into folders, can happen later, when I'm not paying attention. If that works reliably, I think I will actually trust it, and trust is what makes a tool part of your day.",
+    "expectSpeech": true,
+    "tags": [
+      "long"
+    ],
+    "mustKeep": [
+      [
+        "unlock"
+      ],
+      [
+        "transcription"
+      ],
+      [
+        "folders"
+      ],
+      [
+        "trust"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r12",
+    "file": "real/12.wav",
+    "reference": "Here is a longer note about the plan for the next few weeks, so I don't lose track of it. The first priority is reliability. If I press the buttons and nothing is recorded, even once, I will stop trusting the app, so capture has to work every single time, with the screen off, in my pocket, and when the app has been closed for hours. The second priority is the quality of the text. I don't want a rough transcript with every um and uh left in. I want clean sentences that still sound like me, with nothing added and nothing removed. Names, numbers and dates matter the most, because those are the things I will act on later. The third priority is speed, but only in the background. I don't mind if a thought takes fifteen or twenty seconds to process, as long as the recording itself starts instantly. After that, I want related thoughts to be grouped together. If I record four ideas on a morning walk about the same project, I want to see one clear note, not four fragments. And finally, the app should tell me the truth about what it's doing. If something failed, show me that it failed and let me retry. If the phone is too hot or low on memory, wait and try again later. I would rather see an honest delay than a wrong result. That's the plan. I'll review it again at the end of the month and decide what to change.",
+    "expectSpeech": true,
+    "tags": [
+      "long",
+      "fillers"
+    ],
+    "mustKeep": [
+      [
+        "reliability"
+      ],
+      [
+        "fifteen",
+        "15"
+      ],
+      [
+        "twenty seconds",
+        "20 seconds",
+        "20"
+      ],
+      [
+        "four ideas",
+        "4 ideas"
+      ],
+      [
+        "retry"
+      ],
+      [
+        "end of the month"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r13",
+    "file": "real/13.wav",
+    "reference": null,
+    "expectSpeech": true,
+    "tags": [
+      "long"
+    ],
+    "mustKeep": [],
+    "expectedFolder": null
+  },
+  {
+    "id": "r14",
+    "file": "real/14.wav",
+    "reference": "Um, quick thought while I'm walking. The capture button should, like, vibrate differently when it starts and when it stops, so I know without looking.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "fillers",
+      "noise"
+    ],
+    "mustKeep": [
+      [
+        "vibrate"
+      ],
+      [
+        "walking"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r15",
+    "file": "real/15.wav",
+    "reference": "Testing capture from my pocket. Remember to send the invoice to the client by Friday afternoon.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "pocket"
+    ],
+    "mustKeep": [
+      [
+        "invoice"
+      ],
+      [
+        "client"
+      ],
+      [
+        "friday"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r16",
+    "file": "real/16.wav",
+    "reference": "Note to self, the grocery list is eggs, bread, spinach, two onions and a bottle of olive oil.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "noise",
+      "numbers"
+    ],
+    "mustKeep": [
+      [
+        "eggs"
+      ],
+      [
+        "bread"
+      ],
+      [
+        "spinach"
+      ],
+      [
+        "two onions",
+        "2 onions"
+      ],
+      [
+        "olive oil"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "r17",
+    "file": "real/17.wav",
+    "reference": "It's late, so I'm speaking quietly. I want to write down that the idea about weekly reviews was a good one.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "whisper"
+    ],
+    "mustKeep": [
+      [
+        "weekly reviews"
+      ],
+      [
+        "quietly"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r18",
+    "file": "real/18.wav",
+    "reference": "I need to book flights for the conference, confirm the hotel, tell Sana I'm arriving on the fourteenth, and print the tickets before I leave.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "fast",
+      "numbers"
+    ],
+    "mustKeep": [
+      [
+        "flights"
+      ],
+      [
+        "conference"
+      ],
+      [
+        "hotel"
+      ],
+      [
+        "sana"
+      ],
+      [
+        "fourteenth",
+        "14th",
+        "14"
+      ],
+      [
+        "tickets"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r19",
+    "file": "real/19.wav",
+    "reference": "I want to remember the name of that restaurant. It was called The Blue Door, near the old station.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "pause"
+    ],
+    "mustKeep": [
+      [
+        "restaurant"
+      ],
+      [
+        "blue door"
+      ],
+      [
+        "old station"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r20",
+    "file": "real/20.wav",
+    "reference": null,
+    "expectSpeech": false,
+    "tags": [
+      "silence"
+    ],
+    "mustKeep": [],
+    "expectedFolder": null
+  },
+  {
+    "id": "r21",
+    "file": "real/21.wav",
+    "reference": "This is a test from across the desk. The meeting notes are in the shared folder under planning.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "far"
+    ],
+    "mustKeep": [
+      [
+        "meeting notes"
+      ],
+      [
+        "shared folder"
+      ],
+      [
+        "planning"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "r22",
+    "file": "real/22.wav",
+    "reference": null,
+    "expectSpeech": true,
+    "tags": [
+      "short"
+    ],
+    "mustKeep": [],
+    "expectedFolder": null
+  },
+  {
+    "id": "s01",
+    "file": "synthetic/s01.wav",
+    "reference": "Remind me to call the dentist tomorrow at nine thirty and book a cleaning.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "numbers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "dentist"
+      ],
+      [
+        "nine thirty",
+        "9:30",
+        "9 30"
+      ],
+      [
+        "cleaning"
+      ],
+      [
+        "tomorrow"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "s02",
+    "file": "synthetic/s02.wav",
+    "reference": "Um, so I was thinking, uh, what if the app could, like, suggest a folder automatically based on, you know, what I actually said.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "fillers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "folder"
+      ],
+      [
+        "automatically"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s03",
+    "file": "synthetic/s03.wav",
+    "reference": "Meeting with Priya on Thursday at three PM to review the fourth quarter budget. It's around forty two thousand dollars.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "numbers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "priya"
+      ],
+      [
+        "thursday"
+      ],
+      [
+        "three pm",
+        "3 pm",
+        "3:00 pm",
+        "3pm",
+        "three p m"
+      ],
+      [
+        "fourth quarter",
+        "4th quarter",
+        "q4"
+      ],
+      [
+        "budget"
+      ],
+      [
+        "forty two thousand",
+        "42,000",
+        "42000",
+        "$42,000"
+      ]
+    ],
+    "expectedFolder": "Work"
+  },
+  {
+    "id": "s04",
+    "file": "synthetic/s04.wav",
+    "reference": "I felt really calm after the walk this morning. Honestly, it's the best I've felt all week.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "calm"
+      ],
+      [
+        "walk"
+      ]
+    ],
+    "expectedFolder": "Journal"
+  },
+  {
+    "id": "s05",
+    "file": "synthetic/s05.wav",
+    "reference": "Buy milk.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "milk"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "s06",
+    "file": "synthetic/s06.wav",
+    "reference": "I need to fix the Riverpod provider that rebuilds the database query on every frame, and then check the Kotlin foreground service.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "riverpod"
+      ],
+      [
+        "kotlin"
+      ],
+      [
+        "foreground service"
+      ],
+      [
+        "database"
+      ]
+    ],
+    "expectedFolder": "Work"
+  },
+  {
+    "id": "s07",
+    "file": "synthetic/s07.wav",
+    "reference": "Okay, a few things for the weekend. First, pick up the dry cleaning before noon on Saturday. Second, order a birthday cake for Anjali, chocolate, for about twelve people. Third, renew the car insurance, it expires on the thirtieth. And, uh, don't forget to water the plants.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "numbers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "dry cleaning"
+      ],
+      [
+        "saturday"
+      ],
+      [
+        "noon",
+        "12 pm",
+        "12:00"
+      ],
+      [
+        "anjali"
+      ],
+      [
+        "chocolate"
+      ],
+      [
+        "twelve",
+        "12"
+      ],
+      [
+        "thirtieth",
+        "30th",
+        "30"
+      ],
+      [
+        "car insurance"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "s08",
+    "file": "synthetic/s08.wav",
+    "reference": "Let's schedule the design review for Tuesday. No wait, not Tuesday, make it Wednesday at eleven, because Rahul is out on Tuesday. And send the invite to the whole team, not just the designers.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "wednesday"
+      ],
+      [
+        "eleven",
+        "11",
+        "11:00",
+        "11 am"
+      ],
+      [
+        "rahul"
+      ],
+      [
+        "tuesday"
+      ],
+      [
+        "design review"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s09",
+    "file": "synthetic/s09.wav",
+    "reference": "So, um, two unrelated things. The onboarding screen feels too long, I think we should cut it down to, like, three steps. And separately, I keep forgetting to stretch in the evenings, which is basically why my back hurts.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "fillers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "onboarding"
+      ],
+      [
+        "three steps",
+        "3 steps"
+      ],
+      [
+        "stretch"
+      ],
+      [
+        "back"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s11",
+    "file": "synthetic/s11.wav",
+    "reference": "I've been thinking about how I capture ideas during the day, and the problem is not that I don't have ideas. The problem is that by the time I get my phone out, unlock it, find the right app and start typing, the thought has already changed shape. What I remember is a summary of the idea, not the idea itself. So the whole point of this app is to remove every step between having a thought and saving it. I press two buttons, I talk, and I'm done. Everything else, the transcription, the cleanup, the sorting into folders, can happen later, when I'm not paying attention. If that works reliably, I think I will actually trust it, and trust is what makes a tool part of your day.",
+    "expectSpeech": true,
+    "tags": [
+      "long",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "unlock"
+      ],
+      [
+        "transcription"
+      ],
+      [
+        "folders"
+      ],
+      [
+        "trust"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s12",
+    "file": "synthetic/s12.wav",
+    "reference": "Here is a longer note about the plan for the next few weeks, so I don't lose track of it. The first priority is reliability. If I press the buttons and nothing is recorded, even once, I will stop trusting the app, so capture has to work every single time, with the screen off, in my pocket, and when the app has been closed for hours. The second priority is the quality of the text. I don't want a rough transcript with every um and uh left in. I want clean sentences that still sound like me, with nothing added and nothing removed. Names, numbers and dates matter the most, because those are the things I will act on later. The third priority is speed, but only in the background. I don't mind if a thought takes fifteen or twenty seconds to process, as long as the recording itself starts instantly. After that, I want related thoughts to be grouped together. If I record four ideas on a morning walk about the same project, I want to see one clear note, not four fragments. And finally, the app should tell me the truth about what it's doing. If something failed, show me that it failed and let me retry. If the phone is too hot or low on memory, wait and try again later. I would rather see an honest delay than a wrong result. That's the plan. I'll review it again at the end of the month and decide what to change.",
+    "expectSpeech": true,
+    "tags": [
+      "long",
+      "fillers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "reliability"
+      ],
+      [
+        "fifteen",
+        "15"
+      ],
+      [
+        "twenty seconds",
+        "20 seconds",
+        "20"
+      ],
+      [
+        "four ideas",
+        "4 ideas"
+      ],
+      [
+        "retry"
+      ],
+      [
+        "end of the month"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s14",
+    "file": "synthetic/s14.wav",
+    "reference": "Um, quick thought while I'm walking. The capture button should, like, vibrate differently when it starts and when it stops, so I know without looking.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "fillers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "vibrate"
+      ],
+      [
+        "walking"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s15",
+    "file": "synthetic/s15.wav",
+    "reference": "Testing capture from my pocket. Remember to send the invoice to the client by Friday afternoon.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "invoice"
+      ],
+      [
+        "client"
+      ],
+      [
+        "friday"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s16",
+    "file": "synthetic/s16.wav",
+    "reference": "Note to self, the grocery list is eggs, bread, spinach, two onions and a bottle of olive oil.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "numbers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "eggs"
+      ],
+      [
+        "bread"
+      ],
+      [
+        "spinach"
+      ],
+      [
+        "two onions",
+        "2 onions"
+      ],
+      [
+        "olive oil"
+      ]
+    ],
+    "expectedFolder": "Todos"
+  },
+  {
+    "id": "s17",
+    "file": "synthetic/s17.wav",
+    "reference": "It's late, so I'm speaking quietly. I want to write down that the idea about weekly reviews was a good one.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "weekly reviews"
+      ],
+      [
+        "quietly"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s18",
+    "file": "synthetic/s18.wav",
+    "reference": "I need to book flights for the conference, confirm the hotel, tell Sana I'm arriving on the fourteenth, and print the tickets before I leave.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "numbers",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "flights"
+      ],
+      [
+        "conference"
+      ],
+      [
+        "hotel"
+      ],
+      [
+        "sana"
+      ],
+      [
+        "fourteenth",
+        "14th",
+        "14"
+      ],
+      [
+        "tickets"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s19",
+    "file": "synthetic/s19.wav",
+    "reference": "I want to remember the name of that restaurant. It was called The Blue Door, near the old station.",
+    "expectSpeech": true,
+    "tags": [
+      "medium",
+      "pause",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "restaurant"
+      ],
+      [
+        "blue door"
+      ],
+      [
+        "old station"
+      ]
+    ],
+    "expectedFolder": null
+  },
+  {
+    "id": "s20",
+    "file": "synthetic/s20.wav",
+    "reference": null,
+    "expectSpeech": false,
+    "tags": [
+      "silence",
+      "synthetic"
+    ],
+    "mustKeep": [],
+    "expectedFolder": null
+  },
+  {
+    "id": "s21",
+    "file": "synthetic/s21.wav",
+    "reference": "This is a test from across the desk. The meeting notes are in the shared folder under planning.",
+    "expectSpeech": true,
+    "tags": [
+      "short",
+      "synthetic"
+    ],
+    "mustKeep": [
+      [
+        "meeting notes"
+      ],
+      [
+        "shared folder"
+      ],
+      [
+        "planning"
+      ]
+    ],
+    "expectedFolder": null
+  }
+]

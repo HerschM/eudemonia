@@ -131,7 +131,7 @@
      - Requests are processed strictly in order, so `dispose()` issued during a decode frees the recognizer only after that decode returns, then the isolate exits. `initialize()` awaits the previous worker's teardown so two copies of the model are never resident.
      - The engine is injected through a top-level `SttEngineFactory`, which lets host tests exercise the real isolate protocol with a contract-enforcing fake engine.
      - Preserved audio safeguards: automatic linear resampling to 16kHz (`resampleLinear`), 300ms tail-silence padding, `stream.free()` in `finally`, plus an explicit `Audio recording not found` failure when the WAV file is missing.
-  2. **Prompt Engineering & Single-Folder Classification**:
+  2. **Prompt Engineering & Single-Folder Classification** *(since 2026-11-21 NOT called by the capture path: `AudioQueueService` saves the STT transcript unchanged and `ModelLifecycleManager` loads only the speech model; `LLMService`/`NoteClassifier` are retained for the Synthesis stage, which is where the LLM will run — see chronicle #32)*:
      - ChatML prompt instructs Qwen 2.5 Instruct to perform:
        1. *Language Correction*: Grammar, capitalization, punctuation, and removal of conversational filler words (*"um"*, *"uh"*, *"like"*).
        2. *Classification*: Categorize into exactly **one** allowed folder (`Work`, `Ideas`, `Todos`, `Journal`, or `Uncategorized`).
@@ -565,6 +565,28 @@
   3. Assumed but refuted by measurement: GPU (Vulkan) offload was suspected of being the slow path; it is in fact ~6–8x faster than CPU on this device.
 - **Solution**: Two-key folder-first prompt, `LlamaParent.stop()` on timeout, 60s configurable timeout, greedy sampling, per-turn metrics, and an on-device benchmark. Result: 14.5s with a real LLM reply. Benchmark tables are under TASK-062.
 - **Process Incident**: The first benchmark was run with `flutter test integration_test/... -d <device>`, which uninstalled the app from the user's phone and deleted its notes, recordings and model files. The app and models were restored; the notes were not recoverable. Benchmarks now go through `flutter drive --keep-app-running`.
+
+### 29. "Speech model file is missing" After Reinstall (Model Folder Unreadable to the App)
+- **Symptom**: After reinstalling, every capture failed with `Speech model file encoder.int8.onnx is missing` although `download_models.sh` had pushed and checksum-verified the files.
+- **Root Cause**: Folders created by `adb` under `/sdcard/Android/data/<pkg>/files` are owned by the shell user with mode `drwxrws---`. The reinstalled app (new UID) could not enter `parakeet/`, and `File.exists()` returns false on a permission error, so `ModelFileValidator` reported "missing". (`run-as` cannot read that path either, so it is not a valid probe.) Unexplained: the same ownership worked two days earlier.
+- **Solution**: `download_models.sh` and `tool/push_voice_samples.sh` run `adb shell chmod -R a+rwX` on what they push. Fallback if it recurs: store models in app-private storage.
+
+### 30. First LLM Load After Install Fails with `Operation "model loading" timed out`
+- **Symptom**: The first thought after an install fell back or failed while the model was still loading.
+- **Root Cause**: `llama_cpp_dart` hard-codes a 60s limit on the load command; a cold first load on the Pixel 7a exceeds it, but the load itself continues.
+- **Solution**: `LLMService.initialize()` catches that `TimeoutException` and polls `LlamaParent.status` until `ready`, up to `LLMConfig.modelLoadTimeout` (180s), disposing the parent on `error`/`disposed`/overall timeout.
+
+### 31. Voice Evaluation Harness Findings on Real Speech (Open, TASK-062 / TASK-066)
+- **What exists**: `integration_test/voice_pipeline_eval_test.dart` runs the real `STTService` and `LLMService` over `integration_test/voice_samples/` (synthetic clips in git; the user's recordings git-ignored under `real/`) and reports WER, cleanup fidelity (`integration_test/support/text_eval.dart`), timings and app PSS. Run only with `flutter drive --keep-app-running`, then rebuild and reinstall the normal APK.
+- **Open defects it exposed (2026-11-20, Pixel 7a; details and work list in `TASKS.md` TASK-066)**: the cleanup prompt rewrites and condenses instead of only cleaning; thoughts above ~180 words fall back (256-token output limit, and ~290 words fails immediately); STT runs at about real time once the LLM is loaded (0.1–0.2x expected); app PSS peaks at 5.0 GB in a debug build against the documented ~1.6 GB; capture-time folder choice over-uses `Ideas`.
+- **Not yet true in Section 1**: the memory figures and STT latency stated there are unverified against these measurements and must be corrected once the investigation concludes.
+
+### 32. LLM Removed from the Capture Path (Product Decision After Real-Voice Evaluation)
+- **Evidence (Pixel 7a, the user's 22 recordings)**: with the LLM in the capture path the cleanup step dropped clauses, went telegraphic and invented words (`11 AM`, a false causal link); added 7–26s per thought; failed outright above ~180 words (256-token reply cap, 2048-token context); slowed speech recognition to about real time once loaded; and pushed app PSS to 5.0 GB (debug build). It corrected none of the recognition errors. Parakeet already emits punctuation and capitalization.
+- **Decision (user, 2026-11-21)**: Capture shows the transcript as spoken, fillers and misspoken words included, as a fact check; no LLM at capture. The LLM runs only in Synthesis. `PRODUCT_SPEC.md` FR5.2 amended accordingly.
+- **Code**: `AudioQueueService` saves `correctedText = rawText` and no folder; `ModelLifecycleManager` manages the speech model only, and a missing/corrupt GGUF no longer blocks capture. `AudioQueueStatus.categorizing` is legacy (read from stored queues only).
+- **Consequences**: per-thought latency is STT time; Sections 1.D/1.E memory and latency figures for the two-model capture path are obsolete and must be re-measured; KV-prefix caching for capture is dropped (FR5.6 stays as written); the long-input problem moves to the Synthesis design (context size, output budget scaled to input, map-reduce over a session).
+- **Reference finding**: Whisper large-v3 on a Mac transcribed every clip Parakeet int8 got wrong from the same audio, so remaining capture errors are recognition-model errors, not audio capture errors.
 
 ---
 

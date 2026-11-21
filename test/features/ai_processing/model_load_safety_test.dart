@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
-import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_file_validator.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/model_load_guard.dart';
@@ -39,34 +38,6 @@ class FakeSTTService implements STTService {
 }
 
 class _ProcessDied extends Error {}
-
-class FakeLLMService implements LLMService {
-  @override
-  bool isInitialized = false;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-
-  @override
-  int get completedTurnsCount => 0;
-
-  @override
-  Future<void> initialize(String modelPath) async => isInitialized = true;
-
-  @override
-  Future<LLMResponse> processText(String rawTranscript) async {
-    if (!isInitialized) throw StateError('LLM Service not initialized');
-    return LLMResponse(
-      rawText: rawTranscript,
-      correctedText: '$rawTranscript.',
-      selectedFolder: 'Ideas',
-      folderScores: const {'Ideas': 0.9},
-    );
-  }
-
-  @override
-  void dispose() => isInitialized = false;
-}
 
 /// Minimal well-formed ONNX-shaped protobuf: ir_version (field 1) + producer_name (field 2)
 /// + a length-delimited graph (field 7) of [graphBytes] bytes.
@@ -195,13 +166,11 @@ void main() {
 
   group('Model loading is safe against bad files and native crashes', () {
     late FakeSTTService stt;
-    late FakeLLMService llm;
     late File marker;
 
     /// A new manager over the same marker file models a fresh process after a restart.
     ModelLifecycleManager newProcess() => ModelLifecycleManager(
           stt,
-          llm,
           modelsDirResolver: () async => dir.path,
           fileValidator: validator,
           loadGuard: ModelLoadGuard(markerResolver: () async => marker),
@@ -209,7 +178,6 @@ void main() {
 
     setUp(() {
       stt = FakeSTTService();
-      llm = FakeLLMService();
       marker = File('${dir.path}/model_load_in_progress');
     });
 
@@ -224,6 +192,21 @@ void main() {
       expect(stt.initializeCalls, 0);
       expect(manager.state, ModelLifecycleState.unloaded);
       expect(await marker.exists(), isFalse);
+    });
+
+    test('a missing or corrupt GGUF cannot block speech loading', () async {
+      await installValidModels();
+      await File('${dir.path}/qwen2.5-1.5b.gguf').delete();
+      final manager = newProcess();
+      await manager.ensureModelsLoaded();
+      expect(manager.state, ModelLifecycleState.ready);
+      manager.dispose();
+
+      await write('qwen2.5-1.5b.gguf', List<int>.filled(1024, 0));
+      final again = newProcess();
+      await again.ensureModelsLoaded();
+      expect(again.state, ModelLifecycleState.ready);
+      again.dispose();
     });
 
     test('a successful load leaves no crash marker behind', () async {
@@ -242,8 +225,7 @@ void main() {
       stt.dieDuringLoad = true;
       // The native abort: this process never gets to clean up its marker.
       await marker.writeAsString(
-        await ModelFiles(sttModelDir: '${dir.path}/parakeet', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf')
-            .signature(),
+        await ModelFiles(sttModelDir: '${dir.path}/parakeet').signature(),
       );
 
       final relaunched = newProcess();
@@ -267,13 +249,11 @@ void main() {
         () async {
       await installValidModels();
       await marker.writeAsString(
-        await ModelFiles(sttModelDir: '${dir.path}/parakeet', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf')
-            .signature(),
+        await ModelFiles(sttModelDir: '${dir.path}/parakeet').signature(),
       );
       final manager = newProcess();
       final queue = AudioQueueService(
         stt,
-        llm,
         NotesRepository(),
         manager,
         storageFileResolver: () async => File('${dir.path}/queue.json'),

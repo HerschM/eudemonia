@@ -11,11 +11,14 @@ class ModelFileException implements Exception {
 }
 
 /// The files that make up the on-device models, resolved from the models directory.
+///
+/// [llmModelPath] is optional: when null the language model is neither
+/// validated nor part of [signature], so it cannot block speech loading.
 class ModelFiles {
   final String sttModelDir;
-  final String llmModelPath;
+  final String? llmModelPath;
 
-  const ModelFiles({required this.sttModelDir, required this.llmModelPath});
+  const ModelFiles({required this.sttModelDir, this.llmModelPath});
 
   List<String> get onnxFiles => [
         '$sttModelDir/encoder.int8.onnx',
@@ -25,7 +28,7 @@ class ModelFiles {
 
   String get tokensFile => '$sttModelDir/tokens.txt';
 
-  List<String> get all => [...onnxFiles, tokensFile, llmModelPath];
+  List<String> get all => [...onnxFiles, tokensFile, ?llmModelPath];
 
   /// Identity of the current file set. Changes whenever a file is replaced.
   Future<String> signature() async {
@@ -55,7 +58,8 @@ class ModelFileValidator {
     if (!await File(files.tokensFile).exists()) {
       throw ModelFileException('Speech model file tokens.txt is missing. $_redownloadHint');
     }
-    await validateGguf(files.llmModelPath);
+    final llmPath = files.llmModelPath;
+    if (llmPath != null) await validateGguf(llmPath);
   }
 
   /// Checks that [path] is a well-formed protobuf message end to end.

@@ -57,7 +57,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **Action**: User presses both volume buttons simultaneously through their pocket fabric.
 - **Feedback**: A sharp dual-pulse native haptic confirms recording has started. User speaks naturally for 15 seconds.
 - **Completion**: User presses both volume buttons again. A single haptic pulse confirms stop.
-- **Outcome**: The audio is saved to the local queue in <5ms. The phone stays in the user's pocket. The background worker loads the on-device models, performs STT + grammar cleanup, assigns daily sequence `#01`, and renders in the **Capture** stream without premature classification.
+- **Outcome**: The audio is saved to the local queue in <5ms. The phone stays in the user's pocket. The background worker loads the on-device models, performs STT (the transcript is shown as spoken), assigns daily sequence `#01`, and renders in the **Capture** stream without premature classification.
 
 #### Scenario 2: Active Interruption Inside Another App
 - **Context**: User is reading a document or navigating in Google Maps when an unrelated task comes to mind.
@@ -165,7 +165,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 #### FR5: On-Device LLM Pipeline (Two-Tier Post-Processing)
 - **FR5.1**: The system must run an on-device quantized LLM (Qwen-2.5 1.5B GGUF) via `llama_cpp_dart`.
-- **FR5.2 (Tier 1 — Capture Cleanup)**: For each raw capture, the model performs grammar and language correction (capitalization, punctuation, filler word removal) ONLY. Strictly NO folder classification, style transformation, or color tinting is applied at this stage.
+- **FR5.2 (Tier 1 — Capture Shows the Transcript As Spoken, No LLM)**: A raw capture is saved and displayed as the speech recognizer's transcript (with the recognizer's own punctuation and capitalization), including filler words and misspoken or self-corrected words. No LLM runs at capture time. Strictly NO grammar rewriting, filler removal, folder classification, style transformation, or color tinting is applied at this stage: the Capture stream is the user's fact check that everything spoken was heard. All cleanup, correction-resolving, condensing and filing belongs to Synthesis (FR5.4). *(Decided 2026-11-21; previously the LLM performed grammar and filler cleanup per capture.)*
 - **FR5.3 (AI Style Re-Writer on Synthesized Notes)**: Users can re-write any synthesized note on-demand using preset style prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*). The active style is indicated with a checkmark; changing styles transitions the note to Yellow (`pending re-processing`) for local LLM re-synthesis.
 - **FR5.4 (Tier 2 — Synthesis & Single-Folder Classification)**: When notes are clustered, the LLM analyzes semantic similarity, assigns exactly one predefined folder (`Work`, `Ideas`, `Todos`, `Journal`, or fallback `Uncategorized`), and synthesizes fragments into a cohesive note. Arbitrary tag generation is strictly prohibited.
 - **FR5.5**: Output must be parsed from structured JSON format. If parsing fails, the system must fall back to a heuristic keyword classifier.
@@ -280,7 +280,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 | **Latency** | Audio Capture Dispatch | **< 5ms** from trigger release to queue handoff |
 | **Latency** | Native Hardware Haptics | **< 20ms** from dual-key press to vibration pulse |
 | **Latency** | On-Device STT Inference | **< 2.5s** per 10 seconds of recorded speech (Pixel 7a) |
-| **Latency** | On-Device LLM Classification | **< 1.8s** for language correction and tagging |
+| **Latency** | On-Device LLM Classification | Not applicable at capture since 2026-11-21 (no LLM in the capture path, FR5.2). A Synthesis-turn budget is to be set from measurement; the former **< 1.8s** per-thought target was measured unreachable on a Pixel 7a (~14.5s). |
 | **Memory** | Baseline Idle RAM Footprint | **< 60 MB** when models are unloaded |
 | **Memory** | Active Inference RAM Footprint | **< 1.6 GB** peak (STT ~600MB, LLM ~1.0GB) |
 | **Memory** | Inactivity Eviction Timeout | Models evicted after **180 seconds (3 min)** of zero activity |
@@ -388,6 +388,7 @@ All visual prototypes and UI design iterations are built in `previews/screens/` 
 
 ### A. Deferred Features & Roadmap (v1.5 & v2.0)
 - **AI-Assisted Topical Merge Suggestions (v1.5)**: Deterministic, zero-LLM entity and keyword set-intersection matching across the last 48 hours to display proactive suggestion pills (`[ 🔗 Similar to #S-01 (Marcus deliverables) • Merge? ]`).
+- **Device-Tier Model Recommendation (v1.5)**: Recommend the on-device model best suited to the user's handset (RAM, chipset) from a small validated set of low, mid and high tier options, each measured for output quality, latency, memory and thermal impact.
 - **Many-to-Many Secondary Tagging (v1.5)**: Maintain a single primary folder while allowing secondary tags (e.g. `#client-x`, `#project-apollo`) linked dynamically in note metadata.
 - **Local Embedding Vector Search (v2.0)**: Generate local vector embeddings using an on-device embedding model (e.g. `all-MiniLM-L6-v2`) stored in Isar vector indices for natural language search (*"What was that thought I had about database caching last Tuesday?"*).
 - **Wearable / Earbud Triggers (v2.0)**: Bluetooth media button listener allowing triggers from headphone play/pause double-taps or smartwatch buttons.

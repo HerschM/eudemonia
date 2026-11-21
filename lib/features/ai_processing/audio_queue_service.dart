@@ -7,13 +7,11 @@ import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
-import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 
 class AudioQueueService {
   final STTService _sttService;
-  final LLMService _llmService;
   final NotesRepository _notesRepo;
   final ModelLifecycleManager _modelLifecycle;
   final AppLogger? _logger;
@@ -34,7 +32,6 @@ class AudioQueueService {
 
   AudioQueueService(
     this._sttService,
-    this._llmService,
     this._notesRepo,
     this._modelLifecycle, {
     this._logger,
@@ -290,7 +287,7 @@ class AudioQueueService {
 
   Future<void> _processSingleItem(AudioQueueItem item) async {
     try {
-      // The lifecycle manager keeps both models resident for the whole item and
+      // The lifecycle manager keeps the speech model resident for the whole item and
       // restarts the inactivity eviction countdown when it finishes, pass or fail.
       _logger?.info('[AudioQueue] Ensuring AI models are loaded in memory for item ${item.id}...');
       await _modelLifecycle.runWithModels(
@@ -327,29 +324,21 @@ class AudioQueueService {
       return;
     }
 
-    // Step 2: Categorize with LLM
-    item.status = AudioQueueStatus.categorizing;
-    _notifyState();
-    await _saveToStorage();
-    _logger?.info('[AudioQueue] Categorizing item: ${item.id} with LLM');
+    // The thought is stored exactly as transcribed (fillers kept); no LLM cleanup or folder inference.
+    final text = rawTranscription.trim();
+    item.correctedText = text;
 
-    final llmResponse = await _llmService.processText(rawTranscription);
-    if (!_isQueued(item)) return;
-    item.folder = llmResponse.folder;
-    item.correctedText = llmResponse.correctedText;
-
-    // Step 3: Save to Isar Database
+    // Step 2: Save to Isar Database
     final note = Note()
       ..rawText = rawTranscription
-      ..correctedText = llmResponse.correctedText
-      ..folder = llmResponse.folder
+      ..correctedText = text
       ..createdAt = item.recordedAt
       ..originalAudioPath = item.audioFilePath
       ..dailySequenceNumber = item.sequenceNumber;
 
     await _notesRepo.saveNote(note);
     item.status = AudioQueueStatus.completed;
-    _logger?.info('[AudioQueue] Completed processing note ${item.id} into folder: ${llmResponse.folder}');
+    _logger?.info('[AudioQueue] Completed processing note ${item.id}');
 
     await _saveToStorage();
     _notifyState();
@@ -394,14 +383,12 @@ final queueItemsProvider = NotifierProvider<QueueItemsNotifier, List<AudioQueueI
 
 final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
   final sttService = ref.watch(sttServiceProvider);
-  final llmService = ref.watch(llmServiceProvider);
   final notesRepo = ref.watch(notesRepositoryProvider);
   final modelLifecycle = ref.watch(modelLifecycleManagerProvider);
   final logger = ref.watch(appLoggerProvider);
 
   final service = AudioQueueService(
     sttService,
-    llmService,
     notesRepo,
     modelLifecycle,
     logger: logger,

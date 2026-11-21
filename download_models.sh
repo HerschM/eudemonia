@@ -81,6 +81,10 @@ adb push models/qwen2.5-1.5b.gguf "$DEST_DIR/"
 adb push models/parakeet/encoder.int8.onnx models/parakeet/decoder.int8.onnx \
   models/parakeet/joiner.int8.onnx models/parakeet/tokens.txt "$DEST_DIR/parakeet/"
 
+# Folders created by adb are owned by the shell user with no access for others, so the app
+# cannot enter them and reports the model files as missing. Open them up explicitly.
+adb shell chmod -R a+rwX "$DEST_DIR/parakeet"
+
 echo "Verifying files on device..."
 for entry in "${MODEL_FILES[@]}"; do
   IFS='|' read -r path _ _ _ expected <<< "$entry"

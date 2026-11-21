@@ -60,6 +60,12 @@ class LLMConfig {
   /// if unparseable). Default is 60 seconds.
   final Duration generationTimeout;
 
+  /// Longest time to wait for the model to finish loading. The first load after an
+  /// install is the slowest (GPU pipelines are compiled from scratch) and can exceed the
+  /// llama_cpp_dart library's internal 60-second limit, after which the load is still
+  /// running; `LLMService` keeps waiting up to this duration. Default is 180 seconds.
+  final Duration modelLoadTimeout;
+
   const LLMConfig({
     this.kvCacheMaxSize = 2048,
     this.inputTokenLimit = 1536,
@@ -73,6 +79,7 @@ class LLMConfig {
     this.gpuLayers = 99,
     this.greedySampling = true,
     this.generationTimeout = const Duration(seconds: 60),
+    this.modelLoadTimeout = const Duration(seconds: 180),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
         assert(inputTokenLimit > 0, 'inputTokenLimit must be positive'),
         assert(inputTokenLimit < kvCacheMaxSize,
@@ -94,6 +101,7 @@ class LLMConfig {
     int? gpuLayers,
     bool? greedySampling,
     Duration? generationTimeout,
+    Duration? modelLoadTimeout,
   }) {
     return LLMConfig(
       kvCacheMaxSize: kvCacheMaxSize ?? this.kvCacheMaxSize,
@@ -109,6 +117,7 @@ class LLMConfig {
       gpuLayers: gpuLayers ?? this.gpuLayers,
       greedySampling: greedySampling ?? this.greedySampling,
       generationTimeout: generationTimeout ?? this.generationTimeout,
+      modelLoadTimeout: modelLoadTimeout ?? this.modelLoadTimeout,
     );
   }
 
@@ -128,7 +137,8 @@ class LLMConfig {
           threads == other.threads &&
           gpuLayers == other.gpuLayers &&
           greedySampling == other.greedySampling &&
-          generationTimeout == other.generationTimeout;
+          generationTimeout == other.generationTimeout &&
+          modelLoadTimeout == other.modelLoadTimeout;
 
   @override
   int get hashCode =>
@@ -143,7 +153,8 @@ class LLMConfig {
       threads.hashCode ^
       gpuLayers.hashCode ^
       greedySampling.hashCode ^
-      generationTimeout.hashCode;
+      generationTimeout.hashCode ^
+      modelLoadTimeout.hashCode;
 
   @override
   String toString() {

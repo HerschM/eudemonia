@@ -1,7 +1,7 @@
 enum AudioQueueStatus {
   pending,
   transcribing,
-  categorizing,
+  categorizing, // Legacy: no longer emitted, only read from queues stored by older builds.
   completed,
   failed,
 }
