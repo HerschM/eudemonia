@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/batch_pipeline_service.dart';
+import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 
 /// Owns the recording toggle driven by native capture triggers (dual volume
 /// press, lock screen notification action). State is `true` while recording.
@@ -71,6 +72,10 @@ class CaptureController extends Notifier<bool> {
         if (!started) {
           state = false;
           logger.warning('[Capture] Recording did not start; capture state reverted.');
+        } else {
+          // Load the speech model while the user is still speaking, so the first thought is not
+          // held up by a cold load after the recording ends. Fire-and-forget: never awaited here.
+          ref.read(modelLifecycleManagerProvider).warmupOnRecordingStart();
         }
       } else {
         state = false;

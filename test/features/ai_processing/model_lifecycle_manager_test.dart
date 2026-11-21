@@ -92,6 +92,16 @@ void main() {
       expect(fakeSTT.initializeCallCount, equals(1));
     });
 
+    testWidgets('a warmup that is never followed by processing still evicts after the idle TTL', (tester) async {
+      manager.warmupOnRecordingStart();
+      await tester.pump();
+      expect(manager.areModelsLoaded, isTrue);
+
+      await tester.pump(const Duration(minutes: 3, seconds: 1));
+      expect(manager.areModelsLoaded, isFalse);
+      expect(fakeSTT.disposeCallCount, greaterThanOrEqualTo(1));
+    });
+
     testWidgets('inactivity TTL timer evicts models after configured idle duration', (tester) async {
       await manager.ensureModelsLoaded();
       expect(manager.areModelsLoaded, isTrue);

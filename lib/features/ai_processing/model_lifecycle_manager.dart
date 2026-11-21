@@ -181,7 +181,10 @@ class ModelLifecycleManager {
     }
 
     _logger?.info('[ModelLifecycle] Proactive warmup initiated on recording start.');
-    ensureModelsLoaded(reason: 'Recording started (proactive pre-warm)').catchError((e) {
+    ensureModelsLoaded(reason: 'Recording started (proactive pre-warm)').then((_) {
+      // A recording that never reaches the queue must not leave the model in RAM with no countdown.
+      if (_activeUsers == 0) touch(reason: 'Warmup finished');
+    }).catchError((e) {
       _logger?.warning('[ModelLifecycle] Non-fatal background warmup warning: $e');
     });
   }

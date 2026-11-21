@@ -3,7 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/batch_pipeline_service.dart';
+import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/capture/capture_controller.dart';
+
+class RecordingModelLifecycleManager extends ModelLifecycleManager {
+  int warmupCalls = 0;
+
+  RecordingModelLifecycleManager() : super(STTService());
+
+  @override
+  void warmupOnRecordingStart() => warmupCalls++;
+}
 
 class FakeBatchPipelineService implements BatchPipelineService {
   bool startSucceeds = true;
@@ -41,6 +52,7 @@ void main() {
 
   const channel = MethodChannel('com.eudemonia/hardware_buttons');
   late FakeBatchPipelineService pipeline;
+  late RecordingModelLifecycleManager lifecycle;
   late ProviderContainer container;
   late List<bool> nativeRecordingStates;
 
@@ -58,6 +70,7 @@ void main() {
 
   setUp(() {
     pipeline = FakeBatchPipelineService();
+    lifecycle = RecordingModelLifecycleManager();
     nativeRecordingStates = [];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
@@ -67,7 +80,10 @@ void main() {
       return null;
     });
     container = ProviderContainer(
-      overrides: [batchPipelineProvider.overrideWithValue(pipeline)],
+      overrides: [
+        batchPipelineProvider.overrideWithValue(pipeline),
+        modelLifecycleManagerProvider.overrideWithValue(lifecycle),
+      ],
     );
     container.read(captureControllerProvider);
   });
@@ -97,6 +113,22 @@ void main() {
     final captured = await controller.handleTrigger();
 
     expect(captured?.sequenceNumber, 1);
+  });
+
+  test('starting a recording warms the speech model once; stopping does not', () async {
+    await sendTrigger();
+    expect(lifecycle.warmupCalls, 1);
+
+    await waitOutCooldown();
+    await sendTrigger();
+    expect(container.read(captureControllerProvider), isFalse);
+    expect(lifecycle.warmupCalls, 1);
+  });
+
+  test('a recording that could not start does not load the speech model', () async {
+    pipeline.startSucceeds = false;
+    await sendTrigger();
+    expect(lifecycle.warmupCalls, 0);
   });
 
   test('recording state reverts when the microphone could not start', () async {

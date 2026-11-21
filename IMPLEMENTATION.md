@@ -116,7 +116,7 @@
      - Either failure marks queue items `failed` with the message shown on the card, so the startup queue resume can never crash-loop the app.
      - `download_models.sh` pins both upstream repositories to a commit, downloads each file to `<name>.part`, verifies its SHA-256 before moving it into place, and re-verifies the copies on the device after `adb push`. It never resumes onto an existing file.
   7. **Proactive Pre-Warming (available, not wired)**:
-     - `warmupOnRecordingStart()` can begin loading models in the background when recording starts. It is currently **not invoked** by the capture path: model loading is left to the queue worker so that ~1.6 GB of allocations never coincide with active microphone capture (see Chronicle #5).
+     - `warmupOnRecordingStart()` is called by `CaptureController` once a recording has actually started (since 2026-11-21), so the speech model loads on the STT worker isolate while the user is speaking and the first thought is not delayed by a cold load. It is fire-and-forget, never awaited by the capture path, and starts the idle countdown itself if no processing follows. It had been disabled after Chronicle #5 when a warmup meant loading two models (~1.6 GB) during capture; with the LLM out of the capture path that reason no longer applies. A future Synthesis LLM load must NOT be attached to this warmup.
 
 ### E. Speech-to-Text & LLM Classification Pipeline (Sherpa-ONNX STT & Qwen 2.5 ChatML)
 - **Files**:
