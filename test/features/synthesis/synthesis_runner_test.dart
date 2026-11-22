@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/model_residency_arbiter.dart';
@@ -80,10 +81,49 @@ class FakeSession implements LlmPromptSession {
   }
 }
 
+/// Records every save as (id, synthesisAttempts at that moment); the in-memory store shares
+/// instances, so only the save itself proves a counter was persisted.
+class RecordingNotesRepository extends NotesRepository {
+  final List<(int, int)> saves = [];
+
+  @override
+  Future<void> saveNote(Note note) {
+    saves.add((note.id, note.synthesisAttempts));
+    return super.saveNote(note);
+  }
+}
+
+/// Appends 'wake-hold' / 'wake-release' to the same log as the engine so their order is observable.
+class FakeCpuWakeLock implements CpuWakeLock {
+  final List<String> log;
+  final List<Duration> holds = [];
+
+  /// When set, the first hold does not finish until it completes.
+  Completer<void>? firstHoldGate;
+
+  FakeCpuWakeLock(this.log);
+
+  @override
+  Future<void> hold(Duration timeout) async {
+    holds.add(timeout);
+    log.add('wake-hold');
+    final gate = firstHoldGate;
+    if (gate != null && holds.length == 1) await gate.future;
+  }
+
+  @override
+  Future<void> release() async {
+    log.add('wake-release');
+  }
+}
+
 class FakeEngine implements LlmEngine {
   final List<String> log;
   Responder responder;
   Completer<void>? loadGate;
+
+  /// When set, the load fails with it.
+  Object? loadError;
   bool _loaded = false;
   final List<String> prompts = [];
 
@@ -101,6 +141,8 @@ class FakeEngine implements LlmEngine {
     log.add('llm-load:$modelPath');
     final gate = loadGate;
     if (gate != null) await gate.future;
+    final error = loadError;
+    if (error != null) throw error;
     _loaded = true;
   }
 
@@ -149,7 +191,7 @@ String defaultReply(String prompt) {
 
 void main() {
   late List<String> log;
-  late NotesRepository notes;
+  late RecordingNotesRepository notes;
   late SynthesisSessionStore store;
   late FakeSTTService stt;
   late ModelResidencyArbiter arbiter;
@@ -163,7 +205,7 @@ void main() {
 
   setUp(() {
     log = [];
-    notes = NotesRepository();
+    notes = RecordingNotesRepository();
     store = SynthesisSessionStore();
     stt = FakeSTTService(log);
     arbiter = ModelResidencyArbiter();
@@ -190,7 +232,7 @@ void main() {
 
   List<SynthesisCluster> sessions() => app().read(synthesisRepositoryProvider);
 
-  SynthesisRunner runner() {
+  SynthesisRunner runner({CpuWakeLock? wakeLock}) {
     final c = app();
     return SynthesisRunner(
       notes: notes,
@@ -201,6 +243,7 @@ void main() {
       arbiter: arbiter,
       isCaptureActive: () => captureActive,
       modelsDir: () async => '/models',
+      wakeLock: wakeLock,
       onRunningChanged: runningChanges.add,
       onNotesChanged: () => notesChanged++,
     );
@@ -373,7 +416,7 @@ void main() {
       expect(lifecycle.state, ModelLifecycleState.unloaded);
     });
 
-    test('an engine error fails the run, counts no attempts and releases the model', () async {
+    test('an engine error fails the run, keeps the start-of-run attempt and releases the model', () async {
       final a = await thought('Refactor the queue.', 0);
       engine.responder = (p) => throw Exception('native fault');
 
@@ -382,7 +425,7 @@ void main() {
       expect(sessions(), isEmpty);
       final r = await reload(a);
       expect(r.state, ThoughtState.processed);
-      expect(r.synthesisAttempts, 0);
+      expect(r.synthesisAttempts, 1);
       expect(runningChanges, [true, false]);
       expectModelReleased();
     });
@@ -402,6 +445,7 @@ void main() {
       expect(await r.run(manual: true), SynthesisRunResult.failed);
       expect(arbiter.holder, isNull);
       expect(r.isRunning, isFalse);
+      expect((await notes.getAllNotes()).single.synthesisAttempts, 1);
     });
 
     test('a recording preempts a write turn: committed sessions stay, nothing else changes', () async {
@@ -531,6 +575,259 @@ void main() {
 
       expect(await first, SynthesisRunResult.completed);
       expect(r.isRunning, isFalse);
+    });
+  });
+
+  group('attempt counting', () {
+    test('a thought the model could not file counts one attempt per run: 1 after the first, 2 after the second', () async {
+      final a = await thought('Refactor the queue.', 0);
+      engine.responder = (p) => isOrganise(p) ? 'no idea' : defaultReply(p);
+
+      expect(await runner().run(manual: false), SynthesisRunResult.completed);
+      expect((await reload(a)).synthesisAttempts, 1);
+
+      expect(await runner().run(manual: false), SynthesisRunResult.completed);
+      expect((await reload(a)).synthesisAttempts, 2);
+      expect((await reload(a)).state, ThoughtState.processed);
+    });
+
+    test('a thought synthesized on a later run has its counter reset to 0', () async {
+      final a = await thought('Refactor the queue.', 0);
+      engine.responder = (p) => isOrganise(p) ? 'no idea' : defaultReply(p);
+      await runner().run(manual: false);
+      expect((await reload(a)).synthesisAttempts, 1);
+
+      engine.responder = defaultReply;
+      expect(await runner().run(manual: false), SynthesisRunResult.completed);
+
+      final r = await reload(a);
+      expect(r.state, ThoughtState.synthesized);
+      expect(r.synthesisAttempts, 0);
+    });
+
+    test('the attempt is persisted before the first model call, so a run that dies is still counted', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final b = await thought('Clean the home office.', 5, attempts: 1);
+      List<(int, int)>? savesAtFirstPrompt;
+      engine.onPrompt = (p) => savesAtFirstPrompt ??= List.of(notes.saves);
+
+      expect(await runner().run(manual: false), SynthesisRunResult.completed);
+
+      expect(savesAtFirstPrompt, isNotNull);
+      expect(savesAtFirstPrompt!.where((s) => s.$1 == a.id).last.$2, 1);
+      expect(savesAtFirstPrompt!.where((s) => s.$1 == b.id).last.$2, 2);
+    });
+
+    test('a failing model load counts an attempt for every candidate', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final b = await thought('Clean the home office.', 5, attempts: 1);
+      engine.loadError = Exception('out of memory');
+
+      expect(await runner().run(manual: false), SynthesisRunResult.failed);
+
+      expect((await reload(a)).synthesisAttempts, 1);
+      expect((await reload(b)).synthesisAttempts, 2);
+    });
+
+    test('a failing model call counts an attempt for every candidate', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final b = await thought('Clean the home office.', 5);
+      engine.responder = (p) => throw Exception('native fault');
+
+      expect(await runner().run(manual: false), SynthesisRunResult.failed);
+
+      expect((await reload(a)).synthesisAttempts, 1);
+      expect((await reload(b)).synthesisAttempts, 1);
+    });
+
+    test('a preempted run takes its attempts back and leaves the counters unchanged', () async {
+      final a = await thought('Refactor the queue.', 0, attempts: 1);
+      final b = await thought('Clean the home office.', 5);
+      final held = Completer<void>();
+      engine.responder = (p) {
+        held.complete();
+        return null;
+      };
+
+      final run = runner().run(manual: false);
+      await held.future;
+      expect((await reload(a)).synthesisAttempts, 2, reason: 'counted while the run is in progress');
+      await lifecycle.ensureModelsLoaded(reason: 'recording');
+
+      expect(await run, SynthesisRunResult.preempted);
+      expect((await reload(a)).synthesisAttempts, 1);
+      expect((await reload(b)).synthesisAttempts, 0);
+      expect((await reload(a)).state, ThoughtState.processed);
+    });
+
+    test('a preempted run keeps the committed thoughts reset and restores only the waiting ones', () async {
+      final a = await thought('Refactor the queue.', 0, attempts: 2);
+      final b = await thought('Clean the home office.', 5, attempts: 2);
+      var writes = 0;
+      final held = Completer<void>();
+      engine.responder = (p) {
+        if (isOrganise(p)) return defaultReply(p);
+        if (++writes == 1) return defaultReply(p);
+        held.complete();
+        return null;
+      };
+
+      final run = runner().run(manual: false);
+      await held.future;
+      await lifecycle.ensureModelsLoaded(reason: 'recording');
+
+      expect(await run, SynthesisRunResult.preempted);
+      final ra = await reload(a);
+      expect(ra.state, ThoughtState.synthesized);
+      expect(ra.synthesisAttempts, 0);
+      final rb = await reload(b);
+      expect(rb.state, ThoughtState.processed);
+      expect(rb.synthesisAttempts, 2);
+    });
+
+    test('a thought without attempts never goes below 0 when the run is preempted', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final held = Completer<void>();
+      engine.responder = (p) {
+        held.complete();
+        return null;
+      };
+
+      final run = runner().run(manual: false);
+      await held.future;
+      // Something reset the counter while the run was in progress.
+      (await reload(a)).synthesisAttempts = 0;
+      await lifecycle.ensureModelsLoaded(reason: 'recording');
+
+      expect(await run, SynthesisRunResult.preempted);
+      expect((await reload(a)).synthesisAttempts, 0);
+    });
+  });
+
+  group('CPU wake lock', () {
+    List<String> events() =>
+        log.where((e) => e.startsWith('wake') || e.startsWith('llm') || e == 'prompt').toList();
+
+    test('a completed run holds the CPU before the model load and every model call, then releases after the model is freed',
+        () async {
+      await thought('Refactor the queue.', 0);
+      await thought('Clean the home office.', 5);
+      engine.onPrompt = (p) => log.add('prompt');
+      final wake = FakeCpuWakeLock(log);
+
+      expect(await runner(wakeLock: wake).run(manual: false), SynthesisRunResult.completed);
+
+      final e = events();
+      expect(e.first, 'wake-hold');
+      expect(e.last, 'wake-release');
+      expect(e.where((x) => x == 'wake-release'), hasLength(1));
+      final load = e.indexWhere((x) => x.startsWith('llm-load'));
+      expect(e[load - 1], 'wake-hold');
+      final prompts = [for (var i = 0; i < e.length; i++) if (e[i] == 'prompt') i];
+      expect(prompts, hasLength(3));
+      for (final i in prompts) {
+        expect(e[i - 1], 'wake-hold', reason: 'a hold directly precedes the model call at $i');
+      }
+      expect(e.lastIndexOf('llm-dispose'), lessThan(e.lastIndexOf('wake-release')));
+      expect(wake.holds.toSet(), {SynthesisRunner.wakeLockWindow});
+    });
+
+    test('a preempted run still releases once, after the model is freed', () async {
+      await thought('Refactor the queue.', 0);
+      final held = Completer<void>();
+      engine.responder = (p) {
+        held.complete();
+        return null;
+      };
+      final wake = FakeCpuWakeLock(log);
+
+      final run = runner(wakeLock: wake).run(manual: false);
+      await held.future;
+      await lifecycle.ensureModelsLoaded(reason: 'recording');
+      expect(await run, SynthesisRunResult.preempted);
+
+      final e = events();
+      expect(e.last, 'wake-release');
+      expect(e.where((x) => x == 'wake-release'), hasLength(1));
+      expect(e.lastIndexOf('llm-dispose'), lessThan(e.lastIndexOf('wake-release')));
+    });
+
+    test('a run preempted during the model load releases once and never asks the model', () async {
+      await thought('Refactor the queue.', 0);
+      engine.loadGate = Completer<void>();
+      final wake = FakeCpuWakeLock(log);
+
+      final run = runner(wakeLock: wake).run(manual: false);
+      await until(() => log.any((e) => e.startsWith('llm-load')));
+      final speech = lifecycle.ensureModelsLoaded(reason: 'recording');
+      engine.loadGate!.complete();
+
+      expect(await run, SynthesisRunResult.preempted);
+      await speech;
+      final e = events();
+      expect(e.last, 'wake-release');
+      expect(e.where((x) => x == 'wake-release'), hasLength(1));
+      expect(engine.prompts, isEmpty);
+    });
+
+    test('a recording that arrives while the run is still preparing preempts it before any model is loaded', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final wake = FakeCpuWakeLock(log)..firstHoldGate = Completer<void>();
+
+      final run = runner(wakeLock: wake).run(manual: false);
+      await until(() => wake.holds.isNotEmpty);
+      await lifecycle.ensureModelsLoaded(reason: 'recording');
+      wake.firstHoldGate!.complete();
+
+      expect(await run, SynthesisRunResult.preempted);
+      expect(log.where((e) => e.startsWith('llm-load')), isEmpty);
+      expect(arbiter.holder, HeavyModel.speech);
+      expect(log.last, 'wake-release');
+      expect((await reload(a)).synthesisAttempts, 0);
+    });
+
+    test('a run whose model call throws still releases', () async {
+      await thought('Refactor the queue.', 0);
+      engine.responder = (p) => throw Exception('native fault');
+      final wake = FakeCpuWakeLock(log);
+
+      expect(await runner(wakeLock: wake).run(manual: false), SynthesisRunResult.failed);
+
+      final e = events();
+      expect(e.first, 'wake-hold');
+      expect(e.last, 'wake-release');
+      expect(e.where((x) => x == 'wake-release'), hasLength(1));
+      expect(e.lastIndexOf('llm-dispose'), lessThan(e.lastIndexOf('wake-release')));
+    });
+
+    test('a run whose model load throws still releases', () async {
+      await thought('Refactor the queue.', 0);
+      engine.loadError = Exception('out of memory');
+      final wake = FakeCpuWakeLock(log);
+
+      expect(await runner(wakeLock: wake).run(manual: false), SynthesisRunResult.failed);
+
+      final e = events();
+      expect(e.first, 'wake-hold');
+      expect(e.last, 'wake-release');
+      expect(e.where((x) => x == 'wake-release'), hasLength(1));
+    });
+
+    test('busy and nothing-to-do results never touch the wake lock', () async {
+      final wake = FakeCpuWakeLock(log);
+
+      expect(await runner(wakeLock: wake).run(manual: true), SynthesisRunResult.nothingToDo);
+
+      await thought('Refactor the queue.', 0);
+      captureActive = true;
+      expect(await runner(wakeLock: wake).run(manual: true), SynthesisRunResult.busy);
+      captureActive = false;
+
+      await arbiter.acquireSpeech();
+      expect(await runner(wakeLock: wake).run(manual: true), SynthesisRunResult.busy);
+
+      expect(log.where((e) => e.startsWith('wake')), isEmpty);
+      expect(wake.holds, isEmpty);
     });
   });
 }

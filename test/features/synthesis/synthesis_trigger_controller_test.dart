@@ -135,17 +135,19 @@ void main() {
     expect(runner.runs, 0);
   });
 
-  test('start runs thoughts left from before once the settle delay passes', () async {
+  test('start does not run thoughts left from before until the quiet window passes', () async {
     eligible = 4;
     await controller.start();
-    await clock.elapse(SynthesisTriggerController.settleDelay);
+    await clock.elapse(const Duration(minutes: 14));
+    expect(runner.runs, 0);
+    await clock.elapse(const Duration(minutes: 1));
     expect(runner.runs, 1);
   });
 
   test('a busy run is retried once after 60 s while thoughts wait', () async {
     eligible = 3;
     runner.results.add(SynthesisRunResult.busy);
-    await controller.start();
+    await controller.onThoughtSaved();
     await clock.elapse(SynthesisTriggerController.settleDelay);
     expect(runner.runs, 1);
     await clock.elapse(const Duration(seconds: 59));
@@ -160,7 +162,7 @@ void main() {
   test('no retry for a busy run once no thoughts wait', () async {
     eligible = 3;
     runner.results.add(SynthesisRunResult.busy);
-    await controller.start();
+    await controller.onThoughtSaved();
     await clock.elapse(const Duration(seconds: 19));
     eligible = 0;
     await clock.elapse(const Duration(seconds: 1));
@@ -172,7 +174,7 @@ void main() {
     test('no reschedule after a ${result.name} run', () async {
       eligible = 3;
       runner.results.add(result);
-      await controller.start();
+      await controller.onThoughtSaved();
       await clock.elapse(SynthesisTriggerController.settleDelay);
       expect(runner.runs, 1);
       await clock.elapse(const Duration(minutes: 5));
@@ -183,7 +185,7 @@ void main() {
   test('a preempted run is retried after 60 s while thoughts wait', () async {
     eligible = 3;
     runner.results.add(SynthesisRunResult.preempted);
-    await controller.start();
+    await controller.onThoughtSaved();
     await clock.elapse(SynthesisTriggerController.settleDelay);
     expect(runner.runs, 1);
     await clock.elapse(const Duration(seconds: 60));
@@ -193,6 +195,7 @@ void main() {
   test('dispose cancels every timer', () async {
     eligible = 3;
     await controller.start();
+    await controller.onThoughtSaved();
     controller.dispose();
     await clock.elapse(const Duration(hours: 1));
     expect(runner.runs, 0);

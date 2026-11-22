@@ -15,6 +15,9 @@ const _modelFile = String.fromEnvironment('SYN_MODEL', defaultValue: 'qwen2.5-1.
 const _ctxList = String.fromEnvironment('SYN_CTX', defaultValue: '2048,4096,8192');
 // Qwen3 models think before answering unless an empty think block follows the assistant header.
 const _emptyThink = bool.fromEnvironment('SYN_EMPTY_THINK');
+// SYN_THREADS sets the CPU thread count; SYN_SKIP_ALL=true leaves out the two turns that take every thought at once.
+const _threads = int.fromEnvironment('SYN_THREADS', defaultValue: 4);
+const _skipAll = bool.fromEnvironment('SYN_SKIP_ALL');
 final _contextSizes = _ctxList.split(',').map(int.parse).toList();
 // SYN_TEMPLATE=llama3 builds the prompts in the Llama 3 chat format instead of ChatML.
 const _template = String.fromEnvironment('SYN_TEMPLATE', defaultValue: 'chatml');
@@ -64,7 +67,8 @@ void main() {
     final allThoughts = thoughts.map((t) => t.value).toList();
 
     for (final ctx in _contextSizes) {
-      final service = LLMService(config: LLMConfig(kvCacheMaxSize: ctx, generationTimeout: const Duration(minutes: 10)));
+      final service = LLMService(
+          config: LLMConfig(kvCacheMaxSize: ctx, threads: _threads, generationTimeout: const Duration(minutes: 10)));
       final load = <String, dynamic>{'ctx': ctx, 'status': 'ok'};
       loads.add(load);
       try {
@@ -136,7 +140,7 @@ void main() {
       await organise('1_organise_r01_r03', ['r01', 'r02', 'r03']);
       await organise('2_organise_r06_r10', ['r06', 'r07', 'r08', 'r09', 'r10']);
       // Organise on every thought, using the pushed ids.
-      {
+      if (!_skipAll) {
         final inputs = allThoughts;
         await turn('3_organise_all', 'organise', inputs, _p(buildOrganisePrompt(inputs, format: _format)),
             organiseOutputBudget(inputs.length),
@@ -147,8 +151,10 @@ void main() {
       await write('6_write_r12', ['r12']);
       await write('7_write_r13', ['r13']);
       await write('8_write_r10_r11_r12_r13', ['r10', 'r11', 'r12', 'r13']);
-      await turn('9_write_all', 'write', allThoughts, _p(buildWritePrompt(allThoughts, format: _format)),
-          writeOutputBudget(_words(allThoughts)));
+      if (!_skipAll) {
+        await turn('9_write_all', 'write', allThoughts, _p(buildWritePrompt(allThoughts, format: _format)),
+            writeOutputBudget(_words(allThoughts)));
+      }
 
       Future<String?> structured(String id, List<String> ids) {
         final inputs = pick(ids);

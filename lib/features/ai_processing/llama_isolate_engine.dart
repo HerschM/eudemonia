@@ -95,7 +95,10 @@ class LlamaIsolateEngine implements LlmEngine {
         _Op.load.index,
         Llama.libraryPath,
         modelPath,
-        ModelParams()..nGpuLayers = config.gpuLayers,
+        // The bundled library is CPU-only; the load fails unless no GPU device is selected.
+        ModelParams()
+          ..nGpuLayers = 0
+          ..mainGpu = -1,
         contextParams,
         SamplerParams()..greedy = config.greedySampling,
       ]);

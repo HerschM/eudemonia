@@ -35,14 +35,22 @@ class SynthesisTriggerController {
     this._logger,
   });
 
-  /// App launch: thoughts left from earlier may already meet the threshold.
-  Future<void> start() => onThoughtSaved();
+  /// App launch: thoughts left from earlier wait for the quiet window. A run is never started
+  /// right after launch, because the user has just opened the app to use it.
+  Future<void> start() async {
+    if (_disposed) return;
+    _armQuietTimer();
+  }
+
+  void _armQuietTimer() {
+    _quietTimer?.cancel();
+    _quietTimer = _createTimer(Duration(minutes: _settings().inactivityMinutes), () => _fire('quiet window'));
+  }
 
   /// A new thought reached Capture.
   Future<void> onThoughtSaved() async {
     if (_disposed) return;
-    _quietTimer?.cancel();
-    _quietTimer = _createTimer(Duration(minutes: _settings().inactivityMinutes), () => _fire('quiet window'));
+    _armQuietTimer();
     final count = await _countOrZero();
     if (_disposed || count < _settings().noteThreshold) return;
     _settleTimer?.cancel();
@@ -80,8 +88,10 @@ class SynthesisTriggerController {
 final synthesisTriggerControllerProvider = Provider<SynthesisTriggerController>((ref) {
   final controller = SynthesisTriggerController(
     runner: ref.watch(synthesisRunnerProvider),
+    // Only thoughts no run has failed on start a run: the model is deterministic, so a failed
+    // thought fails again until something changes. A run started by new thoughts retries them.
     eligibleCount: () async => (await ref.read(notesRepositoryProvider).getAllNotes())
-        .where((n) => isSynthesisCandidate(n, manual: false))
+        .where((n) => isSynthesisCandidate(n, manual: false, maxAttempts: 1))
         .length,
     settings: () => ref.read(synthesisSettingsProvider),
     logger: ref.watch(appLoggerProvider),

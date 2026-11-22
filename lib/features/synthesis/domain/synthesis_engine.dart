@@ -60,6 +60,9 @@ class OrganiseOutcome {
 typedef SynthesisReply = ({String text, bool hitOutputCap});
 typedef SynthesisGenerate = Future<SynthesisReply> Function(String prompt, int maxOutputTokens);
 
+/// Reports a model reply the engine rejected: the turn kind, the thought ids of the turn and why.
+typedef SynthesisRejection = void Function(String kind, List<int> thoughtIds, String reason);
+
 class _Session {
   final String? existingId;
   final String folder;
@@ -89,6 +92,7 @@ class SynthesisEngine {
   final List<FolderDefinition> folders;
   final Duration idleWindow;
   final Duration maxSpan;
+  final SynthesisRejection? _onRejected;
 
   SynthesisEngine({
     required SynthesisGenerate generate,
@@ -96,7 +100,18 @@ class SynthesisEngine {
     this.folders = defaultFolders,
     this.idleWindow = const Duration(minutes: 45),
     this.maxSpan = const Duration(hours: 2),
+    this._onRejected,
   }) : _generate = generate; // ignore: prefer_initializing_formals
+
+  /// The start of a rejected reply on one line, for diagnostics.
+  static String _excerpt(String text) {
+    final line = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return line.length > 100 ? '${line.substring(0, 100)}…' : line;
+  }
+
+  static String _replyProblem(SynthesisReply? reply) => reply == null
+      ? 'timed out'
+      : '${reply.hitOutputCap ? 'reached the output limit' : 'not in the expected form'}: "${_excerpt(reply.text)}"';
 
   /// Calls the model; a timeout is reported as null (an invalid reply), other errors propagate.
   Future<SynthesisReply?> _call(String prompt, int maxTokens) async {
@@ -165,6 +180,7 @@ class SynthesisEngine {
     final reply = await _call(prompt, organiseOutputBudget(batch.length));
     final labels = reply == null || reply.hitOutputCap ? null : parseOrganiseReply(reply.text, batch.length, folders);
     if (labels == null) {
+      _onRejected?.call('organise', [for (final t in batch) t.id], _replyProblem(reply));
       if (batch.length == 1) {
         failed.add(batch.first.id);
         return;
@@ -245,6 +261,10 @@ class SynthesisEngine {
           out <= profile.maxOutputRatio * inputWords + 30 &&
           (inputWords < 30 || out >= profile.minOutputRatio * inputWords);
       if (ok) return text;
+      _onRejected?.call('write', [for (final t in thoughts) t.id], '$out words written from $inputWords');
+    } else {
+      _onRejected?.call('write', [for (final t in thoughts) t.id],
+          reply == null ? 'timed out' : 'reached the output limit');
     }
     if (thoughts.length == 1) return null;
     final mid = (thoughts.length + 1) ~/ 2;

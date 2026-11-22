@@ -68,6 +68,16 @@ If native Kotlin code, accessibility services, debouncers, or foreground keep-al
 cd android && ./gradlew :app:testDebugUnitTest
 ```
 
+### Step 6: On-Device Screen Check (When a Device Run Changes What a Screen Shows)
+Logs and the database are not proof that a screen renders. After any run on the phone that creates or changes data shown in the UI (synthesis sessions, thoughts, folders), open every affected screen on the device and look at it before reporting:
+
+```bash
+adb -s <serial> exec-out screencap -p > <scratchpad>/screen.png   # then view the image; scroll and repeat for long lists
+adb -s <serial> logcat -d -s flutter:V | grep -ciE "exception|assert|overflow"   # must print 0
+```
+- Widget tests for a list or menu must be driven by the same source of names the production code uses (for folders: `defaultFolders`), never by a hard-coded copy.
+- Never use `adb shell am force-stop` on the user's phone: Android switches the app's Accessibility service off. Screenshots contain the user's notes; delete them when done.
+
 ---
 
 ## Failure Triage Guide

@@ -22,6 +22,7 @@ class MainActivity: FlutterActivity() {
     private var notificationPermissionRequested = false
     private val telemetryCollector by lazy { SystemTelemetryCollector(applicationContext) }
     private val telemetryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val processingWakeLock by lazy { ProcessingWakeLock.create(applicationContext) }
 
     private var methodChannel: MethodChannel? = null
     private var audioChannel: MethodChannel? = null
@@ -171,6 +172,9 @@ class MainActivity: FlutterActivity() {
                 }
             }
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ProcessingWakeLock.CHANNEL)
+            .setMethodCallHandler { call, result -> handleProcessingWakeLockCall(call, result) }
+
         // Register the receiver
         val filter = IntentFilter("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -285,6 +289,32 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    private fun handleProcessingWakeLockCall(
+        call: io.flutter.plugin.common.MethodCall,
+        result: io.flutter.plugin.common.MethodChannel.Result
+    ) {
+        try {
+            when (call.method) {
+                ProcessingWakeLock.METHOD_HOLD -> {
+                    // Dart ints arrive as Integer when they fit in 32 bits, Long otherwise.
+                    val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: 0L
+                    processingWakeLock.hold(call.argument<String>("owner") ?: "", timeoutMs)
+                    result.success(null)
+                }
+                ProcessingWakeLock.METHOD_RELEASE -> {
+                    processingWakeLock.release(call.argument<String>("owner") ?: "")
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        } catch (e: IllegalArgumentException) {
+            result.error("INVALID_ARGUMENT", e.message, null)
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Processing wake lock call failed: ${e.message}")
+            result.error("WAKE_LOCK_ERROR", e.message, null)
+        }
+    }
+
     private fun handleAudioCall(call: io.flutter.plugin.common.MethodCall, result: io.flutter.plugin.common.MethodChannel.Result) {
         when (call.method) {
             "playAudio" -> {
@@ -373,6 +403,10 @@ class MainActivity: FlutterActivity() {
         activeMethodChannel = null
         activeAudioChannel = null
         telemetryExecutor.shutdown()
+        // The engine dies with the activity, so no processing can still need the CPU.
+        try {
+            processingWakeLock.releaseAll()
+        } catch (_: Exception) {}
         try {
             mediaPlayer?.release()
             mediaPlayer = null

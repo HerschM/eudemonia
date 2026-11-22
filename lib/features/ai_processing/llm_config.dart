@@ -14,9 +14,9 @@ class LLMConfig {
   /// reduces KV cache RAM usage while preserving high context length.
   final LlamaKvCacheType kvCacheType;
 
-  /// Full model eviction Time-To-Live.
-  /// If the app remains idle for this duration, both LLM and STT models are completely
-  /// unloaded from RAM, reclaiming ~1.6 GB of memory. Default is 3 minutes.
+  /// Idle time after which `ModelLifecycleManager` unloads the speech model from RAM.
+  /// The language model is not governed by this value: a synthesis run unloads it when the
+  /// run ends. Default is 3 minutes.
   final Duration modelInactivityTtl;
 
   /// Minimum batch size for prompt evaluation. `LLMService` raises `ContextParams.nBatch`
@@ -27,11 +27,6 @@ class LLMConfig {
   /// Maps to `ContextParams.nThreads`. Default is 4 threads.
   final int threads;
 
-  /// Number of model layers offloaded to the GPU (Vulkan).
-  /// Maps to `ModelParams.nGpuLayers`. `0` = CPU only. Default is 99 (full offload,
-  /// the llama_cpp_dart library default).
-  final int gpuLayers;
-
   /// Whether sampling is greedy (always picks the most likely token).
   /// Maps to `SamplerParams.greedy`. Default is `true`: replies are structured text, so deterministic output is preferred; measured speed is the same as sampled.
   final bool greedySampling;
@@ -41,8 +36,7 @@ class LLMConfig {
   /// Default is 5 minutes.
   final Duration generationTimeout;
 
-  /// Longest time to wait for the model to finish loading. The first load after an
-  /// install is the slowest (GPU pipelines are compiled from scratch) and can exceed the
+  /// Longest time to wait for the model to finish loading. A slow first load can exceed the
   /// llama_cpp_dart library's internal 60-second limit, after which the load is still
   /// running; `LLMService` keeps waiting up to this duration. Default is 180 seconds.
   final Duration modelLoadTimeout;
@@ -53,13 +47,11 @@ class LLMConfig {
     this.modelInactivityTtl = const Duration(minutes: 3),
     this.batchSize = 512,
     this.threads = 4,
-    this.gpuLayers = 99,
     this.greedySampling = true,
     this.generationTimeout = const Duration(minutes: 5),
     this.modelLoadTimeout = const Duration(seconds: 180),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
-        assert(threads > 0, 'threads must be positive'),
-        assert(gpuLayers >= 0, 'gpuLayers must be non-negative');
+        assert(threads > 0, 'threads must be positive');
 
   LLMConfig copyWith({
     int? kvCacheMaxSize,
@@ -67,7 +59,6 @@ class LLMConfig {
     Duration? modelInactivityTtl,
     int? batchSize,
     int? threads,
-    int? gpuLayers,
     bool? greedySampling,
     Duration? generationTimeout,
     Duration? modelLoadTimeout,
@@ -78,7 +69,6 @@ class LLMConfig {
       modelInactivityTtl: modelInactivityTtl ?? this.modelInactivityTtl,
       batchSize: batchSize ?? this.batchSize,
       threads: threads ?? this.threads,
-      gpuLayers: gpuLayers ?? this.gpuLayers,
       greedySampling: greedySampling ?? this.greedySampling,
       generationTimeout: generationTimeout ?? this.generationTimeout,
       modelLoadTimeout: modelLoadTimeout ?? this.modelLoadTimeout,
@@ -95,7 +85,6 @@ class LLMConfig {
           modelInactivityTtl == other.modelInactivityTtl &&
           batchSize == other.batchSize &&
           threads == other.threads &&
-          gpuLayers == other.gpuLayers &&
           greedySampling == other.greedySampling &&
           generationTimeout == other.generationTimeout &&
           modelLoadTimeout == other.modelLoadTimeout;
@@ -107,7 +96,6 @@ class LLMConfig {
       modelInactivityTtl.hashCode ^
       batchSize.hashCode ^
       threads.hashCode ^
-      gpuLayers.hashCode ^
       greedySampling.hashCode ^
       generationTimeout.hashCode ^
       modelLoadTimeout.hashCode;
@@ -116,7 +104,7 @@ class LLMConfig {
   String toString() {
     return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, '
         'kvCacheType: ${kvCacheType.name}, '
-        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, gpuLayers: $gpuLayers, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
+        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
   }
 }
 

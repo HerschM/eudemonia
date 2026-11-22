@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
@@ -47,7 +48,7 @@ void main() {
           SynthesisCluster(
             clusterId: 'cluster_2',
             sequenceNumber: '#S-02',
-            folder: 'Ideas',
+            folder: 'Personal',
             synthesizedContent: 'Voice-first cognitive thought capture ideas.',
             sessionStart: DateTime.now().subtract(const Duration(hours: 1)),
             sessionEnd: DateTime.now().subtract(const Duration(minutes: 45)),
@@ -150,6 +151,58 @@ void main() {
     );
 
     testWidgets(
+      'renders a card without error for every folder the engine can assign and for a folder not in the list',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(360, 3000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final names = [...defaultFolders.map((f) => f.name), 'Ideas'];
+        final clusters = [
+          for (var i = 0; i < names.length; i++)
+            SynthesisCluster(
+              clusterId: 'cluster_$i',
+              sequenceNumber: '#S-0${i + 1}',
+              folder: names[i],
+              synthesizedContent: 'Content $i',
+              sessionStart: DateTime.now(),
+              sessionEnd: DateTime.now(),
+              sessionDuration: const Duration(minutes: 10),
+              originNotes: const [],
+              isUnread: true,
+            ),
+        ];
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              synthesisRepositoryProvider.overrideWith(() => SynthesisRepository(clusters)),
+            ],
+            child: const MaterialApp(home: Scaffold(body: SynthesisScreen())),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        for (var i = 0; i < names.length; i++) {
+          final dropdown = find.descendant(
+            of: find.byKey(Key('cluster_folder_dropdown_#S-0${i + 1}')),
+            matching: find.byType(DropdownButton<String>),
+          );
+          expect(tester.widget<DropdownButton<String>>(dropdown).value, names[i]);
+        }
+
+        // Every assignable folder can be chosen in the filter.
+        await tester.tap(find.byKey(const Key('synthesis_folder_filter_dropdown')));
+        await tester.pumpAndSettle();
+        for (final f in defaultFolders) {
+          expect(find.text(f.name), findsWidgets);
+        }
+      },
+    );
+
+    testWidgets(
       'Filter dropdowns correctly filter clusters by folder and triage status',
       (WidgetTester tester) async {
         final clusters = [
@@ -165,10 +218,10 @@ void main() {
             isUnread: true,
           ),
           SynthesisCluster(
-            clusterId: 'cluster_ideas',
+            clusterId: 'cluster_personal',
             sequenceNumber: '#S-02',
-            folder: 'Ideas',
-            synthesizedContent: 'Ideas cluster content',
+            folder: 'Personal',
+            synthesizedContent: 'Personal cluster content',
             sessionStart: DateTime.now(),
             sessionEnd: DateTime.now(),
             sessionDuration: const Duration(minutes: 10),

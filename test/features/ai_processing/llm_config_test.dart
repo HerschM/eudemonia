@@ -44,38 +44,24 @@ void main() {
       expect(str, contains('modelInactivityTtl: 3m'));
     });
 
-    test('gpuLayers and greedySampling default to 99 and true', () {
-      const config = LLMConfig();
-      expect(config.gpuLayers, equals(99));
-      expect(config.greedySampling, isTrue);
+    test('greedySampling defaults to true', () {
+      expect(const LLMConfig().greedySampling, isTrue);
     });
 
-    test('copyWith updates gpuLayers and greedySampling, preserving others', () {
+    test('copyWith updates greedySampling, preserving others', () {
       const base = LLMConfig();
-      final gpu = base.copyWith(gpuLayers: 0);
-      expect(gpu.gpuLayers, equals(0));
-      expect(gpu.greedySampling, isTrue);
-      expect(gpu.threads, equals(4));
       final sampled = base.copyWith(greedySampling: false);
       expect(sampled.greedySampling, isFalse);
-      expect(sampled.gpuLayers, equals(99));
       expect(sampled.threads, equals(4));
     });
 
-    test('configs differing only in gpuLayers or greedySampling are not equal', () {
+    test('configs differing only in greedySampling are not equal', () {
       const base = LLMConfig();
-      expect(base, isNot(equals(base.copyWith(gpuLayers: 0))));
       expect(base, isNot(equals(base.copyWith(greedySampling: false))));
     });
 
-    test('negative gpuLayers throws AssertionError', () {
-      expect(() => LLMConfig(gpuLayers: -1), throwsA(isA<AssertionError>()));
-    });
-
-    test('toString includes gpuLayers and greedySampling', () {
-      final str = const LLMConfig().toString();
-      expect(str, contains('gpuLayers: 99'));
-      expect(str, contains('greedySampling: true'));
+    test('toString includes greedySampling', () {
+      expect(const LLMConfig().toString(), contains('greedySampling: true'));
     });
 
     test('generationTimeout defaults to 5 minutes', () {
@@ -88,7 +74,6 @@ void main() {
           .copyWith(generationTimeout: const Duration(seconds: 240));
       expect(updated.generationTimeout, equals(const Duration(seconds: 240)));
       expect(updated.threads, equals(4));
-      expect(updated.gpuLayers, equals(99));
     });
 
     test('configs differing only in generationTimeout are not equal', () {

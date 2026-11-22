@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
+import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
@@ -49,6 +50,39 @@ class FakeSTTService implements STTService {
   @override
   void dispose() {
     isInitialized = false;
+  }
+}
+
+/// Logs to a shared event list so the order of holds, transcriptions and releases is observable.
+class FakeCpuWakeLock implements CpuWakeLock {
+  final List<String> events;
+  final List<Duration> holds = [];
+
+  FakeCpuWakeLock(this.events);
+
+  @override
+  Future<void> hold(Duration timeout) async {
+    holds.add(timeout);
+    events.add('hold');
+  }
+
+  @override
+  Future<void> release() async {
+    events.add('release');
+  }
+}
+
+class LoggingSTTService extends FakeSTTService {
+  final List<String> events;
+  bool failNext = false;
+
+  LoggingSTTService(this.events);
+
+  @override
+  Future<String> transcribe(String audioFilePath) async {
+    events.add('transcribe');
+    if (failNext || audioFilePath.contains('corrupt')) throw Exception('Unreadable audio');
+    return super.transcribe(audioFilePath);
   }
 }
 
@@ -163,5 +197,79 @@ void main() {
     expect(service.pendingCount, 0);
     service.dispose();
     customLifecycle.dispose();
+  });
+
+  group('CPU wake lock', () {
+    late List<String> events;
+    late FakeCpuWakeLock wakeLock;
+    late LoggingSTTService stt;
+    late ModelLifecycleManager lifecycle;
+    late AudioQueueService service;
+
+    setUp(() {
+      events = [];
+      wakeLock = FakeCpuWakeLock(events);
+      stt = LoggingSTTService(events);
+      lifecycle = ModelLifecycleManager(stt, modelsDirResolver: () async => tempDir.path);
+      service = AudioQueueService(
+        stt,
+        fakeNotesRepo,
+        lifecycle,
+        wakeLock: wakeLock,
+        storageFileResolver: () async => queueStorageFile,
+      );
+    });
+
+    tearDown(() {
+      service.dispose();
+      lifecycle.dispose();
+    });
+
+    test('holds the CPU before each item and releases once when the queue is drained', () async {
+      await service.enqueue('/path/to/a.m4a', autoProcess: false);
+      await service.enqueue('/path/to/b.m4a', autoProcess: false);
+
+      await service.processPending();
+
+      expect(events, ['hold', 'transcribe', 'hold', 'transcribe', 'release']);
+      expect(wakeLock.holds, [AudioQueueService.wakeLockWindow, AudioQueueService.wakeLockWindow]);
+      expect(AudioQueueService.wakeLockWindow, const Duration(minutes: 5));
+    });
+
+    test('still releases when an item fails, and the remaining items are processed', () async {
+      await service.enqueue('/path/to/corrupt.m4a', autoProcess: false);
+      await service.enqueue('/path/to/good.m4a', autoProcess: false);
+
+      await service.processPending();
+
+      expect(events, ['hold', 'transcribe', 'hold', 'transcribe', 'release']);
+      expect(service.items.first.status, AudioQueueStatus.failed);
+      expect(service.items.last.status, AudioQueueStatus.completed);
+    });
+
+    test('releases when the only item fails', () async {
+      stt.failNext = true;
+      await service.enqueue('/path/to/a.m4a', autoProcess: false);
+
+      await service.processPending();
+
+      expect(events, ['hold', 'transcribe', 'release']);
+      expect(service.items.single.status, AudioQueueStatus.failed);
+    });
+
+    test('an empty queue never touches the wake lock', () async {
+      await service.processPending();
+
+      expect(events, isEmpty);
+    });
+
+    test('a second drain holds and releases again', () async {
+      await service.enqueue('/path/to/a.m4a', autoProcess: false);
+      await service.processPending();
+      await service.enqueue('/path/to/b.m4a', autoProcess: false);
+      await service.processPending();
+
+      expect(events, ['hold', 'transcribe', 'release', 'hold', 'transcribe', 'release']);
+    });
   });
 }

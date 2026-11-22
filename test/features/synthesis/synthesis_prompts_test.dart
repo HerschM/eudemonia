@@ -62,9 +62,35 @@ void main() {
       expect(parseOrganiseReply('1: work', 1, defaultFolders), isNull);
     });
 
-    test('rejects an empty reply and lines without a colon', () {
+    test('rejects an empty reply and lines without a number', () {
       expect(parseOrganiseReply('  \n', 1, defaultFolders), isNull);
       expect(parseOrganiseReply('Work', 1, defaultFolders), isNull);
+      expect(parseOrganiseReply(': Work', 1, defaultFolders), isNull);
+    });
+
+    test('accepts a dot or bracket after the number and blank lines between entries', () {
+      expect(parseOrganiseReply('1. Journal\n\n2) Personal\n3 . Work', 3, defaultFolders),
+          ['Journal', 'Personal', 'Work']);
+    });
+
+    test('ignores one heading line before the entries', () {
+      expect(parseOrganiseReply('Thoughts:\n1. Journal\n2. Personal', 2, defaultFolders), ['Journal', 'Personal']);
+      expect(parseOrganiseReply('Here are the sorted thoughts:\n\n1: Work', 1, defaultFolders), ['Work']);
+    });
+
+    test('rejects any other extra text', () {
+      // Two heading lines, a heading with a digit, text after the entries, a comment on an entry.
+      expect(parseOrganiseReply('Sure.\nThoughts:\n1: Work', 1, defaultFolders), isNull);
+      expect(parseOrganiseReply('The 2 thoughts:\n1: Work\n2: Work', 2, defaultFolders), isNull);
+      expect(parseOrganiseReply('1: Work\nAll thoughts are about work.', 1, defaultFolders), isNull);
+      expect(parseOrganiseReply('1: Work (the app)', 1, defaultFolders), isNull);
+      expect(parseOrganiseReply('Thoughts:', 1, defaultFolders), isNull);
+    });
+
+    test('a heading does not excuse a wrong number of entries', () {
+      final eight = 'Here are the sorted thoughts:\n${[for (var i = 1; i <= 8; i++) '$i. Work'].join('\n')}';
+      expect(parseOrganiseReply(eight, 5, defaultFolders), isNull);
+      expect(parseOrganiseReply('Thoughts:\n1. Work', 2, defaultFolders), isNull);
     });
   });
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
+import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
@@ -12,10 +13,15 @@ import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_trigger_controller.dart';
 
 class AudioQueueService {
+  /// How long the CPU is kept awake per item; renewed before each item, so it only has to
+  /// outlast the transcription of one recording.
+  static const Duration wakeLockWindow = Duration(minutes: 5);
+
   final STTService _sttService;
   final NotesRepository _notesRepo;
   final ModelLifecycleManager _modelLifecycle;
   final AppLogger? _logger;
+  final CpuWakeLock? _wakeLock;
   final Future<File> Function()? _storageFileResolver;
   final void Function(int pending, int failed)? _onQueueChanged;
   final void Function(List<AudioQueueItem> items)? _onItemsChanged;
@@ -36,6 +42,7 @@ class AudioQueueService {
     this._notesRepo,
     this._modelLifecycle, {
     this._logger,
+    this._wakeLock,
     this._storageFileResolver,
     this._onQueueChanged,
     this._onItemsChanged,
@@ -263,6 +270,7 @@ class AudioQueueService {
     }
     _isProcessing = true;
     _processingCompleter = Completer<void>();
+    var wakeLockHeld = false;
 
     try {
       while (true) {
@@ -270,6 +278,8 @@ class AudioQueueService {
         if (pendingItems.isEmpty) break;
 
         final nextItem = pendingItems.first;
+        await _wakeLock?.hold(wakeLockWindow);
+        wakeLockHeld = true;
         await _processSingleItem(nextItem);
       }
     } finally {
@@ -278,6 +288,8 @@ class AudioQueueService {
         _processingCompleter!.complete();
       }
       _processingCompleter = null;
+      // Sent after the state reset, so the hold of a run that starts next always follows it.
+      if (wakeLockHeld) await _wakeLock?.release();
     }
   }
 
@@ -391,6 +403,7 @@ final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
     notesRepo,
     modelLifecycle,
     logger: logger,
+    wakeLock: ref.watch(transcriptionWakeLockProvider),
     onQueueChanged: (pending, failed) {
       ref.read(pendingQueueCountProvider.notifier).setCount(pending);
       ref.read(failedQueueCountProvider.notifier).setCount(failed);

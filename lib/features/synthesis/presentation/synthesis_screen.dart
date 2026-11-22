@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
@@ -18,13 +19,9 @@ class SynthesisScreen extends ConsumerStatefulWidget {
 
 class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
   String _activeFolderFilter = 'All Folders';
-  final List<String> _folders = const [
+  final List<String> _folders = [
     'All Folders',
-    'Work',
-    'Ideas',
-    'Todos',
-    'Journal',
-    'Uncategorized'
+    for (final f in defaultFolders) f.name,
   ];
   String _readFilter = 'All';
 
@@ -417,7 +414,8 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
                         ),
-                        items: ['Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized']
+                        // A session keeps its folder even when it is no longer in the list.
+                        items: {...defaultFolders.map((f) => f.name), cluster.folder}
                             .map((f) => DropdownMenuItem(
                                   value: f,
                                   child: Text(f),

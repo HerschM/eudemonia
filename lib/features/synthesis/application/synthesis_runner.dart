@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
+import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/model_residency_arbiter.dart';
@@ -32,7 +33,15 @@ bool isSynthesisCandidate(Note note, {required bool manual, int maxAttempts = ma
 /// Runs one synthesis pass: organise new thoughts, write each touched session and commit it,
 /// then rewrite sessions flagged for reprocessing. Capture always has priority: a run never
 /// starts while capture is active and ends as soon as the speech model is needed.
+///
+/// Every thought of a run is counted as one attempt when the run starts, so a run that dies
+/// mid-way (process killed) still counts; a thought that gets synthesized has its count reset,
+/// and a run preempted by capture takes its count back.
 class SynthesisRunner {
+  /// How long the CPU is kept awake per hold; renewed before the model load and every model
+  /// call, so it only has to outlast one turn including its stop timeout.
+  static const Duration wakeLockWindow = Duration(minutes: 10);
+
   final NotesRepository _notes;
   final SynthesisRepository _sessions;
   final List<SynthesisCluster> Function() _readSessions;
@@ -44,6 +53,7 @@ class SynthesisRunner {
   final SynthesisModelProfile profile;
   final List<FolderDefinition> folders;
   final AppLogger? _logger;
+  final CpuWakeLock? _wakeLock;
   final void Function(bool running)? _onRunningChanged;
   final void Function()? _onNotesChanged;
   final int maxAutomaticAttempts;
@@ -64,6 +74,7 @@ class SynthesisRunner {
     this.profile = SynthesisModelProfile.qwen25_1_5b,
     this.folders = defaultFolders,
     this._logger,
+    this._wakeLock,
     this._onRunningChanged,
     this._onNotesChanged,
     this.maxAutomaticAttempts = maxAutomaticSynthesisAttempts,
@@ -101,10 +112,14 @@ class SynthesisRunner {
     if (!_arbiter.tryAcquireLanguage(onPreempt: _preempt)) return SynthesisRunResult.busy;
 
     _onRunningChanged?.call(true);
-    // Thoughts a model answer could not file or write; counted only if the run is not preempted.
+    final watch = Stopwatch()..start();
+    _logger?.info('[Synthesis] Run started (${manual ? 'manual' : 'automatic'}): ${candidates.length} thought(s) waiting.');
+    // Thoughts a model answer could not file or write; they keep the attempt counted at the start.
     final failedIds = <int>{};
     var result = SynthesisRunResult.completed;
     try {
+      await _wakeLock?.hold(wakeLockWindow);
+      await _countAttempts(candidates);
       await _work(candidates, failedIds);
     } catch (e, stack) {
       if (_preempted || e is LlmCancelledException) {
@@ -118,17 +133,19 @@ class SynthesisRunner {
       // The speech model may load as soon as the slot is released, so free this one first.
       await _llm.dispose();
       _arbiter.releaseLanguage();
-      if (result != SynthesisRunResult.preempted) {
+      if (result == SynthesisRunResult.preempted) {
         try {
-          await _countAttempts(failedIds);
+          await _undoAttempts(candidates);
         } catch (e, stack) {
-          _logger?.error('[Synthesis] Could not record failed attempts', error: e, stackTrace: stack);
+          _logger?.error('[Synthesis] Could not undo the attempts of a preempted run', error: e, stackTrace: stack);
         }
       }
+      await _wakeLock?.release();
       _onNotesChanged?.call();
       _onRunningChanged?.call(false);
     }
-    _logger?.info('[Synthesis] Run ended: ${result.name}; ${failedIds.length} thought(s) not synthesized.');
+    _logger?.info('[Synthesis] Run ended: ${result.name} after ${watch.elapsed.inSeconds}s; '
+        '${failedIds.length} thought(s) not synthesized.');
     return result;
   }
 
@@ -139,6 +156,9 @@ class SynthesisRunner {
   Future<void> _work(List<Note> candidates, Set<int> failedIds) async {
     final dir = await _modelsDir();
     if (dir == null) throw Exception('Could not resolve models directory path.');
+    await _wakeLock?.hold(wakeLockWindow);
+    // A recording may have preempted the run while it was still preparing; nothing is loaded yet.
+    _checkPreempted();
     final loading = _loading = _llm.initialize('$dir/${profile.modelFileName}');
     try {
       await loading;
@@ -149,12 +169,15 @@ class SynthesisRunner {
 
     final engine = SynthesisEngine(
       generate: (prompt, maxTokens) async {
+        await _wakeLock?.hold(wakeLockWindow);
         _checkPreempted();
         final g = await _llm.generate(prompt, maxOutputTokens: maxTokens);
         return (text: g.text, hitOutputCap: g.hitOutputCap);
       },
       profile: profile,
       folders: folders,
+      onRejected: (kind, ids, reason) =>
+          _logger?.warning('[Synthesis] Rejected $kind reply for thought ids $ids: $reason'),
     );
 
     final rewritten = <String>{};
@@ -169,6 +192,8 @@ class SynthesisRunner {
           ExistingSession(id: s.clusterId, folder: s.folder, note: s.synthesizedContent, thoughts: _thoughtsOf(s)),
       ]);
       failedIds.addAll(outcome.failedThoughtIds);
+      _logger?.info('[Synthesis] Organised into ${outcome.plans.length} session(s); '
+          'no valid folder reply for thought ids ${outcome.failedThoughtIds}.');
 
       for (final plan in outcome.plans) {
         _checkPreempted();
@@ -176,6 +201,8 @@ class SynthesisRunner {
         _checkPreempted();
         if (note == null) {
           failedIds.addAll(plan.newThoughts.map((t) => t.id));
+          _logger?.warning('[Synthesis] No valid note for the ${plan.folder} session with thought ids '
+              '${plan.newThoughts.map((t) => t.id).toList()}.');
           continue;
         }
         final added = [for (final t in plan.newThoughts) byId[t.id]!];
@@ -220,11 +247,20 @@ class SynthesisRunner {
         for (final o in s.originNotes) SynthesisThought(id: o.id, text: o.cleanedText, time: o.timestamp),
       ]..sort((a, b) => a.time.compareTo(b.time));
 
-  Future<void> _countAttempts(Set<int> ids) async {
-    for (final id in ids) {
-      final note = await _notes.getNoteById(id);
-      if (note == null || note.state != ThoughtState.processed) continue;
-      note.synthesisAttempts++;
+  /// Counts one attempt for every thought of this run, persisted before any model work.
+  Future<void> _countAttempts(List<Note> candidates) async {
+    for (final n in candidates) {
+      n.synthesisAttempts++;
+      await _notes.saveNote(n);
+    }
+  }
+
+  /// Takes the start-of-run attempt back from thoughts that are still waiting in Capture.
+  Future<void> _undoAttempts(List<Note> candidates) async {
+    for (final n in candidates) {
+      final note = await _notes.getNoteById(n.id);
+      if (note == null || note.state != ThoughtState.processed || note.synthesisAttempts <= 0) continue;
+      note.synthesisAttempts--;
       await _notes.saveNote(note);
     }
   }
@@ -266,6 +302,7 @@ final synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
     // Same directory the speech model is loaded from.
     modelsDir: () async => (await getExternalStorageDirectory())?.path,
     logger: ref.watch(appLoggerProvider),
+    wakeLock: ref.watch(synthesisWakeLockProvider),
     onRunningChanged: (running) => ref.read(synthesisRunningProvider.notifier).setRunning(running),
     onNotesChanged: () {
       ref.invalidate(recentNotesProvider);

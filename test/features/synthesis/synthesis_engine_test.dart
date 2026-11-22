@@ -158,6 +158,24 @@ void main() {
       expect(timeout.prompts.length, 3);
     });
 
+    test('every rejected organise reply is reported with its thought ids and a one-line reason', () async {
+      final rejected = <String>[];
+      final model = FakeModel((p, call) {
+        final n = RegExp(r'^\d+\. ', multiLine: true).allMatches(p.split('Thoughts:\n').last).length;
+        if (n == 2) return ok('Sure!\nHere you go');
+        return p.contains('thought 2') ? (text: '1: Work and more', hitOutputCap: true) : labelAll(p, (_) => 'Work');
+      });
+      final out = await SynthesisEngine(
+        generate: model.call,
+        onRejected: (kind, ids, reason) => rejected.add('$kind $ids $reason'),
+      ).organise([th(1, 1), th(2, 2)], const []);
+      expect(out.failedThoughtIds, [2]);
+      expect(rejected, [
+        'organise [1, 2] not in the expected form: "Sure! Here you go"',
+        'organise [2] reached the output limit: "1: Work and more"',
+      ]);
+    });
+
     test('other exceptions propagate', () {
       final model = FakeModel((p, _) => throw StateError('engine fault'));
       expect(SynthesisEngine(generate: model.call).organise([th(1, 1)], const []), throwsStateError);
@@ -176,7 +194,7 @@ void main() {
       );
       await SynthesisEngine(generate: model.call, profile: profile).organise([th(1, 1), th(2, 2), th(3, 3)], const []);
       expect(model.prompts, hasLength(2));
-      expect(model.prompts.first, startsWith('<|begin_of_text|>'));
+      expect(model.prompts.first, startsWith('<|start_header_id|>system'));
     });
   });
 
@@ -253,6 +271,23 @@ void main() {
       expect(await SynthesisEngine(generate: timeout.call).write(plan([th(1, 0)])), isNull);
     });
 
+    test('every rejected write reply is reported with word counts, never with the text', () async {
+      final rejected = <String>[];
+      void report(String kind, List<int> ids, String reason) => rejected.add('$kind $ids $reason');
+      final long = SynthesisThought(id: 7, text: words(40), time: DateTime(2026));
+      final short = FakeModel((p, _) => ok('too short'));
+      expect(await SynthesisEngine(generate: short.call, onRejected: report).write(plan([long])), isNull);
+      final capped = FakeModel((p, _) => (text: 'cut off', hitOutputCap: true));
+      expect(await SynthesisEngine(generate: capped.call, onRejected: report).write(plan([long])), isNull);
+      final timeout = FakeModel((p, _) => throw TimeoutException('slow'));
+      expect(await SynthesisEngine(generate: timeout.call, onRejected: report).write(plan([long])), isNull);
+      expect(rejected, [
+        'write [7] 2 words written from 40',
+        'write [7] reached the output limit',
+        'write [7] timed out',
+      ]);
+    });
+
     test('one half failing fails the whole write', () async {
       final model = FakeModel((p, _) => p.contains('thought 2') && !p.contains('thought 1') ? ok('') : ok(''));
       expect(await SynthesisEngine(generate: model.call).write(plan([th(1, 0), th(2, 1)])), isNull);
@@ -283,11 +318,11 @@ void main() {
   group('prompt formats', () {
     test('llama3 wraps system and user turns', () {
       final prompt = buildWritePrompt(['One.'], format: ChatFormat.llama3);
-      expect(prompt, startsWith('<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou turn spoken thoughts'));
+      expect(prompt, startsWith('<|start_header_id|>system<|end_header_id|>\n\nYou turn spoken thoughts'));
       expect(prompt, contains('<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nThoughts:\n1. One.\n\nWrite the note.<|eot_id|>'));
       expect(prompt, endsWith('<|start_header_id|>assistant<|end_header_id|>\n\n'));
-      expect(buildOrganisePrompt(['a'], format: ChatFormat.llama3), startsWith('<|begin_of_text|>'));
-      expect(buildStructuredWritePrompt(['a'], format: ChatFormat.llama3), startsWith('<|begin_of_text|>'));
+      expect(buildOrganisePrompt(['a'], format: ChatFormat.llama3), startsWith('<|start_header_id|>system'));
+      expect(buildStructuredWritePrompt(['a'], format: ChatFormat.llama3), startsWith('<|start_header_id|>system'));
     });
 
     test('chatml stays the default', () {

@@ -21,7 +21,8 @@ String _chatml(String system, String user) => '<|im_start|>system\n$system<|im_e
 /// Wraps [system] and [user] in the chat template of [format], ending at the assistant turn.
 String _wrap(ChatFormat format, String system, String user) => switch (format) {
       ChatFormat.chatml => _chatml(system, user),
-      ChatFormat.llama3 => '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n$system<|eot_id|>'
+      // No <|begin_of_text|>: the tokenizer adds it (the engine tokenizes with add_special).
+      ChatFormat.llama3 => '<|start_header_id|>system<|end_header_id|>\n\n$system<|eot_id|>'
           '<|start_header_id|>user<|end_header_id|>\n\n$user<|eot_id|>'
           '<|start_header_id|>assistant<|end_header_id|>\n\n',
     };
@@ -105,20 +106,31 @@ int organiseOutputBudget(int thoughtCount) => 8 * thoughtCount + 8;
 /// Output token budget for a write turn, from the words in its input.
 int writeOutputBudget(int inputWords) => (inputWords * 1.6).round() + 96;
 
-/// Returns one folder name per thought, or null unless the reply is exactly
-/// `thoughtCount` lines of `"{i}: {Folder}"` (1-based) with every folder a known name.
+final RegExp _organiseEntry = RegExp(r'^(\d+)\s*[.:)]\s*(.+)$');
+
+/// Returns one folder name per thought, or null unless the reply is exactly `thoughtCount`
+/// entries `"{i}: {Folder}"` (1-based, in order) with every folder a known name.
+///
+/// Only the form is read leniently, never the choice: the number may be followed by `:`, `.`
+/// or `)`, blank lines are skipped, and one heading line before the entries (text ending in a
+/// colon, without digits, such as an echoed `Thoughts:`) is ignored. Any other extra text, a
+/// missing or extra entry, wrong numbering or an unknown folder makes the reply invalid.
 List<String>? parseOrganiseReply(String reply, int thoughtCount, List<FolderDefinition> folders) {
-  final trimmed = reply.trim();
-  if (trimmed.isEmpty || thoughtCount <= 0) return null;
-  final lines = trimmed.split('\n');
+  if (thoughtCount <= 0) return null;
+  final lines = [
+    for (final line in reply.split('\n'))
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  if (lines.isEmpty) return null;
+  final first = lines.first;
+  if (first.endsWith(':') && !first.contains(RegExp(r'\d'))) lines.removeAt(0);
   if (lines.length != thoughtCount) return null;
   final names = {for (final f in folders) f.name};
   final labels = <String>[];
   for (var i = 0; i < lines.length; i++) {
-    final colon = lines[i].indexOf(':');
-    if (colon < 0) return null;
-    if (lines[i].substring(0, colon).trim() != '${i + 1}') return null;
-    final folder = lines[i].substring(colon + 1).trim();
+    final entry = _organiseEntry.firstMatch(lines[i]);
+    if (entry == null || entry[1] != '${i + 1}') return null;
+    final folder = entry[2]!.trim();
     if (!names.contains(folder)) return null;
     labels.add(folder);
   }
