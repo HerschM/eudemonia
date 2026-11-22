@@ -104,7 +104,7 @@ Future agents may evolve algorithms, models, and UI screens, but must **NEVER** 
 - Mobile RAM is severely constrained (~1.6 GB+ for AI models). Unmanaged models risk triggering Android Low Memory Killer (LMK) kills or system blackouts.
 - **On-Demand Loading & Inactivity Eviction**: Heavy models must be evicted from memory when idle for a configurable period, returning baseline memory footprint to <60 MB.
 - **Sequential Loading**: When loading multiple models, load them sequentially rather than concurrently to prevent peak memory allocation spikes.
-- **Stateless Inference**: Each classification turn should be complete and independent. Release inference context and KV cache allocations between tasks.
+- **Stateless Inference**: A turn's result must never depend on earlier turns. Within one synthesis run the model's cached reading of an identical prompt start (the fixed instructions) may be reused; nothing of an earlier turn's thoughts or replies is kept. All inference context and KV cache allocations are released when the run ends or is preempted.
 
 ### D. Background Reliability
 - Reliable background operation requires both Accessibility Service (button interception) and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).

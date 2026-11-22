@@ -284,7 +284,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 | **Latency** | On-Device STT Inference | **< 2.5s** per 10 seconds of recorded speech (Pixel 7a) |
 | **Latency** | On-Device LLM Classification | Not applicable at capture since 2026-11-21 (no LLM in the capture path, FR5.2). A Synthesis-turn budget is to be set from measurement; the former **< 1.8s** per-thought target was measured unreachable on a Pixel 7a (~14.5s). |
 | **Memory** | Baseline Idle RAM Footprint | **< 60 MB** when models are unloaded |
-| **Memory** | Active Inference RAM Footprint | **< 1.6 GB** peak (STT ~600MB, LLM ~1.0GB) |
+| **Memory** | Active Inference RAM Footprint | The speech model and the language model are never in memory together. Peak is set per language model from measurement and must leave a safe margin on the device: Qwen3-4B Q4_K_M **≤ 3.5 GB** (measured 3.3–3.4 GB on a Pixel 7a with 8 GB), Qwen2.5-1.5B ≤ 1.9 GB; speech model ~600 MB. A model is offered only on devices with enough memory for it (roadmap: Device-Tier Model Recommendation). *(Restated 2026-11-22 with the user's agreement; previously < 1.6 GB.)* |
 | **Memory** | Inactivity Eviction Timeout | Models evicted after **180 seconds (3 min)** of zero activity |
 | **Battery** | 24-Hour Background Standby | **< 2.5%** total battery consumption in foreground listening mode |
 | **Reliability** | Queue Failure Isolation | **100%**: A corrupt or silent audio file must never block the queue |

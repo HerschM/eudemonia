@@ -7,6 +7,7 @@ import 'package:eudemonia/features/ai_processing/model_residency_arbiter.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_session_store.dart';
@@ -412,7 +413,7 @@ void main() {
 
       expect(await runner().run(manual: false), SynthesisRunResult.completed);
 
-      expect(log.indexOf('stt-dispose'), lessThan(log.indexOf('llm-load:/models/qwen2.5-1.5b.gguf')));
+      expect(log.indexOf('stt-dispose'), lessThan(log.indexOf('llm-load:/models/${SynthesisModelProfile.current.modelFileName}')));
       expect(lifecycle.state, ModelLifecycleState.unloaded);
     });
 

@@ -71,7 +71,7 @@ class SynthesisRunner {
     required this._arbiter,
     required this._isCaptureActive,
     required this._modelsDir,
-    this.profile = SynthesisModelProfile.qwen25_1_5b,
+    this.profile = SynthesisModelProfile.current,
     this.folders = defaultFolders,
     this._logger,
     this._wakeLock,

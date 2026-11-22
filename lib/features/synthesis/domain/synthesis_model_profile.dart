@@ -2,7 +2,9 @@
 library;
 
 /// Chat template a model expects around the system and user text.
-enum ChatFormat { chatml, llama3 }
+/// [chatmlNoThink] is ChatML with an empty think block opening the answer, which switches off
+/// the reasoning phase of Qwen3 models.
+enum ChatFormat { chatml, chatmlNoThink, llama3 }
 
 /// How the write turn shapes a note.
 enum NoteStyle { cleanUp, structured }
@@ -43,4 +45,19 @@ class SynthesisModelProfile {
     minOutputRatio: 0.5,
     maxOutputRatio: 1.3,
   );
+
+  /// Qwen3-4B Q4_K_M. Ratios from the 2026-11-22 phone measurements: its structured notes
+  /// were 0.39-0.62 of the spoken words.
+  static const qwen3_4b = SynthesisModelProfile(
+    modelFileName: 'qwen3-4b.gguf',
+    chatFormat: ChatFormat.chatmlNoThink,
+    noteStyle: NoteStyle.structured,
+    organiseBatchSize: 5,
+    writeWordLimit: 700,
+    minOutputRatio: 0.2,
+    maxOutputRatio: 1.0,
+  );
+
+  /// The model the app runs.
+  static const current = qwen3_4b;
 }

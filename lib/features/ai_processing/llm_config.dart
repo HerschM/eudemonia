@@ -33,7 +33,8 @@ class LLMConfig {
 
   /// Maximum time to wait for a single completion before generation is stopped
   /// and the call fails with a `TimeoutException` (partial text is discarded).
-  /// Default is 5 minutes.
+  /// Default is 8 minutes: a 4B model needed up to 6.8 minutes for a 700-word session on the
+  /// Pixel 7a. Must stay below the synthesis wake-lock window.
   final Duration generationTimeout;
 
   /// Longest time to wait for the model to finish loading. A slow first load can exceed the
@@ -48,7 +49,7 @@ class LLMConfig {
     this.batchSize = 512,
     this.threads = 4,
     this.greedySampling = true,
-    this.generationTimeout = const Duration(minutes: 5),
+    this.generationTimeout = const Duration(minutes: 8),
     this.modelLoadTimeout = const Duration(seconds: 180),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
         assert(threads > 0, 'threads must be positive');

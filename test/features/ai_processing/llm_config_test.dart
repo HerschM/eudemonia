@@ -64,9 +64,9 @@ void main() {
       expect(const LLMConfig().toString(), contains('greedySampling: true'));
     });
 
-    test('generationTimeout defaults to 5 minutes', () {
+    test('generationTimeout defaults to 8 minutes', () {
       expect(const LLMConfig().generationTimeout,
-          equals(const Duration(minutes: 5)));
+          equals(const Duration(minutes: 8)));
     });
 
     test('copyWith updates generationTimeout, preserving others', () {
@@ -83,7 +83,7 @@ void main() {
     });
 
     test('toString includes generationTimeout in seconds', () {
-      expect(const LLMConfig().toString(), contains('generationTimeout: 300s'));
+      expect(const LLMConfig().toString(), contains('generationTimeout: 480s'));
     });
 
     test('modelLoadTimeout defaults to 180s and takes part in copyWith and equality', () {

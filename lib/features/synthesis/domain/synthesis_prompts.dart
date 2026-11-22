@@ -21,6 +21,7 @@ String _chatml(String system, String user) => '<|im_start|>system\n$system<|im_e
 /// Wraps [system] and [user] in the chat template of [format], ending at the assistant turn.
 String _wrap(ChatFormat format, String system, String user) => switch (format) {
       ChatFormat.chatml => _chatml(system, user),
+      ChatFormat.chatmlNoThink => '${_chatml(system, user)}<think>\n\n</think>\n\n',
       // No <|begin_of_text|>: the tokenizer adds it (the engine tokenizes with add_special).
       ChatFormat.llama3 => '<|start_header_id|>system<|end_header_id|>\n\n$system<|eot_id|>'
           '<|start_header_id|>user<|end_header_id|>\n\n$user<|eot_id|>'
@@ -78,8 +79,8 @@ const String _writeSystem =
 String buildWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
-/// Experimental (TASK-070): condenses the thoughts into a titled, bulleted note. Measured to need a
-/// model larger than Qwen2.5-1.5B to keep the facts; not used by production code yet.
+/// Condenses the thoughts into a titled, bulleted note ([NoteStyle.structured]). Measured to need
+/// a model larger than Qwen2.5-1.5B to keep the facts (TASK-070).
 String buildStructuredWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _structuredSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 

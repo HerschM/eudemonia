@@ -1,4 +1,5 @@
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_prompts.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,6 +37,23 @@ void main() {
       final prompt = buildWritePrompt(['One.', 'Two.']);
       expect(prompt, contains('Thoughts:\n1. One.\n2. Two.\n\nWrite the note.<|im_end|>'));
       expect(prompt, contains('All thoughts matter equally'));
+    });
+
+    test('chatmlNoThink opens the answer with an empty think block', () {
+      for (final prompt in [
+        buildStructuredWritePrompt(['One.'], format: ChatFormat.chatmlNoThink),
+        buildOrganisePrompt(['One.'], format: ChatFormat.chatmlNoThink),
+      ]) {
+        expect(prompt, endsWith('<|im_start|>assistant\n<think>\n\n</think>\n\n'));
+      }
+      expect(buildWritePrompt(['One.']), endsWith('<|im_start|>assistant\n'));
+    });
+
+    test('the current profile is Qwen3-4B with structured notes and thinking off', () {
+      const p = SynthesisModelProfile.current;
+      expect(p.modelFileName, 'qwen3-4b.gguf');
+      expect(p.chatFormat, ChatFormat.chatmlNoThink);
+      expect(p.noteStyle, NoteStyle.structured);
     });
   });
 

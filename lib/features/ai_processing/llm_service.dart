@@ -109,7 +109,7 @@ class LLMService {
     LlmEngine Function()? engineFactory,
     // Reading a long prompt is one uninterruptible native call (tens of seconds on a phone), and
     // giving up means killing the worker without freeing the model, so wait well beyond it.
-    this.stopTimeout = const Duration(minutes: 2),
+    this.stopTimeout = const Duration(minutes: 4),
   }) : _engineFactory = engineFactory ?? (() => LlamaIsolateEngine(config, _logger));
 
   bool get isInitialized => _isInitialized;
