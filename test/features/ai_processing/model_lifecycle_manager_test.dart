@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/llm_config.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/ai_processing/model_residency_arbiter.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 
 class FakeSTTService extends STTService {
@@ -265,6 +266,56 @@ void main() {
           ModelLifecycleState.unloaded,
         ]);
       });
+    });
+  });
+
+  group('ModelLifecycleManager residency arbitration', () {
+    late FakeSTTService fakeSTT;
+    late ModelResidencyArbiter arbiter;
+    late ModelLifecycleManager manager;
+
+    setUp(() {
+      fakeSTT = FakeSTTService();
+      arbiter = ModelResidencyArbiter();
+      manager = ModelLifecycleManager(
+        fakeSTT,
+        modelsDirResolver: () async => '/mock/models/dir',
+        arbiter: arbiter,
+      );
+    });
+
+    tearDown(() => manager.dispose());
+
+    test('load waits for the language model to be preempted before initialising STT', () async {
+      final release = Completer<void>();
+      arbiter.tryAcquireLanguage(onPreempt: () async {
+        await release.future;
+        arbiter.releaseLanguage();
+      });
+
+      final load = manager.ensureModelsLoaded();
+      await Future<void>.delayed(Duration.zero);
+      expect(fakeSTT.initializeCallCount, equals(0));
+      expect(manager.isBusy, isTrue);
+
+      release.complete();
+      await load;
+      expect(fakeSTT.initializeCallCount, equals(1));
+      expect(arbiter.holder, HeavyModel.speech);
+      expect(manager.isBusy, isFalse);
+    });
+
+    test('eviction releases the speech hold', () async {
+      await manager.ensureModelsLoaded();
+      expect(arbiter.holder, HeavyModel.speech);
+      await manager.evictModels();
+      expect(arbiter.holder, isNull);
+    });
+
+    test('a failed load releases the speech hold', () async {
+      fakeSTT.failInitialize = true;
+      await expectLater(manager.ensureModelsLoaded(), throwsException);
+      expect(arbiter.holder, isNull);
     });
   });
 }

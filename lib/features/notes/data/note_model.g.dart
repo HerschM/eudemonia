@@ -50,6 +50,11 @@ const NoteSchema = CollectionSchema(
       type: IsarType.string,
       enumMap: _NotestateEnumValueMap,
     ),
+    r'synthesisAttempts': PropertySchema(
+      id: 8,
+      name: r'synthesisAttempts',
+      type: IsarType.long,
+    ),
   },
 
   estimateSize: _noteEstimateSize,
@@ -105,6 +110,7 @@ void _noteSerialize(
   writer.writeString(offsets[5], object.originalAudioPath);
   writer.writeString(offsets[6], object.rawText);
   writer.writeString(offsets[7], object.state.name);
+  writer.writeLong(offsets[8], object.synthesisAttempts);
 }
 
 Note _noteDeserialize(
@@ -126,6 +132,7 @@ Note _noteDeserialize(
         ThoughtState.processed,
   );
   object.id = id;
+  object.synthesisAttempts = reader.readLong(offsets[8]);
   return object;
 }
 
@@ -154,6 +161,8 @@ P _noteDeserializeProp<P>(
       return (_NotestateValueEnumMap[reader.readStringOrNull(offset)] ??
               ThoughtState.processed)
           as P;
+    case 8:
+      return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -1239,6 +1248,65 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
       );
     });
   }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> synthesisAttemptsEqualTo(
+    int value,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'synthesisAttempts', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> synthesisAttemptsGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'synthesisAttempts',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> synthesisAttemptsLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'synthesisAttempts',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterFilterCondition> synthesisAttemptsBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'synthesisAttempts',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
 }
 
 extension NoteQueryObject on QueryBuilder<Note, Note, QFilterCondition> {}
@@ -1339,6 +1407,18 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
   QueryBuilder<Note, Note, QAfterSortBy> sortByStateDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'state', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortBySynthesisAttempts() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'synthesisAttempts', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortBySynthesisAttemptsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'synthesisAttempts', Sort.desc);
     });
   }
 }
@@ -1451,6 +1531,18 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
       return query.addSortBy(r'state', Sort.desc);
     });
   }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenBySynthesisAttempts() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'synthesisAttempts', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenBySynthesisAttemptsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'synthesisAttempts', Sort.desc);
+    });
+  }
 }
 
 extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
@@ -1520,6 +1612,12 @@ extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
       return query.addDistinctBy(r'state', caseSensitive: caseSensitive);
     });
   }
+
+  QueryBuilder<Note, Note, QDistinct> distinctBySynthesisAttempts() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'synthesisAttempts');
+    });
+  }
 }
 
 extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
@@ -1574,6 +1672,12 @@ extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
   QueryBuilder<Note, ThoughtState, QQueryOperations> stateProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'state');
+    });
+  }
+
+  QueryBuilder<Note, int, QQueryOperations> synthesisAttemptsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'synthesisAttempts');
     });
   }
 }

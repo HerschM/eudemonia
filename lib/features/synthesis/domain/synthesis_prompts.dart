@@ -1,8 +1,9 @@
-/// Prompt builders and reply validation for the synthesis turns (organise, write, update).
+/// Prompt builders and reply validation for the synthesis turns (organise, write).
 /// Pure Dart. Wording was tuned in tool/synthesis_prompt_lab/syn.py; change both together.
 library;
 
 import 'folder_definition.dart';
+import 'synthesis_model_profile.dart';
 
 /// A note already in progress, shown to the model so new thoughts can continue it.
 class OpenSessionContext {
@@ -17,6 +18,14 @@ String _chatml(String system, String user) => '<|im_start|>system\n$system<|im_e
     '<|im_start|>user\n$user<|im_end|>\n'
     '<|im_start|>assistant\n';
 
+/// Wraps [system] and [user] in the chat template of [format], ending at the assistant turn.
+String _wrap(ChatFormat format, String system, String user) => switch (format) {
+      ChatFormat.chatml => _chatml(system, user),
+      ChatFormat.llama3 => '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n$system<|eot_id|>'
+          '<|start_header_id|>user<|end_header_id|>\n\n$user<|eot_id|>'
+          '<|start_header_id|>assistant<|end_header_id|>\n\n',
+    };
+
 String _numbered(List<String> thoughts) => [
       for (var i = 0; i < thoughts.length; i++) '${i + 1}. ${thoughts[i]}',
     ].join('\n');
@@ -30,6 +39,7 @@ String buildOrganisePrompt(
   List<String> thoughts, {
   List<FolderDefinition> folders = defaultFolders,
   List<OpenSessionContext> openSessions = const [],
+  ChatFormat format = ChatFormat.chatml,
 }) {
   final rules = StringBuffer("Folders (each is a subject area of the speaker's life):\n");
   for (final f in folders) {
@@ -49,7 +59,7 @@ String buildOrganisePrompt(
         '${openSessions.map((s) => '[${s.folder}] ${s.note}').join('\n')}\n\n');
   }
   user.write('Thoughts:\n${_numbered(thoughts)}\nAnswer:');
-  return _chatml(system, user.toString());
+  return _wrap(format, system, user.toString());
 }
 
 const String _writeSystem =
@@ -64,21 +74,13 @@ const String _writeSystem =
     '- All thoughts matter equally; do not give the last one more weight.\n'
     '- Output only the note. Begin with its first sentence, with no introduction.';
 
-final String _updateSystem = _writeSystem
-    .replaceFirst('You turn spoken thoughts into one clear written note.',
-        'You update a written note with new spoken thoughts from the same person.')
-    .replaceFirst(
-        '- All thoughts matter equally; do not give the last one more weight.',
-        '- Keep everything in the current note exactly as it is unless a new thought changes or corrects it.\n'
-            '- Put each new thought where it belongs in the note; do not let it take over the note.');
-
-String buildWritePrompt(List<String> thoughts) =>
-    _chatml(_writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
+String buildWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
+    _wrap(format, _writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
 /// Experimental (TASK-070): condenses the thoughts into a titled, bulleted note. Measured to need a
 /// model larger than Qwen2.5-1.5B to keep the facts; not used by production code yet.
-String buildStructuredWritePrompt(List<String> thoughts) =>
-    _chatml(_structuredSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
+String buildStructuredWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
+    _wrap(format, _structuredSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
 const String _structuredSystem =
     'You turn spoken thoughts into one organised written note. The thoughts were dictated by one person, in order, '
@@ -97,14 +99,10 @@ const String _structuredSystem =
 /// Output token budget for a structured write turn.
 int structuredOutputBudget(int inputWords) => inputWords + 96;
 
-String buildUpdatePrompt(String currentNote, List<String> newThoughts) => _chatml(
-    _updateSystem,
-    'Current note:\n$currentNote\n\nNew thoughts:\n${_numbered(newThoughts)}\n\nWrite the updated note.');
-
 /// Output token budget for an organise turn: one short "n: Folder" line per thought.
 int organiseOutputBudget(int thoughtCount) => 8 * thoughtCount + 8;
 
-/// Output token budget for a write or update turn, from the words in its input.
+/// Output token budget for a write turn, from the words in its input.
 int writeOutputBudget(int inputWords) => (inputWords * 1.6).round() + 96;
 
 /// Returns one folder name per thought, or null unless the reply is exactly

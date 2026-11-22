@@ -3,12 +3,12 @@ import 'package:eudemonia/features/ai_processing/llm_service.dart';
 
 void main() {
   group('LLMService config plumbing', () {
-    test('custom LLMConfig is retained by the service', () {
+    test('custom LLMConfig is retained by the service', () async {
       const customConfig = LLMConfig(kvCacheMaxSize: 8192, threads: 2);
       final service = LLMService(config: customConfig);
       expect(service.config.kvCacheMaxSize, equals(8192));
       expect(service.config.threads, equals(2));
-      service.dispose();
+      await service.dispose();
     });
 
     test('initialize fails clearly for a missing model file', () async {
@@ -18,7 +18,7 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(service.isInitialized, isFalse);
-      service.dispose();
+      await service.dispose();
     });
   });
 }

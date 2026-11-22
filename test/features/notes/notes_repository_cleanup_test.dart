@@ -6,6 +6,7 @@ import 'package:eudemonia/features/notes/audio_playback_controller.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,16 +90,22 @@ void main() {
       );
       addTearDown(container.dispose);
       final synthesis = container.read(synthesisRepositoryProvider.notifier);
+      await synthesis.hydrated;
+      void create(String text) => synthesis.createSession(
+            folder: 'Work',
+            note: text,
+            origins: [SynthesisOriginNote.fromNote(Note(correctedText: text))],
+          );
 
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'a')]);
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'b')]);
+      create('a');
+      create('b');
       final firstId = container
           .read(synthesisRepositoryProvider)
           .firstWhere((c) => c.sequenceNumber == '#S-01')
           .clusterId;
       await synthesis.deleteCluster(firstId);
 
-      await synthesis.synthesizeRawNotes([Note(correctedText: 'c')]);
+      create('c');
 
       final ids = container.read(synthesisRepositoryProvider).map((c) => c.sequenceNumber).toList();
       expect(ids.toSet().length, ids.length);

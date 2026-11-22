@@ -6,12 +6,8 @@ import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 @immutable
 class LLMConfig {
   /// Maximum token capacity for the Key-Value (KV) cache / context window.
-  /// Maps directly to `ContextParams.nCtx`; selectable per load. Default is 2048 tokens.
+  /// Maps directly to `ContextParams.nCtx`; selectable per load. Default is 4096 tokens.
   final int kvCacheMaxSize;
-
-  /// Default output budget for callers that have no per-call estimate. Not passed to the
-  /// engine: `LLMService.generate` enforces its own per-call `maxOutputTokens`.
-  final int maxOutputTokens;
 
   /// Quantization type for Key and Value cache tensors.
   /// Options include `f16`, `q8_0`, `q4_0`. Using `q8_0` or `q4_0` drastically
@@ -42,7 +38,7 @@ class LLMConfig {
 
   /// Maximum time to wait for a single completion before generation is stopped
   /// and the call fails with a `TimeoutException` (partial text is discarded).
-  /// Default is 60 seconds.
+  /// Default is 5 minutes.
   final Duration generationTimeout;
 
   /// Longest time to wait for the model to finish loading. The first load after an
@@ -52,24 +48,21 @@ class LLMConfig {
   final Duration modelLoadTimeout;
 
   const LLMConfig({
-    this.kvCacheMaxSize = 2048,
-    this.maxOutputTokens = 256,
+    this.kvCacheMaxSize = 4096,
     this.kvCacheType = LlamaKvCacheType.f16,
     this.modelInactivityTtl = const Duration(minutes: 3),
     this.batchSize = 512,
     this.threads = 4,
     this.gpuLayers = 99,
     this.greedySampling = true,
-    this.generationTimeout = const Duration(seconds: 60),
+    this.generationTimeout = const Duration(minutes: 5),
     this.modelLoadTimeout = const Duration(seconds: 180),
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
-        assert(maxOutputTokens > 0, 'maxOutputTokens must be positive'),
         assert(threads > 0, 'threads must be positive'),
         assert(gpuLayers >= 0, 'gpuLayers must be non-negative');
 
   LLMConfig copyWith({
     int? kvCacheMaxSize,
-    int? maxOutputTokens,
     LlamaKvCacheType? kvCacheType,
     Duration? modelInactivityTtl,
     int? batchSize,
@@ -81,7 +74,6 @@ class LLMConfig {
   }) {
     return LLMConfig(
       kvCacheMaxSize: kvCacheMaxSize ?? this.kvCacheMaxSize,
-      maxOutputTokens: maxOutputTokens ?? this.maxOutputTokens,
       kvCacheType: kvCacheType ?? this.kvCacheType,
       modelInactivityTtl: modelInactivityTtl ?? this.modelInactivityTtl,
       batchSize: batchSize ?? this.batchSize,
@@ -99,7 +91,6 @@ class LLMConfig {
       other is LLMConfig &&
           runtimeType == other.runtimeType &&
           kvCacheMaxSize == other.kvCacheMaxSize &&
-          maxOutputTokens == other.maxOutputTokens &&
           kvCacheType == other.kvCacheType &&
           modelInactivityTtl == other.modelInactivityTtl &&
           batchSize == other.batchSize &&
@@ -112,7 +103,6 @@ class LLMConfig {
   @override
   int get hashCode =>
       kvCacheMaxSize.hashCode ^
-      maxOutputTokens.hashCode ^
       kvCacheType.hashCode ^
       modelInactivityTtl.hashCode ^
       batchSize.hashCode ^
@@ -125,7 +115,7 @@ class LLMConfig {
   @override
   String toString() {
     return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, '
-        'maxOutputTokens: $maxOutputTokens, kvCacheType: ${kvCacheType.name}, '
+        'kvCacheType: ${kvCacheType.name}, '
         'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, gpuLayers: $gpuLayers, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
   }
 }

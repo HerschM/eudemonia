@@ -6,8 +6,7 @@ void main() {
   group('LLMConfig', () {
     test('default configuration has expected values', () {
       const config = LLMConfig();
-      expect(config.kvCacheMaxSize, equals(2048));
-      expect(config.maxOutputTokens, equals(256));
+      expect(config.kvCacheMaxSize, equals(4096));
       expect(config.kvCacheType, equals(LlamaKvCacheType.f16));
       expect(config.modelInactivityTtl, equals(const Duration(minutes: 3)));
       expect(config.batchSize, equals(512));
@@ -25,7 +24,6 @@ void main() {
       expect(updated.kvCacheMaxSize, equals(1024));
       expect(updated.kvCacheType, equals(LlamaKvCacheType.q8_0));
       expect(updated.modelInactivityTtl, equals(const Duration(minutes: 10)));
-      expect(updated.maxOutputTokens, equals(256)); // Preserved
       expect(updated.threads, equals(4)); // Preserved
     });
 
@@ -42,7 +40,7 @@ void main() {
     test('toString contains all major parameters', () {
       const config = LLMConfig();
       final str = config.toString();
-      expect(str, contains('kvCacheMaxSize: 2048'));
+      expect(str, contains('kvCacheMaxSize: 4096'));
       expect(str, contains('modelInactivityTtl: 3m'));
     });
 
@@ -80,9 +78,9 @@ void main() {
       expect(str, contains('greedySampling: true'));
     });
 
-    test('generationTimeout defaults to 25 seconds', () {
+    test('generationTimeout defaults to 5 minutes', () {
       expect(const LLMConfig().generationTimeout,
-          equals(const Duration(seconds: 60)));
+          equals(const Duration(minutes: 5)));
     });
 
     test('copyWith updates generationTimeout, preserving others', () {
@@ -100,7 +98,7 @@ void main() {
     });
 
     test('toString includes generationTimeout in seconds', () {
-      expect(const LLMConfig().toString(), contains('generationTimeout: 60s'));
+      expect(const LLMConfig().toString(), contains('generationTimeout: 300s'));
     });
 
     test('modelLoadTimeout defaults to 180s and takes part in copyWith and equality', () {

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_prompts.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -15,19 +16,10 @@ const _ctxList = String.fromEnvironment('SYN_CTX', defaultValue: '2048,4096,8192
 // Qwen3 models think before answering unless an empty think block follows the assistant header.
 const _emptyThink = bool.fromEnvironment('SYN_EMPTY_THINK');
 final _contextSizes = _ctxList.split(',').map(int.parse).toList();
-// The production prompts are Qwen ChatML; SYN_TEMPLATE=llama3 re-wraps them for Llama 3 models.
+// SYN_TEMPLATE=llama3 builds the prompts in the Llama 3 chat format instead of ChatML.
 const _template = String.fromEnvironment('SYN_TEMPLATE', defaultValue: 'chatml');
-String _p(String prompt) {
-  if (_template == 'llama3') {
-    final m = RegExp(r'^<\|im_start\|>system\n(.*)<\|im_end\|>\n<\|im_start\|>user\n(.*)<\|im_end\|>\n<\|im_start\|>assistant\n$',
-            dotAll: true)
-        .firstMatch(prompt)!;
-    return '<|start_header_id|>system<|end_header_id|>\n\n${m[1]}<|eot_id|>'
-        '<|start_header_id|>user<|end_header_id|>\n\n${m[2]}<|eot_id|>'
-        '<|start_header_id|>assistant<|end_header_id|>\n\n';
-  }
-  return _emptyThink ? '$prompt<think>\n\n</think>\n\n' : prompt;
-}
+const _format = _template == 'llama3' ? ChatFormat.llama3 : ChatFormat.chatml;
+String _p(String prompt) => _emptyThink && _format == ChatFormat.chatml ? '$prompt<think>\n\n</think>\n\n' : prompt;
 
 int _words(Iterable<String> texts) =>
     texts.fold(0, (n, t) => n + t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length);
@@ -35,7 +27,7 @@ int _words(Iterable<String> texts) =>
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Synthesis LLM evaluation (organise, write, update across context sizes)',
+  testWidgets('Synthesis LLM evaluation (organise, write, structured across context sizes)',
       timeout: const Timeout(Duration(minutes: 120)), (tester) async {
     final dir = (await getExternalStorageDirectory())!;
     final thoughtsFile = File('${dir.path}/synthesis_eval/thoughts.json');
@@ -83,7 +75,7 @@ void main() {
       } catch (e) {
         load['status'] = 'error: $e';
         await save();
-        service.dispose();
+        await service.dispose();
         continue;
       }
       await save();
@@ -132,13 +124,13 @@ void main() {
 
       Future<String?> organise(String id, List<String> ids) {
         final inputs = pick(ids);
-        return turn(id, 'organise', inputs, _p(buildOrganisePrompt(inputs)), organiseOutputBudget(inputs.length),
+        return turn(id, 'organise', inputs, _p(buildOrganisePrompt(inputs, format: _format)), organiseOutputBudget(inputs.length),
             organiseIds: ids);
       }
 
       Future<String?> write(String id, List<String> ids) {
         final inputs = pick(ids);
-        return turn(id, 'write', inputs, _p(buildWritePrompt(inputs)), writeOutputBudget(_words(inputs)));
+        return turn(id, 'write', inputs, _p(buildWritePrompt(inputs, format: _format)), writeOutputBudget(_words(inputs)));
       }
 
       await organise('1_organise_r01_r03', ['r01', 'r02', 'r03']);
@@ -146,21 +138,21 @@ void main() {
       // Organise on every thought, using the pushed ids.
       {
         final inputs = allThoughts;
-        await turn('3_organise_all', 'organise', inputs, _p(buildOrganisePrompt(inputs)),
+        await turn('3_organise_all', 'organise', inputs, _p(buildOrganisePrompt(inputs, format: _format)),
             organiseOutputBudget(inputs.length),
             organiseIds: allIds);
       }
-      final note4 = await write('4_write_r08', ['r08']);
+      await write('4_write_r08', ['r08']);
       await write('5_write_r02_r14_r11', ['r02', 'r14', 'r11']);
       await write('6_write_r12', ['r12']);
       await write('7_write_r13', ['r13']);
       await write('8_write_r10_r11_r12_r13', ['r10', 'r11', 'r12', 'r13']);
-      await turn('9_write_all', 'write', allThoughts, _p(buildWritePrompt(allThoughts)),
+      await turn('9_write_all', 'write', allThoughts, _p(buildWritePrompt(allThoughts, format: _format)),
           writeOutputBudget(_words(allThoughts)));
 
       Future<String?> structured(String id, List<String> ids) {
         final inputs = pick(ids);
-        return turn(id, 'structured', inputs, _p(buildStructuredWritePrompt(inputs)),
+        return turn(id, 'structured', inputs, _p(buildStructuredWritePrompt(inputs, format: _format)),
             structuredOutputBudget(_words(inputs)));
       }
 
@@ -169,16 +161,7 @@ void main() {
       await structured('13_structured_r13', ['r13']);
       await structured('14_structured_r10_r11_r12_r13', ['r10', 'r11', 'r12', 'r13']);
 
-      if (note4 == null) {
-        turns.add({'id': '10_update', 'ctx': ctx, 'kind': 'update', 'status': 'skipped: turn 4 produced no note'});
-        await save();
-      } else {
-        const newThoughts = ['Actually move it to Thursday at three.', 'And book the big meeting room.'];
-        await turn('10_update', 'update', [note4, ...newThoughts], _p(buildUpdatePrompt(note4, newThoughts)),
-            writeOutputBudget(_words([note4, ...newThoughts])));
-      }
-
-      service.dispose();
+      await service.dispose();
       await Future.delayed(const Duration(seconds: 5));
       load['mem_after_dispose_mb'] = await memMb();
       await save();

@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
+import 'llama_isolate_engine.dart';
 import 'llm_config.dart';
 
 export 'llm_config.dart';
@@ -12,7 +10,7 @@ export 'llm_config.dart';
 /// Result of one successful [LLMService.generate] call.
 @immutable
 class LlmGeneration {
-  /// Generated text with the `<|im_end|>` stop marker and surrounding whitespace removed.
+  /// Generated text with the `<|im_end|>`/`<|eot_id|>` stop markers and surrounding whitespace removed.
   final String text;
 
   /// Milliseconds from prompt submission to the first streamed chunk (0 if none arrived).
@@ -22,7 +20,7 @@ class LlmGeneration {
   /// Streamed chunks received; one per generated token except tokens that end mid-character.
   final int outputChunks;
 
-  /// True when generation was stopped because `maxOutputTokens` was reached.
+  /// True when the engine ended generation because `maxOutputTokens` was reached.
   final bool hitOutputCap;
 
   const LlmGeneration({
@@ -34,139 +32,184 @@ class LlmGeneration {
   });
 }
 
+/// Thrown by [LLMService.generate] when [LLMService.cancelActiveGeneration] ended it.
+class LlmCancelledException implements Exception {
+  const LlmCancelledException();
+  @override
+  String toString() => 'LlmCancelledException: generation was cancelled.';
+}
+
+/// Thrown when a stopped generation never reported completion; the service has disposed
+/// the engine so the next use reloads the model.
+class LlmEngineStuckException implements Exception {
+  const LlmEngineStuckException();
+  @override
+  String toString() => 'LlmEngineStuckException: the language engine did not stop; it was disposed.';
+}
+
+/// How the engine reported a prompt finished.
+@immutable
+class LlmPromptCompletion {
+  /// True when generation ended because the prompt's `maxOutputTokens` was reached.
+  final bool hitOutputCap;
+
+  /// True when generation ended because [LlmPromptSession.stop] was requested.
+  final bool stopped;
+
+  const LlmPromptCompletion({required this.hitOutputCap, required this.stopped});
+}
+
+/// One prompt in flight on an [LlmEngine]. Only this prompt's chunks and completion are visible.
+abstract class LlmPromptSession {
+  /// Text chunks of this prompt only. Single-subscription; chunks are buffered until listened to.
+  Stream<String> get chunks;
+
+  /// Completes when the engine reports this prompt finished, including after [stop]. Completes
+  /// with an error when generation failed.
+  Future<LlmPromptCompletion> get completion;
+
+  /// Asks the engine to end this prompt; [completion] then reports `stopped`.
+  Future<void> stop();
+
+  /// Detaches from this prompt; later chunks are dropped.
+  Future<void> close();
+}
+
+/// Thin seam over the llama.cpp worker so [LLMService] is unit-testable.
+abstract class LlmEngine {
+  Future<void> load(String modelPath);
+
+  /// Starts a generation from an empty context that ends after at most [maxOutputTokens] tokens.
+  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens});
+
+  /// Frees the model and stops the worker; completes once nothing of it remains running.
+  Future<void> dispose();
+}
+
 class LLMService {
-  static const _stopMarker = '<|im_end|>';
+  static const _stopMarkers = ['<|im_end|>', '<|eot_id|>'];
 
   final LLMConfig config;
   final AppLogger? _logger;
-  LlamaParent? _llama;
-  bool _isInitialized = false;
+  final LlmEngine Function() _engineFactory;
 
-  LLMService({this.config = const LLMConfig(), this._logger});
+  /// How long a stopped prompt may take to report completion before the engine is declared stuck.
+  final Duration stopTimeout;
+  LlmEngine? _engine;
+  bool _isInitialized = false;
+  Future<void> _teardown = Future.value();
+
+  /// Idle signal of the generation in flight; null when idle.
+  Completer<void>? _activeIdle;
+  Completer<void>? _cancelRequested;
+
+  LLMService({
+    this.config = const LLMConfig(),
+    this._logger,
+    LlmEngine Function()? engineFactory,
+    // Reading a long prompt is one uninterruptible native call (tens of seconds on a phone), and
+    // giving up means killing the worker without freeing the model, so wait well beyond it.
+    this.stopTimeout = const Duration(minutes: 2),
+  }) : _engineFactory = engineFactory ?? (() => LlamaIsolateEngine(config, _logger));
 
   bool get isInitialized => _isInitialized;
 
   Future<void> initialize(String modelPath) async {
     if (_isInitialized) return;
-
-    if (!await File(modelPath).exists()) {
-      throw Exception('LLM model not found at $modelPath');
-    }
+    // Never hold two copies of the model: wait for a previous engine to free its weights.
+    await _teardown;
+    if (_isInitialized) return;
 
     _logger?.info('[LLMService] Initializing llama.cpp engine with config: $config');
-
-    final contextParams = ContextParams()
-      ..nCtx = config.kvCacheMaxSize
-      // The binding rejects any prompt longer than nBatch, so the batch must span the context.
-      ..nBatch = max(config.batchSize, config.kvCacheMaxSize)
-      // The binding fixes nPredict at load time; -1 is unlimited. The per-call cap is
-      // enforced in generate() by counting streamed chunks.
-      ..nPredict = -1
-      ..nThreads = config.threads
-      ..nThreadsBatch = config.threads
-      ..typeK = config.kvCacheType
-      ..typeV = config.kvCacheType;
-
-    final loadCommand = LlamaLoad(
-      path: modelPath,
-      modelParams: ModelParams()..nGpuLayers = config.gpuLayers,
-      contextParams: contextParams,
-      samplingParams: SamplerParams()..greedy = config.greedySampling,
-    );
-
-    final parent = LlamaParent(loadCommand);
-    try {
-      await parent.init();
-    } on TimeoutException {
-      // The library stops waiting after 60s, but its isolate is still loading the model.
-      // Abandoning it here would fail the thought and leave a second load running.
-      _logger?.warning('[LLMService] Model load exceeded the library limit; still loading, waiting up to '
-          '${config.modelLoadTimeout.inSeconds}s in total.');
-      await _awaitLoadCompletion(parent, alreadyWaited: const Duration(seconds: 60));
-    } catch (_) {
-      parent.dispose();
-      rethrow;
-    }
-    _llama = parent;
+    final engine = _engineFactory();
+    await engine.load(modelPath);
+    _engine = engine;
     _isInitialized = true;
     _logger?.info('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, type: ${config.kvCacheType.name}).');
   }
 
-  /// Waits for an in-flight model load to report ready. Disposes [parent] and throws if it
-  /// reports an error or does not finish within [LLMConfig.modelLoadTimeout].
-  Future<void> _awaitLoadCompletion(LlamaParent parent, {required Duration alreadyWaited}) async {
-    final waited = Stopwatch()..start();
-    while (parent.status != LlamaStatus.ready) {
-      final failed = parent.status == LlamaStatus.error || parent.status == LlamaStatus.disposed;
-      if (failed || alreadyWaited + waited.elapsed >= config.modelLoadTimeout) {
-        parent.dispose();
-        throw Exception(failed
-            ? 'The language model failed to load.'
-            : 'The language model did not finish loading within ${config.modelLoadTimeout.inSeconds} seconds.');
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
-  }
-
   /// Runs one stateless generation. [prompt] is the complete, already-formatted model prompt.
   ///
-  /// Throws [StateError] when the model is not loaded, [TimeoutException] after
-  /// [LLMConfig.generationTimeout] (generation is stopped first), and rethrows engine errors.
-  /// Partial text is never returned as success. Generation also ends at [maxOutputTokens]
-  /// streamed chunks, reported through [LlmGeneration.hitOutputCap].
+  /// Throws [StateError] when the model is not loaded or another generation is running,
+  /// [TimeoutException] after [LLMConfig.generationTimeout], [LlmCancelledException] after
+  /// [cancelActiveGeneration], and rethrows engine errors. In every early-exit case the
+  /// engine is stopped and has reported completion before this returns or throws; if it
+  /// never does, the service is disposed and [LlmEngineStuckException] is thrown.
+  /// Partial text is never returned as success. The engine ends generation after
+  /// [maxOutputTokens] tokens, reported through [LlmGeneration.hitOutputCap].
   Future<LlmGeneration> generate(String prompt, {required int maxOutputTokens}) async {
-    final llama = _llama;
-    if (!_isInitialized || llama == null) {
+    final engine = _engine;
+    if (!_isInitialized || engine == null) {
       throw StateError('LLMService.generate called before the model was loaded.');
+    }
+    if (_activeIdle != null) {
+      throw StateError('LLMService.generate called while another generation is running.');
     }
     if (maxOutputTokens <= 0) {
       throw ArgumentError.value(maxOutputTokens, 'maxOutputTokens', 'must be positive');
     }
 
+    final idle = _activeIdle = Completer<void>();
+    final cancelRequested = _cancelRequested = Completer<void>();
     final buffer = StringBuffer();
     final stopwatch = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
     var hitCap = false;
-    final capReached = Completer<void>();
-    // Each call gets its own scope, disposed afterwards, so no context carries over (AGENTS.md 4.C).
-    final scope = llama.getScope() as LlamaScope;
-    final streamSub = llama.stream.listen((chunk) {
-      if (hitCap) return;
-      firstChunkMs ??= stopwatch.elapsedMilliseconds;
-      chunkCount++;
-      buffer.write(chunk);
-      if (chunkCount >= maxOutputTokens) {
-        hitCap = true;
-        capReached.complete();
-      }
-    });
+    var accepting = true;
+    LlmPromptSession? session;
+    StreamSubscription<String>? chunkSub;
 
     try {
-      final promptId = await llama.sendPrompt(prompt, scope: scope);
-      final completed = llama.completions.firstWhere((e) => e.promptId == promptId);
-      completed.ignore(); // the cap path leaves it unawaited
+      session = await engine.sendPrompt(prompt, maxOutputTokens: maxOutputTokens);
+      final active = session;
+      chunkSub = active.chunks.listen((chunk) {
+        if (!accepting) return;
+        firstChunkMs ??= stopwatch.elapsedMilliseconds;
+        chunkCount++;
+        buffer.write(chunk);
+      });
+
+      Object? failure;
+      LlmPromptCompletion? completion;
       try {
-        await Future.any<Object?>([completed, capReached.future]).timeout(config.generationTimeout);
-      } on TimeoutException {
+        final first = await Future.any<Object?>([active.completion, cancelRequested.future])
+            .timeout(config.generationTimeout);
+        if (first is LlmPromptCompletion) completion = first;
+      } on TimeoutException catch (e) {
         _logger?.warning('[LLMService] Generation timed out after ${config.generationTimeout.inSeconds}s. Stopping.');
-        await _stopQuietly(llama);
-        rethrow;
+        failure = e;
       }
-      if (hitCap) await _stopQuietly(llama);
+      // Chunks sent just before the completion event may still be queued on the stream.
+      if (failure == null) await Future<void>.delayed(Duration.zero);
+      if (failure == null && cancelRequested.isCompleted) failure = const LlmCancelledException();
+
+      if (failure != null) {
+        accepting = false;
+        await _stopAndAwaitCompletion(active);
+        throw failure;
+      }
+      hitCap = completion!.hitOutputCap;
     } finally {
+      accepting = false;
       stopwatch.stop();
-      await streamSub.cancel();
+      await chunkSub?.cancel();
       try {
-        await llama.disposeScope(scope);
+        await session?.close();
       } catch (e) {
-        _logger?.warning('[LLMService] Error disposing generation scope: $e');
+        _logger?.warning('[LLMService] Error closing generation session: $e');
       }
+      _activeIdle = null;
+      _cancelRequested = null;
+      idle.complete();
     }
 
-    final text = buffer.toString().split(_stopMarker).first.trim();
+    var text = buffer.toString();
+    for (final marker in _stopMarkers) {
+      text = text.split(marker).first;
+    }
     return LlmGeneration(
-      text: text,
+      text: text.trim(),
       timeToFirstTokenMs: firstChunkMs ?? 0,
       totalMs: stopwatch.elapsedMilliseconds,
       outputChunks: chunkCount,
@@ -174,19 +217,50 @@ class LLMService {
     );
   }
 
-  Future<void> _stopQuietly(LlamaParent llama) async {
+  /// Stops [session] and waits for the engine to report it finished. If it does not within
+  /// [stopTimeout] the engine is disposed and [LlmEngineStuckException] is thrown.
+  Future<void> _stopAndAwaitCompletion(LlmPromptSession session) async {
     try {
-      await llama.stop();
+      await session.stop();
     } catch (e) {
       _logger?.warning('[LLMService] Error stopping generation: $e');
     }
+    try {
+      await session.completion.timeout(stopTimeout);
+    } catch (e) {
+      _logger?.warning('[LLMService] Engine did not report completion after stop ($e). Disposing it.');
+      await dispose();
+      throw const LlmEngineStuckException();
+    }
   }
 
-  void dispose() {
-    _logger?.info('[LLMService] Disposing LLMService...');
-    _llama?.dispose();
-    _llama = null;
+  /// Stops the generation in flight, if any, and completes once the engine is idle again.
+  /// That [generate] call throws [LlmCancelledException]. No-op when idle.
+  Future<void> cancelActiveGeneration() async {
+    final idle = _activeIdle;
+    if (idle == null) return;
+    final cancel = _cancelRequested;
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
+    await idle.future;
+  }
+
+  /// Frees the model. Completes once the engine is fully disposed; concurrent callers share
+  /// the same wait, so a caller never proceeds while the weights are still resident.
+  Future<void> dispose() {
+    final engine = _engine;
+    _engine = null;
     _isInitialized = false;
+    if (engine != null) _teardown = _disposeEngine(engine);
+    return _teardown;
+  }
+
+  Future<void> _disposeEngine(LlmEngine engine) async {
+    _logger?.info('[LLMService] Disposing LLMService...');
+    try {
+      await engine.dispose();
+    } catch (e) {
+      _logger?.warning('[LLMService] Error disposing engine: $e');
+    }
     _logger?.info('[LLMService] LLMService disposed. Base weights and KV cache freed.');
   }
 }

@@ -9,6 +9,7 @@ import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+import 'package:eudemonia/features/synthesis/application/synthesis_trigger_controller.dart';
 
 class AudioQueueService {
   final STTService _sttService;
@@ -399,6 +400,7 @@ final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
     },
     onNoteSaved: () {
       ref.invalidate(recentNotesProvider);
+      unawaited(ref.read(synthesisTriggerControllerProvider).onThoughtSaved());
     },
   );
 

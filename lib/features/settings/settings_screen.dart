@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
+import 'package:eudemonia/features/synthesis/application/synthesis_settings.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'background_permission_service.dart';
 import 'system_telemetry_service.dart';
 
@@ -44,8 +47,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  int _synthesisNoteThreshold = 3;
-  int _synthesisInactivityMinutes = 15;
   bool _keepRawAudio = false;
   bool _isCalendarSyncEnabled = false;
 
@@ -108,30 +109,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(backgroundPermissionStatusProvider);
     }
-  }
-
-  void _triggerSynthesisNow() async {
-    await ref.read(synthesisRepositoryProvider.notifier).synthesizeRawNotes();
-    ref.invalidate(rawNotesReadyToClusterCountProvider);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        backgroundColor: AppColors.surfaceElevated,
-        content: Row(
-          children: [
-            Icon(Icons.auto_awesome, color: AppColors.accentAI, size: 16),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Triggered on-demand synthesis for buffered thoughts!',
-                style: TextStyle(color: AppColors.textPrimary),
-              ),
-            ),
-          ],
-        ),
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 
   void _evictModelsNow() async {
@@ -274,6 +251,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         ref.watch(modelLifecycleStateProvider) == ModelLifecycleState.ready;
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final bufferCount = rawNotesCountAsync.value ?? 0;
+    final synthesisSettings = ref.watch(synthesisSettingsProvider);
+    final synthesisRunning = ref.watch(synthesisRunningProvider);
     final telemetry = ref.watch(systemTelemetryProvider).value;
     final thermalColor = telemetry == null || telemetry.thermalStatus == null
         ? AppColors.textSecondary
@@ -566,7 +545,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
-                          value: _synthesisNoteThreshold,
+                          value: synthesisSettings.noteThreshold,
                           dropdownColor: AppColors.surfaceElevated,
                           isDense: true,
                           icon: const Icon(Icons.arrow_drop_down,
@@ -585,7 +564,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           }).toList(),
                           onChanged: (val) {
                             if (val != null) {
-                              setState(() => _synthesisNoteThreshold = val);
+                              ref
+                                  .read(synthesisSettingsProvider.notifier)
+                                  .setNoteThreshold(val);
                             }
                           },
                         ),
@@ -632,7 +613,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
-                          value: _synthesisInactivityMinutes,
+                          value: synthesisSettings.inactivityMinutes,
                           dropdownColor: AppColors.surfaceElevated,
                           isDense: true,
                           icon: const Icon(Icons.arrow_drop_down,
@@ -650,7 +631,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           }).toList(),
                           onChanged: (val) {
                             if (val != null) {
-                              setState(() => _synthesisInactivityMinutes = val);
+                              ref
+                                  .read(synthesisSettingsProvider.notifier)
+                                  .setInactivityMinutes(val);
                             }
                           },
                         ),
@@ -703,7 +686,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               borderRadius: BorderRadius.circular(
                                   AppColors.badgeRadius)),
                         ),
-                        onPressed: bufferCount > 0 ? _triggerSynthesisNow : null,
+                        onPressed: bufferCount > 0 && !synthesisRunning
+                            ? () => startManualSynthesis(context)
+                            : null,
                         child: const Text(
                           'Synthesize Now',
                           style: TextStyle(

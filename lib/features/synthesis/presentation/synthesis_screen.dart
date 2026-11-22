@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
+import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_ejection_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_merge_sheet.dart';
@@ -32,6 +34,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
     final repoNotifier = ref.read(synthesisRepositoryProvider.notifier);
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final pendingRawNotes = rawNotesCountAsync.value ?? 0;
+    final synthesisRunning = ref.watch(synthesisRunningProvider);
 
     final folderFiltered = _activeFolderFilter == 'All Folders'
         ? clusters
@@ -216,21 +219,9 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                   InkWell(
                     key: const Key('synthesize_now_banner_button'),
                     borderRadius: BorderRadius.circular(6),
-                    onTap: () async {
-                      await repoNotifier.synthesizeRawNotes();
-                      ref.invalidate(rawNotesReadyToClusterCountProvider);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            backgroundColor: AppColors.surfaceElevated,
-                            content: Text(
-                              'Triggered on-demand synthesis clustering.',
-                              style: TextStyle(color: AppColors.textPrimary),
-                            ),
-                          ),
-                        );
-                      }
-                    },
+                    onTap: synthesisRunning
+                        ? null
+                        : () => startManualSynthesis(context),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
@@ -319,10 +310,9 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                           style: TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold),
                         ),
-                        onPressed: () async {
-                          await repoNotifier.synthesizeRawNotes();
-                          ref.invalidate(rawNotesReadyToClusterCountProvider);
-                        },
+                        onPressed: synthesisRunning
+                            ? null
+                            : () => startManualSynthesis(context),
                       ),
                     ],
                   ],

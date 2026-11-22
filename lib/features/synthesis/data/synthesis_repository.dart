@@ -4,7 +4,6 @@ import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_session_store.dart';
-import 'package:eudemonia/features/synthesis/domain/session_clock.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 /// Synthesis sessions, held in memory for the UI and written through to
@@ -255,78 +254,72 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
     ref.invalidate(rawNotesReadyToClusterCountProvider);
   }
 
-  /// Synthesizes raw notes from NotesRepository into structured sessions
-  Future<void> synthesizeRawNotes([List<Note>? rawNotes]) async {
-    // Stored sessions must be known first, or new identifiers could collide with them.
-    await hydrated;
-    final notesRepo = ref.read(notesRepositoryProvider);
-    final notesToCluster = rawNotes ??
-        (await notesRepo.getAllNotes())
-            .where((n) => n.state == ThoughtState.processed)
-            .toList();
-
-    if (notesToCluster.isEmpty) return;
-
-    // Mark these notes as synthesized in NotesRepository
-    for (final note in notesToCluster) {
-      note.state = ThoughtState.synthesized;
-      await notesRepo.saveNote(note);
-    }
-
-    final sessions = splitIntoSessions<Note>(
-      notesToCluster,
-      timeOf: (n) => n.createdAt ?? DateTime.now(),
+  /// Adds a session whose note the write turn produced. Called by the synthesis runner only
+  /// after both the organise and the write turn succeeded.
+  SynthesisCluster createSession({
+    required String folder,
+    required String note,
+    required List<SynthesisOriginNote> origins,
+  }) {
+    final sorted = _timeSorted(origins);
+    final seq = _nextSequenceIndex();
+    final cluster = SynthesisCluster(
+      clusterId: 'cluster_${DateTime.now().millisecondsSinceEpoch}_$seq',
+      sequenceNumber: '#S-${seq.toString().padLeft(2, '0')}',
+      folder: folder,
+      synthesizedContent: note,
+      sessionStart: sorted.first.timestamp,
+      sessionEnd: sorted.last.timestamp,
+      sessionDuration: sorted.last.timestamp.difference(sorted.first.timestamp),
+      originNotes: sorted,
+      isExpanded: false,
+      isReprocessing: false,
+      isUnread: true,
+      isActionExtracted: true,
     );
-
-    final newClusters = <SynthesisCluster>[];
-    int nextSeqIndex = _nextSequenceIndex();
-
-    for (final folderNotes in sessions) {
-      final originNotes = folderNotes
-          .map((n) => SynthesisOriginNote.fromNote(n))
-          .toList();
-
-      final earliest = folderNotes
-          .map((n) => n.createdAt ?? DateTime.now())
-          .reduce((a, b) => a.isBefore(b) ? a : b);
-      final latest = folderNotes
-          .map((n) => n.createdAt ?? DateTime.now())
-          .reduce((a, b) => a.isAfter(b) ? a : b);
-
-      final diff = latest.difference(earliest);
-      final duration = diff < const Duration(minutes: 5)
-          ? const Duration(minutes: 15)
-          : diff;
-
-      final combinedNarrative = folderNotes.map((n) {
-        final text = n.correctedText.isNotEmpty ? n.correctedText : n.rawText;
-        return '• $text';
-      }).join('\n\n');
-
-      final cluster = SynthesisCluster(
-        clusterId:
-            'cluster_${DateTime.now().millisecondsSinceEpoch}_$nextSeqIndex',
-        sequenceNumber: '#S-${nextSeqIndex.toString().padLeft(2, '0')}',
-        // Interim until the LLM organise turn assigns a session folder.
-        folder: 'Uncategorized',
-        synthesizedContent:
-            'Consolidated ${folderNotes.length} thoughts:\n$combinedNarrative',
-        sessionStart: earliest,
-        sessionEnd: latest,
-        sessionDuration: duration,
-        originNotes: originNotes,
-        isExpanded: false,
-        isReprocessing: false,
-        isUnread: true,
-        isActionExtracted: true,
-      );
-
-      newClusters.add(cluster);
-      nextSeqIndex++;
-    }
-
-    state = [...newClusters, ...state];
+    state = [cluster, ...state];
+    return cluster;
   }
+
+  /// Replaces a session's note with a newly written one, adding [addedOrigins], and clears
+  /// the reprocessing flag.
+  void updateSession(
+    String clusterId, {
+    required String note,
+    List<SynthesisOriginNote> addedOrigins = const [],
+  }) {
+    state = [
+      for (final cluster in state)
+        if (cluster.clusterId == clusterId) _rewritten(cluster, note, addedOrigins) else cluster,
+    ];
+  }
+
+  SynthesisCluster _rewritten(SynthesisCluster cluster, String note, List<SynthesisOriginNote> added) {
+    final origins = _timeSorted([...cluster.originNotes, ...added]);
+    if (origins.isEmpty) {
+      return cluster.copyWith(synthesizedContent: note, isUnread: true, isReprocessing: false);
+    }
+    return cluster.copyWith(
+      synthesizedContent: note,
+      originNotes: origins,
+      sessionStart: origins.first.timestamp,
+      sessionEnd: origins.last.timestamp,
+      sessionDuration: origins.last.timestamp.difference(origins.first.timestamp),
+      isUnread: true,
+      isReprocessing: false,
+    );
+  }
+
+  /// Drops a session left without thoughts (e.g. after its last thought was ejected).
+  void removeEmptySession(String clusterId) {
+    state = [
+      for (final cluster in state)
+        if (cluster.clusterId != clusterId || cluster.originNotes.isNotEmpty) cluster,
+    ];
+  }
+
+  static List<SynthesisOriginNote> _timeSorted(List<SynthesisOriginNote> origins) =>
+      List.of(origins)..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 }
 
 final synthesisRepositoryProvider =

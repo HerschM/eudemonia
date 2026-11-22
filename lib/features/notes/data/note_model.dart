@@ -30,6 +30,9 @@ class Note {
 
   String? failureReason;
 
+  /// Synthesis runs that got a model answer but could not file or write this thought.
+  int synthesisAttempts = 0;
+
   Note({
     this.originalAudioPath,
     this.rawText = '',

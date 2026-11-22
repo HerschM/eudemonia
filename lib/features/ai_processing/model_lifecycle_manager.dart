@@ -5,6 +5,7 @@ import 'package:eudemonia/core/logger/app_logger.dart';
 import 'llm_config.dart';
 import 'model_file_validator.dart';
 import 'model_load_guard.dart';
+import 'model_residency_arbiter.dart';
 import 'stt_service.dart';
 
 /// Represents the memory state of the speech model.
@@ -29,6 +30,7 @@ class ModelLifecycleManager {
   final void Function(ModelLifecycleState state)? _onStateChanged;
   final ModelFileValidator? _fileValidator;
   final ModelLoadGuard? _loadGuard;
+  final ModelResidencyArbiter? _arbiter;
 
   ModelLifecycleState _state = ModelLifecycleState.unloaded;
   Future<void>? _loadFuture;
@@ -48,6 +50,7 @@ class ModelLifecycleManager {
     this._onStateChanged,
     this._fileValidator,
     this._loadGuard,
+    this._arbiter,
   })  : _config = config ?? const LLMConfig();
 
   void _setState(ModelLifecycleState next) {
@@ -61,6 +64,9 @@ class ModelLifecycleManager {
   DateTime? get lastActiveTime => _lastActiveTime;
   DateTime? get lastLoadedTime => _lastLoadedTime;
   LLMConfig get config => _config;
+
+  /// True while the speech model is loading or an inference task holds it.
+  bool get isBusy => _state == ModelLifecycleState.loading || _activeUsers > 0;
 
   /// Ensures the STT model is mapped and initialized in RAM.
   /// If already loaded, returns immediately.
@@ -98,6 +104,9 @@ class ModelLifecycleManager {
     _logger?.info('===================================================================');
 
     try {
+      // Speech has priority: the language model is unloaded before this one is mapped.
+      await _arbiter?.acquireSpeech();
+
       String? modelsDirPath;
       if (_modelsDirResolver != null) {
         modelsDirPath = await _modelsDirResolver();
@@ -250,6 +259,7 @@ class ModelLifecycleManager {
   }
 
   void _disposeServices() {
+    _arbiter?.releaseSpeech();
     try {
       _sttService.dispose();
     } catch (e) {
@@ -312,6 +322,7 @@ final modelLifecycleManagerProvider = Provider<ModelLifecycleManager>((ref) {
     logger: logger,
     fileValidator: const ModelFileValidator(),
     loadGuard: ModelLoadGuard(),
+    arbiter: ref.watch(modelResidencyArbiterProvider),
     onStateChanged: (state) {
       ref.read(modelLifecycleStateProvider.notifier).setLifecycleState(state);
     },

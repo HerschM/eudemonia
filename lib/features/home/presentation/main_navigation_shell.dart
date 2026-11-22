@@ -9,6 +9,7 @@ import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
+import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
 import 'package:eudemonia/features/insights/presentation/insights_placeholder_screen.dart';
 import 'package:eudemonia/features/action/presentation/action_placeholder_screen.dart';
@@ -166,13 +167,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
                   onTap: () => _openPipelineHud(
                     queueCount: pendingQueueCount,
                     readyToClusterCount: readyToClusterCount,
-                    onSynthesizeNow: () async {
-                      await ref
-                          .read(synthesisRepositoryProvider.notifier)
-                          .synthesizeRawNotes();
-                      ref.invalidate(rawNotesReadyToClusterCountProvider);
-                      ref.invalidate(recentNotesProvider);
-                    },
+                    onSynthesizeNow: () => startManualSynthesis(context),
                     modelsLoaded: modelsLoaded,
                   ),
                   child: Container(

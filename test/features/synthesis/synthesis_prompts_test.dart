@@ -31,19 +31,11 @@ void main() {
     });
   });
 
-  group('write and update prompts', () {
+  group('write prompts', () {
     test('write prompt numbers the thoughts', () {
       final prompt = buildWritePrompt(['One.', 'Two.']);
       expect(prompt, contains('Thoughts:\n1. One.\n2. Two.\n\nWrite the note.<|im_end|>'));
       expect(prompt, contains('All thoughts matter equally'));
-    });
-
-    test('update prompt carries the note and the update rules', () {
-      final prompt = buildUpdatePrompt('Meet Dev.', ['Make it Thursday.']);
-      expect(prompt, contains('You update a written note'));
-      expect(prompt, contains('Current note:\nMeet Dev.\n\nNew thoughts:\n1. Make it Thursday.\n\nWrite the updated note.'));
-      expect(prompt, contains('Keep everything in the current note exactly as it is'));
-      expect(prompt, isNot(contains('All thoughts matter equally')));
     });
   });
 
