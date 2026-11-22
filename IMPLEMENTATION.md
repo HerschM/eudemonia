@@ -628,6 +628,13 @@
 - **Two failures on the way**: `+i8mm` crashed with SIGILL (the phone has `asimddp` but no `i8mm`; `/proc/cpuinfo` is the authority, not a model list); and a CPU-only library rejects `main_gpu = 0`, so the engine selects no GPU device.
 - **Cost**: prompt reading is slower than on the GPU and depends on which cores Android allows (1.E.2); the phone heats and throttles under sustained load (TASK-072).
 
+### 37. Language Model Slower Than the Phone Allows (Library Eleven Months Old, Heat Caps After One Minute, Six Slower Cores Off Screen)
+- **Symptom**: PocketPal felt fast with a 4B model on the same Pixel 7a and loaded `Qwen3.5-4B`, while Eudemonia read ≈ 7–10 tok/s and wrote ≈ 3.2–4.3 tok/s with Qwen3-4B and cannot load Qwen3.5 at all.
+- **Root Causes (measured 2026-11-22 with `llama-bench` on the phone, figures in the TASK-073 Progress Log)**: (1) `llama_cpp_dart` 0.2.2, still the latest stable release, pins llama.cpp of 2025-12-28: no `qwen35` architecture (added 2026-02-10) and none of the later ARM work (Q6_K/Q5_K dot-product repack, flash-attention CPU kernels) — reading is 35–48 % slower than with a 2026-07 or 2026-11 commit, writing is unchanged. (2) Flash attention is off (package default), ≈ 8–10 %. (3) After about a minute at full load Android caps the fast cores at 0.98 GHz of 2.85 and the mid cores at ≈ 1.0 of 2.35 GHz: reading −40 %, writing −30 %, for as long as the run lasts. (4) An app that is not on screen runs in the `/foreground` core set (cores 0–5: four small, two mid); with the fixed 4 threads that gives 7.7 / 3.5 tok/s against 20 / 7 on all cores, and `/background` (cores 0–3) gives 3.9 / 1.9. (5) The package attaches no persistent thread pool: ≈ 5–10 % of writing speed.
+- **Not the cause**: thread placement on screen (all cores allowed is as fast as pinning to cores 4–7) and the Dart layer itself (the package's call pattern reproduced in C is within 10 % of `llama-bench`).
+- **What PocketPal does differently (llama.rn 0.13.0-rc.11 source)**: llama.cpp two weeks old, prefix reuse between prompts, prompt decoded in `n_batch` pieces with an interrupt check, persistent thread pool, CPU variant chosen at run time.
+- **Status**: nothing changed in code yet. Proposed fix is TASK-073 on an own binding for a current llama.cpp, with thread counts per allowed core set and flash attention on; the thermal side is TASK-072. Hardware bound for a 4B Q4_K_M model on this phone: ≈ 5 tok/s sustained writing.
+
 ---
 
 ## 4. Architectural Decisions & Target Engineering Blueprints
