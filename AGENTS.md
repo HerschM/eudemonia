@@ -198,6 +198,9 @@ When executing operational engineering procedures, activate the dedicated skill:
    - **Skill**: [`.agents/skills/eudemonia-context-reading/SKILL.md`](file:///Users/harshmavani/Documents/Eudemonia/.agents/skills/eudemonia-context-reading/SKILL.md)
    - *Use when*: Querying large documentation files dynamically while preserving the LLM context window.
 
+### C. Business Strategy Router (`business/`, Separate Contract for Market, Pricing & Distribution Work)
+Business work (competitors, positioning, pricing, distribution, platform risk) is governed by its own contract, [`business/AGENTS.md`](file:///Users/harshmavani/Documents/Eudemonia/business/AGENTS.md), which extends Section 1 of this file. Business agents read only `PRODUCT_SPEC.md`, `UX.md` and `business/`; they never read code or engineering documents and never edit the product specification. A business agent starts with `business/AGENTS.md`, then the **Active Handoff** block in `business/BUSINESS_LOG.md`. Subagents: `eudemonia-market-researcher` (gathers sourced facts) and `eudemonia-fact-checker` (verifies them independently).
+
 ---
 
 ## 7. High-Level Project Structure
