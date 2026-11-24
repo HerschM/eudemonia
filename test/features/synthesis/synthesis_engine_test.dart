@@ -15,12 +15,14 @@ SynthesisThought th(int id, int minutes, [String? text]) =>
 class FakeModel {
   final List<String> prompts = [];
   final List<int> budgets = [];
+  final List<String?> grammars = [];
   final FutureOr<SynthesisReply> Function(String prompt, int call) responder;
   FakeModel(this.responder);
 
-  Future<SynthesisReply> call(String prompt, int maxTokens) async {
+  Future<SynthesisReply> call(String prompt, int maxTokens, {String? grammar}) async {
     prompts.add(prompt);
     budgets.add(maxTokens);
+    grammars.add(grammar);
     return responder(prompt, prompts.length - 1);
   }
 }
@@ -50,6 +52,12 @@ void main() {
       expect(model.prompts[1], contains('1. thought 6\n2. thought 7\nAnswer:'));
       expect(model.prompts[2], contains('1. thought 8\nAnswer:'));
       expect(model.budgets[0], organiseOutputBudget(5));
+      // Each organise turn is bound to the reply form for its own number of thoughts.
+      expect(model.grammars, [
+        buildOrganiseGrammar(5, defaultFolders),
+        buildOrganiseGrammar(2, defaultFolders),
+        buildOrganiseGrammar(1, defaultFolders),
+      ]);
     });
 
     test('valid replies create one plan per folder', () async {
@@ -195,6 +203,7 @@ void main() {
       await SynthesisEngine(generate: model.call, profile: profile).organise([th(1, 1), th(2, 2), th(3, 3)], const []);
       expect(model.prompts, hasLength(2));
       expect(model.prompts.first, startsWith('<|start_header_id|>system'));
+      expect(model.grammars, [buildOrganiseGrammar(2, defaultFolders), buildOrganiseGrammar(1, defaultFolders)]);
     });
   });
 
@@ -214,6 +223,8 @@ void main() {
       expect(result, 'The note.');
       expect(model.prompts.single, buildWritePrompt(['one two three', 'four five']));
       expect(model.budgets.single, writeOutputBudget(5));
+      // A note is free text: no grammar.
+      expect(model.grammars.single, isNull);
     });
 
     test('over the limit with an existing note writes only the new thoughts and appends', () async {
@@ -239,7 +250,7 @@ void main() {
     test('a thought longer than the limit is its own piece', () async {
       final model = FakeModel((p, _) => ok(words(750)));
       final all = [th(1, 0, words(750)), th(2, 1, 'short')];
-      final engine = SynthesisEngine(generate: (p, b) => model.call(p, b));
+      final engine = SynthesisEngine(generate: (p, b, {grammar}) => model.call(p, b, grammar: grammar));
       // 'short' piece reply of 750 words is too long for 1 input word: invalid, single thought -> null.
       expect(await engine.write(plan(all)), isNull);
       expect(model.prompts, hasLength(2));
@@ -257,6 +268,21 @@ void main() {
         expect(result, '${words(15)}\n\n${words(15)}', reason: 'bad reply ${bad.length}');
         expect(model.prompts, hasLength(3));
       }
+    });
+
+    test('a note that leaves a thought out is invalid and the piece is split', () async {
+      const dentist = 'Call the dentist tomorrow morning and book a cleaning appointment.';
+      const shoes = 'I already purchased running shoes yesterday and will order another pair.';
+      final rejected = <String>[];
+      final model = FakeModel((p, _) {
+        if (p.contains('2. ')) return ok('- $dentist\n- Also remember the dentist cleaning appointment tomorrow.');
+        return ok(p.contains(dentist) ? '- $dentist' : '- $shoes');
+      });
+      final engine = SynthesisEngine(generate: model.call, onRejected: (kind, ids, reason) => rejected.add('$kind $ids $reason'));
+      final result = await engine.write(plan([th(1, 0, dentist), th(2, 1, shoes)]));
+      expect(result, '- $dentist\n\n- $shoes');
+      expect(model.prompts, hasLength(3));
+      expect(rejected.single, 'write [1, 2] the note leaves out thought(s) [2]');
     });
 
     test('the minimum ratio is not applied below 30 input words', () async {

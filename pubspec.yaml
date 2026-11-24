@@ -43,7 +43,6 @@ dependencies:
   ffi: ^2.2.0
   shared_preferences: ^2.5.5
   sherpa_onnx: ^1.13.8
-  llama_cpp_dart: ^0.2.2
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +58,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.13
   isar_community_generator: ^3.4.1
+  ffigen: ^23.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

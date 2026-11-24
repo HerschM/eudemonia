@@ -46,16 +46,17 @@ class SynthesisModelProfile {
     maxOutputRatio: 1.3,
   );
 
-  /// Qwen3-4B Q4_K_M. Ratios from the 2026-11-22 phone measurements: its structured notes
-  /// were 0.39-0.62 of the spoken words.
+  /// Qwen3-4B Q4_K_M. With the structured prompt its notes are 0.7-1.6 of the spoken words
+  /// (2026-11-22 lab run on the user's sessions); a telegraphic note that loses details is
+  /// below 0.35. The write limit keeps one turn inside the generation timeout on a hot phone.
   static const qwen3_4b = SynthesisModelProfile(
     modelFileName: 'qwen3-4b.gguf',
     chatFormat: ChatFormat.chatmlNoThink,
     noteStyle: NoteStyle.structured,
     organiseBatchSize: 5,
-    writeWordLimit: 700,
-    minOutputRatio: 0.2,
-    maxOutputRatio: 1.0,
+    writeWordLimit: 500,
+    minOutputRatio: 0.4,
+    maxOutputRatio: 1.3,
   );
 
   /// The model the app runs.

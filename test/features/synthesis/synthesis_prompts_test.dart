@@ -112,9 +112,75 @@ void main() {
     });
   });
 
+  group('buildOrganiseGrammar', () {
+    test('exactly one numbered line per thought, each one of the folders, nothing after', () {
+      expect(
+        buildOrganiseGrammar(2, defaultFolders),
+        'root ::= "1: " folder "\\n2: " folder\n'
+        'folder ::= "Work" | "Personal" | "Journal" | "Uncategorized"\n',
+      );
+      expect(buildOrganiseGrammar(1, defaultFolders), startsWith('root ::= "1: " folder\n'));
+    });
+
+    test('folder names are escaped as GBNF string literals', () {
+      const folders = [
+        FolderDefinition(name: r'Say "hi" \ bye', description: ''),
+        FolderDefinition(name: 'Two\nlines\tand\x01', description: ''),
+        FolderDefinition(name: 'Café', description: ''),
+      ];
+      expect(
+        buildOrganiseGrammar(1, folders),
+        'root ::= "1: " folder\n'
+        r'folder ::= "Say \"hi\" \\ bye" | "Two\nlines\tand\x01" | "Café"'
+        '\n',
+      );
+    });
+
+    test('a reply in the form the grammar allows is one parseOrganiseReply accepts', () {
+      // One sentence of the grammar's language for 3 thoughts (the host test runs the real sampler).
+      const reply = '1: Journal\n2: Work\n3: Uncategorized';
+      expect(parseOrganiseReply(reply, 3, defaultFolders), ['Journal', 'Work', 'Uncategorized']);
+    });
+
+    test('rejects a turn without thoughts or folders', () {
+      expect(() => buildOrganiseGrammar(0, defaultFolders), throwsArgumentError);
+      expect(() => buildOrganiseGrammar(2, const []), throwsArgumentError);
+    });
+  });
+
   test('output budgets', () {
     expect(organiseOutputBudget(3), 32);
     expect(writeOutputBudget(100), 256);
     expect(writeOutputBudget(10), 112);
+    expect(structuredOutputBudget(100), 226);
+  });
+
+  test('structured prompt shows a worked example and demands every thought', () {
+    final prompt = buildStructuredWritePrompt(['One.', 'Two.']);
+    expect(prompt, contains('Every numbered thought must appear in the note.'));
+    expect(prompt, contains('Example:\nThoughts:\n1. Remind me to email Daniel'));
+    expect(prompt, contains('- I am a bit worried about the noise from the main road.<|im_end|>'));
+    expect(prompt, contains('Thoughts:\n1. One.\n2. Two.\n\nWrite the note.<|im_end|>'));
+  });
+
+  group('thought coverage', () {
+    const shoes = 'I already purchased running shoes yesterday, and we will get one pair for her also.';
+
+    test('a faithful sentence covers the thought whatever the word endings', () {
+      expect(thoughtCoverage(shoes, '- I already purchased running shoes; we will get a pair for her.'),
+          greaterThan(0.7));
+      expect(thoughtsMissingFrom('- I already purchased running shoes; we will get a pair for her.', [shoes]), isEmpty);
+    });
+
+    test('a note about other thoughts leaves this one out', () {
+      const note = '**Tasks**\n- I need to call the dentist tomorrow at 9:30.';
+      expect(thoughtCoverage(shoes, note), lessThan(minThoughtCoverage));
+      expect(thoughtsMissingFrom(note, ['Call the dentist tomorrow at nine thirty and book a cleaning.', shoes]), [2]);
+    });
+
+    test('thoughts with fewer than four distinctive words are not judged', () {
+      expect(thoughtsMissingFrom('Something else entirely.', ['Okay.', 'Water the plants.']), isEmpty);
+      expect(thoughtCoverage('', 'anything'), 1);
+    });
   });
 }

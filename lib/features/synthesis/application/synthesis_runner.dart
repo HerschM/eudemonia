@@ -168,10 +168,13 @@ class SynthesisRunner {
     _checkPreempted();
 
     final engine = SynthesisEngine(
-      generate: (prompt, maxTokens) async {
+      generate: (prompt, maxTokens, {grammar}) async {
         await _wakeLock?.hold(wakeLockWindow);
         _checkPreempted();
-        final g = await _llm.generate(prompt, maxOutputTokens: maxTokens);
+        final g = await _llm.generate(prompt, maxOutputTokens: maxTokens, grammar: grammar);
+        _logger?.info('[Synthesis] Turn: ${g.promptTokens} prompt tokens (${g.reusedPromptTokens} reused) read in '
+            '${_seconds(g.readMs)}s; ${g.outputTokens} output tokens written in ${_seconds(g.writeMs)}s; '
+            'threads ${g.readingThreads} reading / ${g.writingThreads} writing on cores ${g.allowedCores}.');
         return (text: g.text, hitOutputCap: g.hitOutputCap);
       },
       profile: profile,
@@ -192,8 +195,8 @@ class SynthesisRunner {
           ExistingSession(id: s.clusterId, folder: s.folder, note: s.synthesizedContent, thoughts: _thoughtsOf(s)),
       ]);
       failedIds.addAll(outcome.failedThoughtIds);
-      _logger?.info('[Synthesis] Organised into ${outcome.plans.length} session(s); '
-          'no valid folder reply for thought ids ${outcome.failedThoughtIds}.');
+      _logger?.info('[Synthesis] Organised into ${outcome.plans.length} session(s)'
+          '${outcome.failedThoughtIds.isEmpty ? '' : '; no valid folder reply for thought ids ${outcome.failedThoughtIds}'}.');
 
       for (final plan in outcome.plans) {
         _checkPreempted();
@@ -242,6 +245,8 @@ class SynthesisRunner {
       if (note != null) _sessions.updateSession(s.clusterId, note: note);
     }
   }
+
+  static String _seconds(int ms) => (ms / 1000).toStringAsFixed(1);
 
   static List<SynthesisThought> _thoughtsOf(SynthesisCluster s) => [
         for (final o in s.originNotes) SynthesisThought(id: o.id, text: o.cleanedText, time: o.timestamp),

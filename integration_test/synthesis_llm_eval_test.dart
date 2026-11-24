@@ -15,9 +15,13 @@ const _modelFile = String.fromEnvironment('SYN_MODEL', defaultValue: 'qwen2.5-1.
 const _ctxList = String.fromEnvironment('SYN_CTX', defaultValue: '2048,4096,8192');
 // Qwen3 models think before answering unless an empty think block follows the assistant header.
 const _emptyThink = bool.fromEnvironment('SYN_EMPTY_THINK');
-// SYN_THREADS sets the CPU thread count; SYN_SKIP_ALL=true leaves out the two turns that take every thought at once.
-const _threads = int.fromEnvironment('SYN_THREADS', defaultValue: 4);
+// SYN_SKIP_ALL=true leaves out the two turns that take every thought at once.
 const _skipAll = bool.fromEnvironment('SYN_SKIP_ALL');
+// SYN_SKIP_WRITE=true leaves out the clean-up write turns (the structured profile does not use them).
+const _skipWrite = bool.fromEnvironment('SYN_SKIP_WRITE');
+// SYN_REUSE=false decodes every prompt from the start; SYN_GRAMMAR=false lets organise turns answer freely.
+const _reuse = bool.fromEnvironment('SYN_REUSE', defaultValue: true);
+const _grammar = bool.fromEnvironment('SYN_GRAMMAR', defaultValue: true);
 final _contextSizes = _ctxList.split(',').map(int.parse).toList();
 // SYN_TEMPLATE=llama3 builds the prompts in the Llama 3 chat format instead of ChatML.
 const _template = String.fromEnvironment('SYN_TEMPLATE', defaultValue: 'chatml');
@@ -68,7 +72,8 @@ void main() {
 
     for (final ctx in _contextSizes) {
       final service = LLMService(
-          config: LLMConfig(kvCacheMaxSize: ctx, threads: _threads, generationTimeout: const Duration(minutes: 10)));
+          config: LLMConfig(
+              kvCacheMaxSize: ctx, reusePromptPrefix: _reuse, generationTimeout: const Duration(minutes: 10)));
       final load = <String, dynamic>{'ctx': ctx, 'status': 'ok'};
       loads.add(load);
       try {
@@ -92,6 +97,7 @@ void main() {
         int maxOutputTokens, {
         List<String>? organiseIds,
       }) async {
+        final grammar = organiseIds != null && _grammar ? buildOrganiseGrammar(inputs.length, defaultFolders) : null;
         final record = <String, dynamic>{
           'id': id,
           'ctx': ctx,
@@ -99,16 +105,24 @@ void main() {
           'input_words': _words(inputs),
           'prompt_chars': prompt.length,
           'max_output_tokens': maxOutputTokens,
+          'grammar': grammar != null,
           'status': 'ok',
         };
         turns.add(record);
         String? output;
         try {
-          final g = await service.generate(prompt, maxOutputTokens: maxOutputTokens);
+          final g = await service.generate(prompt, maxOutputTokens: maxOutputTokens, grammar: grammar);
           output = g.text;
-          record['ttft_ms'] = g.timeToFirstTokenMs;
+          // ttft_ms and output_chunks keep their names for comparison with earlier runs.
+          record['ttft_ms'] = g.readMs;
           record['total_ms'] = g.totalMs;
-          record['output_chunks'] = g.outputChunks;
+          record['output_chunks'] = g.outputTokens;
+          record['prompt_tokens'] = g.promptTokens;
+          record['reused_tokens'] = g.reusedPromptTokens;
+          record['read_ms'] = g.readMs;
+          record['write_ms'] = g.writeMs;
+          record['threads'] = '${g.readingThreads}/${g.writingThreads}';
+          record['cores'] = g.allowedCores;
           record['hit_output_cap'] = g.hitOutputCap;
           record['output'] = g.text;
           if (organiseIds != null) {
@@ -146,12 +160,14 @@ void main() {
             organiseOutputBudget(inputs.length),
             organiseIds: allIds);
       }
-      await write('4_write_r08', ['r08']);
-      await write('5_write_r02_r14_r11', ['r02', 'r14', 'r11']);
-      await write('6_write_r12', ['r12']);
-      await write('7_write_r13', ['r13']);
-      await write('8_write_r10_r11_r12_r13', ['r10', 'r11', 'r12', 'r13']);
-      if (!_skipAll) {
+      if (!_skipWrite) {
+        await write('4_write_r08', ['r08']);
+        await write('5_write_r02_r14_r11', ['r02', 'r14', 'r11']);
+        await write('6_write_r12', ['r12']);
+        await write('7_write_r13', ['r13']);
+        await write('8_write_r10_r11_r12_r13', ['r10', 'r11', 'r12', 'r13']);
+      }
+      if (!_skipAll && !_skipWrite) {
         await turn('9_write_all', 'write', allThoughts, _p(buildWritePrompt(allThoughts, format: _format)),
             writeOutputBudget(_words(allThoughts)));
       }

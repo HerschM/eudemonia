@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:eudemonia/features/ai_processing/llm_config.dart';
 
 void main() {
@@ -7,24 +6,22 @@ void main() {
     test('default configuration has expected values', () {
       const config = LLMConfig();
       expect(config.kvCacheMaxSize, equals(4096));
-      expect(config.kvCacheType, equals(LlamaKvCacheType.f16));
       expect(config.modelInactivityTtl, equals(const Duration(minutes: 3)));
-      expect(config.batchSize, equals(512));
-      expect(config.threads, equals(4));
+      expect(config.promptChunkTokens, equals(64));
+      expect(config.reusePromptPrefix, isTrue);
     });
 
     test('copyWith updates individual fields while preserving others', () {
       const base = LLMConfig();
       final updated = base.copyWith(
         kvCacheMaxSize: 1024,
-        kvCacheType: LlamaKvCacheType.q8_0,
         modelInactivityTtl: const Duration(minutes: 10),
       );
 
       expect(updated.kvCacheMaxSize, equals(1024));
-      expect(updated.kvCacheType, equals(LlamaKvCacheType.q8_0));
       expect(updated.modelInactivityTtl, equals(const Duration(minutes: 10)));
-      expect(updated.threads, equals(4)); // Preserved
+      expect(updated.promptChunkTokens, equals(64)); // Preserved
+      expect(updated.reusePromptPrefix, isTrue); // Preserved
     });
 
     test('equality and hashCode work properly', () {
@@ -44,24 +41,24 @@ void main() {
       expect(str, contains('modelInactivityTtl: 3m'));
     });
 
-    test('greedySampling defaults to true', () {
-      expect(const LLMConfig().greedySampling, isTrue);
-    });
-
-    test('copyWith updates greedySampling, preserving others', () {
+    test('copyWith updates promptChunkTokens and reusePromptPrefix, preserving others', () {
       const base = LLMConfig();
-      final sampled = base.copyWith(greedySampling: false);
-      expect(sampled.greedySampling, isFalse);
-      expect(sampled.threads, equals(4));
+      final changed = base.copyWith(promptChunkTokens: 128, reusePromptPrefix: false);
+      expect(changed.promptChunkTokens, equals(128));
+      expect(changed.reusePromptPrefix, isFalse);
+      expect(changed.kvCacheMaxSize, equals(4096));
     });
 
-    test('configs differing only in greedySampling are not equal', () {
+    test('configs differing only in promptChunkTokens or reusePromptPrefix are not equal', () {
       const base = LLMConfig();
-      expect(base, isNot(equals(base.copyWith(greedySampling: false))));
+      expect(base, isNot(equals(base.copyWith(promptChunkTokens: 32))));
+      expect(base, isNot(equals(base.copyWith(reusePromptPrefix: false))));
     });
 
-    test('toString includes greedySampling', () {
-      expect(const LLMConfig().toString(), contains('greedySampling: true'));
+    test('toString includes promptChunkTokens and reusePromptPrefix', () {
+      final str = const LLMConfig().toString();
+      expect(str, contains('promptChunkTokens: 64'));
+      expect(str, contains('reusePromptPrefix: true'));
     });
 
     test('generationTimeout defaults to 8 minutes', () {
@@ -73,7 +70,7 @@ void main() {
       final updated = const LLMConfig()
           .copyWith(generationTimeout: const Duration(seconds: 240));
       expect(updated.generationTimeout, equals(const Duration(seconds: 240)));
-      expect(updated.threads, equals(4));
+      expect(updated.promptChunkTokens, equals(64));
     });
 
     test('configs differing only in generationTimeout are not equal', () {

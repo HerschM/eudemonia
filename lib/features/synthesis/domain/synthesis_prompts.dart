@@ -79,30 +79,89 @@ const String _writeSystem =
 String buildWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
-/// Condenses the thoughts into a titled, bulleted note ([NoteStyle.structured]). Measured to need
-/// a model larger than Qwen2.5-1.5B to keep the facts (TASK-070).
+/// Writes the thoughts as a titled note of bullets under topic headings ([NoteStyle.structured]).
+/// Needs a model larger than Qwen2.5-1.5B to keep the facts (TASK-070). The worked example and the
+/// rule that every thought must appear were added after Qwen3-4B wrote telegraphic notes that
+/// dropped details (lab comparison 2026-11-22); without the example the format is unstable.
 String buildStructuredWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _structuredSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
 const String _structuredSystem =
-    'You turn spoken thoughts into one organised written note. The thoughts were dictated by one person, in order, '
-    'and transcribed by speech recognition.\n\n'
+    'You turn spoken thoughts into one organised written note. The thoughts were dictated by one person, in order, and transcribed by speech recognition.\n'
+    '\n'
     'Write the note like this:\n'
     '- First line: a title of at most six words.\n'
-    '- Then the content as short bullet points, grouped under a plain one-word or two-word heading when there is more than one topic.\n'
-    '- Each bullet states one point in as few words as possible, in the first person.\n\n'
+    '- Then bullet points, each starting with "- ". When there is more than one topic, put a short heading above each group.\n'
+    '- Each bullet is one short, complete sentence in the first person, as the speaker.\n'
+    '\n'
     'Rules:\n'
-    '- Keep every fact: names, numbers, dates, times, places, items in lists, reasons, decisions, plans.\n'
+    '- Keep every fact: names, numbers, dates, times, places, items in lists, reasons, decisions, plans, purchases, feelings.\n'
+    '- Keep what has already happened, what is planned and what is only wished as the speaker said it.\n'
     '- Leave out filler, repetition, false starts and remarks about the recording itself.\n'
     '- When the speaker corrects themselves, keep only the corrected version.\n'
+    '- Every numbered thought must appear in the note. Go through them in order and leave none out, including what the speaker says at the very end.\n'
     '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
-    '- Output only the note.';
+    '- Output only the note.\n'
+    '\n'
+    'Example:\n'
+    'Thoughts:\n'
+    '1. Remind me to email Daniel the contract before Friday.\n'
+    '2. Okay so, um, I went to see the flat on Park Street yesterday and honestly I liked it a lot, it has two bedrooms and the rent is eighteen hundred a month, which is, like, two hundred more than what we pay now. The landlord said we need to decide by the tenth. I already sent him our documents this morning. Sam still wants to see it, so we will go together on Sunday. I am a bit worried about the noise from the main road though. So yeah, that is where things are.\n'
+    'Note:\n'
+    '**Contract and Park Street Flat**\n'
+    '\n'
+    '**Tasks**\n'
+    '- I need to email Daniel the contract before Friday.\n'
+    '\n'
+    '**Flat**\n'
+    '- I saw the flat on Park Street yesterday and liked it a lot.\n'
+    '- It has two bedrooms and the rent is 1,800 a month, 200 more than we pay now.\n'
+    '- The landlord needs our decision by the 10th.\n'
+    '- I already sent him our documents this morning.\n'
+    '- Sam and I will see it together on Sunday.\n'
+    '- I am a bit worried about the noise from the main road.';
 
-/// Output token budget for a structured write turn.
-int structuredOutputBudget(int inputWords) => inputWords + 96;
+/// Output token budget for a structured write turn. Measured with Qwen3-4B: a complete note takes
+/// 1.2-2.1 tokens per spoken word (headings and full sentences).
+int structuredOutputBudget(int inputWords) => (inputWords * 1.3).round() + 96;
 
 /// Output token budget for an organise turn: one short "n: Folder" line per thought.
 int organiseOutputBudget(int thoughtCount) => 8 * thoughtCount + 8;
+
+/// GBNF grammar for the reply to an organise turn of [thoughtCount] thoughts: exactly the lines
+/// `1: <folder>` … `n: <folder>` separated by `\n`, each folder one of [folders], nothing else.
+/// The form is fixed; which folder is the model's choice. [parseOrganiseReply] stays the check.
+String buildOrganiseGrammar(int thoughtCount, List<FolderDefinition> folders) {
+  if (thoughtCount <= 0) throw ArgumentError.value(thoughtCount, 'thoughtCount', 'must be positive');
+  if (folders.isEmpty) throw ArgumentError.value(folders, 'folders', 'must not be empty');
+  final lines = [for (var i = 1; i <= thoughtCount; i++) '"${i == 1 ? '' : r'\n'}$i: " folder'];
+  return 'root ::= ${lines.join(' ')}\n'
+      'folder ::= ${folders.map((f) => '"${_gbnfEscape(f.name)}"').join(' | ')}\n';
+}
+
+/// Escapes [text] for the inside of a GBNF string literal.
+String _gbnfEscape(String text) {
+  final out = StringBuffer();
+  for (final rune in text.runes) {
+    switch (rune) {
+      case 0x5C:
+        out.write(r'\\');
+      case 0x22:
+        out.write(r'\"');
+      case 0x0A:
+        out.write(r'\n');
+      case 0x0D:
+        out.write(r'\r');
+      case 0x09:
+        out.write(r'\t');
+      case < 0x20:
+        out.write('\\x${rune.toRadixString(16).padLeft(2, '0')}');
+      default:
+        out.writeCharCode(rune);
+    }
+  }
+  return out.toString();
+}
 
 /// Output token budget for a write turn, from the words in its input.
 int writeOutputBudget(int inputWords) => (inputWords * 1.6).round() + 96;
@@ -137,3 +196,36 @@ List<String>? parseOrganiseReply(String reply, int thoughtCount, List<FolderDefi
   }
   return labels;
 }
+
+const Set<String> _commonWords = {
+  'that', 'this', 'with', 'have', 'will', 'from', 'they', 'them', 'then', 'than', 'what', 'when', 'where', 'which',
+  'would', 'could', 'should', 'about', 'there', 'their', 'been', 'were', 'into', 'just', 'also', 'very', 'really',
+  'think', 'because', 'going', 'still', 'some', 'more', 'most', 'much', 'many', 'only', 'even', 'like', 'yeah',
+  'okay', 'well', 'want', 'need',
+};
+
+/// Distinctive words of [text], cut to five letters so that word endings do not matter.
+Set<String> _contentWords(String text) => {
+      for (final m in RegExp(r'[a-z0-9]+').allMatches(text.toLowerCase()))
+        if ((m[0]!.length >= 4 || int.tryParse(m[0]!) != null) && !_commonWords.contains(m[0]))
+          m[0]!.length > 5 ? m[0]!.substring(0, 5) : m[0]!,
+    };
+
+/// Share of the distinctive words of [thought] that appear in [note] (1.0 when it has none).
+double thoughtCoverage(String thought, String note) {
+  final words = _contentWords(thought);
+  if (words.isEmpty) return 1;
+  return words.intersection(_contentWords(note)).length / words.length;
+}
+
+/// A note that shares fewer distinctive words than this with a thought has left the thought out.
+/// Measured with Qwen3-4B on the user's sessions: a dropped thought scores 0.0, a telegraphic
+/// summary 0.28-0.42, a faithful note 0.67-1.0.
+const double minThoughtCoverage = 0.3;
+
+/// 1-based positions of the thoughts that [note] leaves out. Thoughts with fewer than four
+/// distinctive words are not judged.
+List<int> thoughtsMissingFrom(String note, List<String> thoughts) => [
+      for (var i = 0; i < thoughts.length; i++)
+        if (_contentWords(thoughts[i]).length >= 4 && thoughtCoverage(thoughts[i], note) < minThoughtCoverage) i + 1,
+    ];

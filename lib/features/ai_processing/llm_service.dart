@@ -10,25 +10,45 @@ export 'llm_config.dart';
 /// Result of one successful [LLMService.generate] call.
 @immutable
 class LlmGeneration {
-  /// Generated text with the `<|im_end|>`/`<|eot_id|>` stop markers and surrounding whitespace removed.
+  /// Generated text with surrounding whitespace removed.
   final String text;
 
-  /// Milliseconds from prompt submission to the first streamed chunk (0 if none arrived).
-  final int timeToFirstTokenMs;
-  final int totalMs;
+  final int promptTokens;
 
-  /// Streamed chunks received; one per generated token except tokens that end mid-character.
-  final int outputChunks;
+  /// Prompt tokens whose memory was reused from the previous prompt.
+  final int reusedPromptTokens;
+  final int outputTokens;
+
+  /// Milliseconds spent reading (tokenizing and decoding) the prompt.
+  final int readMs;
+
+  /// Milliseconds spent writing the reply.
+  final int writeMs;
+
+  /// Milliseconds from prompt submission to the reported completion.
+  final int totalMs;
 
   /// True when the engine ended generation because `maxOutputTokens` was reached.
   final bool hitOutputCap;
 
+  final int readingThreads;
+  final int writingThreads;
+
+  /// The cores the process was allowed to run on, such as `0-5`.
+  final String allowedCores;
+
   const LlmGeneration({
     required this.text,
-    required this.timeToFirstTokenMs,
+    required this.promptTokens,
+    required this.reusedPromptTokens,
+    required this.outputTokens,
+    required this.readMs,
+    required this.writeMs,
     required this.totalMs,
-    required this.outputChunks,
     required this.hitOutputCap,
+    required this.readingThreads,
+    required this.writingThreads,
+    required this.allowedCores,
   });
 }
 
@@ -47,48 +67,66 @@ class LlmEngineStuckException implements Exception {
   String toString() => 'LlmEngineStuckException: the language engine did not stop; it was disposed.';
 }
 
-/// How the engine reported a prompt finished.
+/// How the engine reported a prompt finished: the whole reply and how it was produced.
 @immutable
 class LlmPromptCompletion {
+  /// The reply text as generated (incomplete when [stopped]).
+  final String text;
+
   /// True when generation ended because the prompt's `maxOutputTokens` was reached.
   final bool hitOutputCap;
 
   /// True when generation ended because [LlmPromptSession.stop] was requested.
   final bool stopped;
 
-  const LlmPromptCompletion({required this.hitOutputCap, required this.stopped});
+  final int promptTokens;
+  final int reusedPromptTokens;
+  final int outputTokens;
+  final int readMs;
+  final int writeMs;
+  final int readingThreads;
+  final int writingThreads;
+  final String allowedCores;
+
+  const LlmPromptCompletion({
+    required this.text,
+    required this.hitOutputCap,
+    required this.stopped,
+    this.promptTokens = 0,
+    this.reusedPromptTokens = 0,
+    this.outputTokens = 0,
+    this.readMs = 0,
+    this.writeMs = 0,
+    this.readingThreads = 0,
+    this.writingThreads = 0,
+    this.allowedCores = '',
+  });
 }
 
-/// One prompt in flight on an [LlmEngine]. Only this prompt's chunks and completion are visible.
+/// One prompt in flight on an [LlmEngine]. Only this prompt's completion is visible.
 abstract class LlmPromptSession {
-  /// Text chunks of this prompt only. Single-subscription; chunks are buffered until listened to.
-  Stream<String> get chunks;
-
   /// Completes when the engine reports this prompt finished, including after [stop]. Completes
   /// with an error when generation failed.
   Future<LlmPromptCompletion> get completion;
 
-  /// Asks the engine to end this prompt; [completion] then reports `stopped`.
+  /// Asks the engine to end this prompt; [completion] then reports `stopped`. The engine notices
+  /// within one prompt chunk or one generated token.
   Future<void> stop();
-
-  /// Detaches from this prompt; later chunks are dropped.
-  Future<void> close();
 }
 
 /// Thin seam over the llama.cpp worker so [LLMService] is unit-testable.
 abstract class LlmEngine {
   Future<void> load(String modelPath);
 
-  /// Starts a generation from an empty context that ends after at most [maxOutputTokens] tokens.
-  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens});
+  /// Starts a generation that ends after at most [maxOutputTokens] tokens, constrained by the
+  /// GBNF [grammar] when given. Its result never depends on earlier prompts.
+  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens, String? grammar});
 
   /// Frees the model and stops the worker; completes once nothing of it remains running.
   Future<void> dispose();
 }
 
 class LLMService {
-  static const _stopMarkers = ['<|im_end|>', '<|eot_id|>'];
-
   final LLMConfig config;
   final AppLogger? _logger;
   final LlmEngine Function() _engineFactory;
@@ -107,9 +145,9 @@ class LLMService {
     this.config = const LLMConfig(),
     this._logger,
     LlmEngine Function()? engineFactory,
-    // Reading a long prompt is one uninterruptible native call (tens of seconds on a phone), and
-    // giving up means killing the worker without freeing the model, so wait well beyond it.
-    this.stopTimeout = const Duration(minutes: 4),
+    // A stop is noticed after the prompt chunk or token being decoded (seconds on a phone even
+    // when hot), and giving up means killing the worker without freeing the model.
+    this.stopTimeout = const Duration(minutes: 1),
   }) : _engineFactory = engineFactory ?? (() => LlamaIsolateEngine(config, _logger));
 
   bool get isInitialized => _isInitialized;
@@ -125,19 +163,22 @@ class LLMService {
     await engine.load(modelPath);
     _engine = engine;
     _isInitialized = true;
-    _logger?.info('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, type: ${config.kvCacheType.name}).');
+    _logger?.info('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, '
+        'chunk: ${config.promptChunkTokens}, prefix reuse: ${config.reusePromptPrefix}).');
   }
 
-  /// Runs one stateless generation. [prompt] is the complete, already-formatted model prompt.
+  /// Runs one generation whose result never depends on earlier calls. [prompt] is the complete,
+  /// already-formatted model prompt; [grammar] (GBNF) constrains the reply when given.
   ///
   /// Throws [StateError] when the model is not loaded or another generation is running,
   /// [TimeoutException] after [LLMConfig.generationTimeout], [LlmCancelledException] after
-  /// [cancelActiveGeneration], and rethrows engine errors. In every early-exit case the
-  /// engine is stopped and has reported completion before this returns or throws; if it
-  /// never does, the service is disposed and [LlmEngineStuckException] is thrown.
-  /// Partial text is never returned as success. The engine ends generation after
-  /// [maxOutputTokens] tokens, reported through [LlmGeneration.hitOutputCap].
-  Future<LlmGeneration> generate(String prompt, {required int maxOutputTokens}) async {
+  /// [cancelActiveGeneration] (or when the engine reports the prompt stopped for any other
+  /// reason), and rethrows engine errors. In every early-exit case the engine is stopped and
+  /// has reported completion before this returns or throws; if it never does, the service is
+  /// disposed and [LlmEngineStuckException] is thrown. Partial text is never returned as
+  /// success. The engine ends generation after [maxOutputTokens] tokens, reported through
+  /// [LlmGeneration.hitOutputCap].
+  Future<LlmGeneration> generate(String prompt, {required int maxOutputTokens, String? grammar}) async {
     final engine = _engine;
     if (!_isInitialized || engine == null) {
       throw StateError('LLMService.generate called before the model was loaded.');
@@ -151,69 +192,50 @@ class LLMService {
 
     final idle = _activeIdle = Completer<void>();
     final cancelRequested = _cancelRequested = Completer<void>();
-    final buffer = StringBuffer();
     final stopwatch = Stopwatch()..start();
-    int? firstChunkMs;
-    var chunkCount = 0;
-    var hitCap = false;
-    var accepting = true;
-    LlmPromptSession? session;
-    StreamSubscription<String>? chunkSub;
+    LlmPromptCompletion completion;
 
     try {
-      session = await engine.sendPrompt(prompt, maxOutputTokens: maxOutputTokens);
-      final active = session;
-      chunkSub = active.chunks.listen((chunk) {
-        if (!accepting) return;
-        firstChunkMs ??= stopwatch.elapsedMilliseconds;
-        chunkCount++;
-        buffer.write(chunk);
-      });
+      final session = await engine.sendPrompt(prompt, maxOutputTokens: maxOutputTokens, grammar: grammar);
 
       Object? failure;
-      LlmPromptCompletion? completion;
+      LlmPromptCompletion? done;
       try {
-        final first = await Future.any<Object?>([active.completion, cancelRequested.future])
+        final first = await Future.any<Object?>([session.completion, cancelRequested.future])
             .timeout(config.generationTimeout);
-        if (first is LlmPromptCompletion) completion = first;
+        if (first is LlmPromptCompletion) done = first;
       } on TimeoutException catch (e) {
         _logger?.warning('[LLMService] Generation timed out after ${config.generationTimeout.inSeconds}s. Stopping.');
         failure = e;
       }
-      // Chunks sent just before the completion event may still be queued on the stream.
-      if (failure == null) await Future<void>.delayed(Duration.zero);
       if (failure == null && cancelRequested.isCompleted) failure = const LlmCancelledException();
+      // A prompt stopped by anything but this call (the engine being disposed) ended mid-reply.
+      if (failure == null && done!.stopped) failure = const LlmCancelledException();
 
       if (failure != null) {
-        accepting = false;
-        await _stopAndAwaitCompletion(active);
+        await _stopAndAwaitCompletion(session);
         throw failure;
       }
-      hitCap = completion!.hitOutputCap;
+      completion = done!;
     } finally {
-      accepting = false;
       stopwatch.stop();
-      await chunkSub?.cancel();
-      try {
-        await session?.close();
-      } catch (e) {
-        _logger?.warning('[LLMService] Error closing generation session: $e');
-      }
       _activeIdle = null;
       _cancelRequested = null;
       idle.complete();
     }
 
-    var text = buffer.toString();
-    for (final marker in _stopMarkers) {
-      text = text.split(marker).first;
-    }
     return LlmGeneration(
-      text: text.trim(),
-      timeToFirstTokenMs: firstChunkMs ?? 0,
+      text: completion.text.trim(),
+      promptTokens: completion.promptTokens,
+      reusedPromptTokens: completion.reusedPromptTokens,
+      outputTokens: completion.outputTokens,
+      readMs: completion.readMs,
+      writeMs: completion.writeMs,
       totalMs: stopwatch.elapsedMilliseconds,
-      outputChunks: chunkCount,
-      hitOutputCap: hitCap,
+      hitOutputCap: completion.hitOutputCap,
+      readingThreads: completion.readingThreads,
+      writingThreads: completion.writingThreads,
+      allowedCores: completion.allowedCores,
     );
   }
 
@@ -270,4 +292,3 @@ final llmServiceProvider = Provider<LLMService>((ref) {
   final logger = ref.watch(appLoggerProvider);
   return LLMService(config: config, logger: logger);
 });
-

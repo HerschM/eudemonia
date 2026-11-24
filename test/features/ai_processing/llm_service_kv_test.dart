@@ -4,10 +4,10 @@ import 'package:eudemonia/features/ai_processing/llm_service.dart';
 void main() {
   group('LLMService config plumbing', () {
     test('custom LLMConfig is retained by the service', () async {
-      const customConfig = LLMConfig(kvCacheMaxSize: 8192, threads: 2);
+      const customConfig = LLMConfig(kvCacheMaxSize: 8192, promptChunkTokens: 32);
       final service = LLMService(config: customConfig);
       expect(service.config.kvCacheMaxSize, equals(8192));
-      expect(service.config.threads, equals(2));
+      expect(service.config.promptChunkTokens, equals(32));
       await service.dispose();
     });
 

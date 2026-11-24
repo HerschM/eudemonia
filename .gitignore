@@ -50,3 +50,6 @@ models/
 # Real voice recordings used for on-device evaluation are personal data: never commit them.
 integration_test/voice_samples/real/*
 !integration_test/voice_samples/real/.gitkeep
+
+# Temporary git worktrees of delegated agents
+.claude/worktrees/

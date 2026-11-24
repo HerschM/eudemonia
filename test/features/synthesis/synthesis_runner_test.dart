@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
@@ -11,7 +12,9 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart
 import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_session_store.dart';
+import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_prompts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -51,34 +54,36 @@ class FakeSTTService extends STTService {
 typedef Responder = FutureOr<String?> Function(String prompt);
 
 class FakeSession implements LlmPromptSession {
-  final StreamController<String> _chunks = StreamController<String>();
   final Completer<LlmPromptCompletion> _done = Completer<LlmPromptCompletion>();
 
   FakeSession(Future<String?> reply) {
     _done.future.ignore();
     reply.then((text) {
       if (text == null || _done.isCompleted) return;
-      _chunks.add(text);
-      _done.complete(const LlmPromptCompletion(hitOutputCap: false, stopped: false));
+      _done.complete(LlmPromptCompletion(
+        text: text,
+        hitOutputCap: false,
+        stopped: false,
+        promptTokens: 300,
+        reusedPromptTokens: 256,
+        outputTokens: 12,
+        readMs: 2500,
+        writeMs: 1500,
+        readingThreads: 6,
+        writingThreads: 2,
+        allowedCores: '0-5',
+      ));
     }, onError: (Object e) {
       if (!_done.isCompleted) _done.completeError(e);
     });
   }
 
   @override
-  Stream<String> get chunks => _chunks.stream;
-
-  @override
   Future<LlmPromptCompletion> get completion => _done.future;
 
   @override
   Future<void> stop() async {
-    if (!_done.isCompleted) _done.complete(const LlmPromptCompletion(hitOutputCap: false, stopped: true));
-  }
-
-  @override
-  Future<void> close() async {
-    await _chunks.close();
+    if (!_done.isCompleted) _done.complete(const LlmPromptCompletion(text: '', hitOutputCap: false, stopped: true));
   }
 }
 
@@ -92,6 +97,20 @@ class RecordingNotesRepository extends NotesRepository {
     saves.add((note.id, note.synthesisAttempts));
     return super.saveNote(note);
   }
+}
+
+/// Keeps every info line in memory instead of writing a log file.
+class RecordingLogger extends AppLogger {
+  final List<String> infos = [];
+
+  @override
+  Future<void> info(String message) async => infos.add(message);
+
+  @override
+  Future<void> warning(String message) async {}
+
+  @override
+  Future<void> error(String message, {dynamic error, StackTrace? stackTrace}) async {}
 }
 
 /// Appends 'wake-hold' / 'wake-release' to the same log as the engine so their order is observable.
@@ -127,6 +146,7 @@ class FakeEngine implements LlmEngine {
   Object? loadError;
   bool _loaded = false;
   final List<String> prompts = [];
+  final List<String?> grammars = [];
 
   /// Called when a prompt is sent, before its reply is produced.
   void Function(String prompt)? onPrompt;
@@ -148,9 +168,10 @@ class FakeEngine implements LlmEngine {
   }
 
   @override
-  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens}) async {
+  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens, String? grammar}) async {
     if (!_loaded) throw StateError('FakeEngine used before load');
     prompts.add(prompt);
+    grammars.add(grammar);
     onPrompt?.call(prompt);
     return FakeSession(Future(() => responder(prompt)));
   }
@@ -233,7 +254,7 @@ void main() {
 
   List<SynthesisCluster> sessions() => app().read(synthesisRepositoryProvider);
 
-  SynthesisRunner runner({CpuWakeLock? wakeLock}) {
+  SynthesisRunner runner({CpuWakeLock? wakeLock, AppLogger? logger}) {
     final c = app();
     return SynthesisRunner(
       notes: notes,
@@ -245,6 +266,7 @@ void main() {
       isCaptureActive: () => captureActive,
       modelsDir: () async => '/models',
       wakeLock: wakeLock,
+      logger: logger,
       onRunningChanged: runningChanges.add,
       onNotesChanged: () => notesChanged++,
     );
@@ -312,6 +334,26 @@ void main() {
       expect(runningChanges, [true, false]);
       expect(notesChanged, greaterThan(0));
       expectModelReleased();
+    });
+
+    test('organise turns are bound to the folder grammar, write turns are not; each turn logs its figures', () async {
+      await thought('Refactor the queue.', 0);
+      await thought('Clean the home office.', 5);
+      final logger = RecordingLogger();
+
+      expect(await runner(logger: logger).run(manual: false), SynthesisRunResult.completed);
+
+      expect(engine.prompts.length, 3);
+      expect(isOrganise(engine.prompts.first), isTrue);
+      expect(engine.grammars.first, buildOrganiseGrammar(2, defaultFolders));
+      expect(engine.grammars.skip(1), [null, null]);
+      final turns = logger.infos.where((l) => l.startsWith('[Synthesis] Turn:')).toList();
+      expect(turns.length, 3);
+      expect(
+        turns.first,
+        '[Synthesis] Turn: 300 prompt tokens (256 reused) read in 2.5s; 12 output tokens written in 1.5s; '
+        'threads 6 reading / 2 writing on cores 0-5.',
+      );
     });
 
     test('an organise failure creates no session and counts an attempt; the thought stays in Capture', () async {

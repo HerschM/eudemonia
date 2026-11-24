@@ -58,7 +58,8 @@ class OrganiseOutcome {
 }
 
 typedef SynthesisReply = ({String text, bool hitOutputCap});
-typedef SynthesisGenerate = Future<SynthesisReply> Function(String prompt, int maxOutputTokens);
+/// Generates the reply to [prompt]; [grammar] (GBNF) constrains its form when given.
+typedef SynthesisGenerate = Future<SynthesisReply> Function(String prompt, int maxOutputTokens, {String? grammar});
 
 /// Reports a model reply the engine rejected: the turn kind, the thought ids of the turn and why.
 typedef SynthesisRejection = void Function(String kind, List<int> thoughtIds, String reason);
@@ -114,9 +115,9 @@ class SynthesisEngine {
       : '${reply.hitOutputCap ? 'reached the output limit' : 'not in the expected form'}: "${_excerpt(reply.text)}"';
 
   /// Calls the model; a timeout is reported as null (an invalid reply), other errors propagate.
-  Future<SynthesisReply?> _call(String prompt, int maxTokens) async {
+  Future<SynthesisReply?> _call(String prompt, int maxTokens, {String? grammar}) async {
     try {
-      return await _generate(prompt, maxTokens);
+      return await _generate(prompt, maxTokens, grammar: grammar);
     } on TimeoutException {
       return null;
     }
@@ -177,7 +178,8 @@ class SynthesisEngine {
       openSessions: ctx,
       format: profile.chatFormat,
     );
-    final reply = await _call(prompt, organiseOutputBudget(batch.length));
+    final reply = await _call(prompt, organiseOutputBudget(batch.length),
+        grammar: buildOrganiseGrammar(batch.length, folders));
     final labels = reply == null || reply.hitOutputCap ? null : parseOrganiseReply(reply.text, batch.length, folders);
     if (labels == null) {
       _onRejected?.call('organise', [for (final t in batch) t.id], _replyProblem(reply));
@@ -260,8 +262,10 @@ class SynthesisEngine {
       final ok = text.isNotEmpty &&
           out <= profile.maxOutputRatio * inputWords + 30 &&
           (inputWords < 30 || out >= profile.minOutputRatio * inputWords);
-      if (ok) return text;
-      _onRejected?.call('write', [for (final t in thoughts) t.id], '$out words written from $inputWords');
+      final missing = ok ? thoughtsMissingFrom(text, texts) : const <int>[];
+      if (ok && missing.isEmpty) return text;
+      _onRejected?.call('write', [for (final t in thoughts) t.id],
+          ok ? 'the note leaves out thought(s) $missing' : '$out words written from $inputWords');
     } else {
       _onRejected?.call('write', [for (final t in thoughts) t.id],
           reply == null ? 'timed out' : 'reached the output limit');

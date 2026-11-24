@@ -1,49 +1,23 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math' show max;
-import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
+import 'cpu_thread_policy.dart';
+import 'llm_generation_loop.dart';
 import 'llm_service.dart';
+import 'native/llama_backend.dart';
 
-/// One `getNextWithStatus()` step: (text, done, contextLimitReached).
-typedef LlamaTokenStep = (String, bool, bool) Function();
-
-/// Outcome of [runTokenLoop]; [error] is set when the token source threw.
-typedef TokenLoopOutcome = ({bool hitOutputCap, bool stopped, String? error});
-
-/// Generates tokens from [next] until done, the context limit, [maxOutputTokens] calls or
-/// [stopRequested]. Non-empty pieces go to [onChunk]. Returns to the event loop after every
-/// token so a stop message queued on the worker's port is read mid-generation.
-Future<TokenLoopOutcome> runTokenLoop({
-  required LlamaTokenStep next,
-  required int maxOutputTokens,
-  required void Function(String chunk) onChunk,
-  required bool Function() stopRequested,
-}) async {
-  var count = 0;
-  try {
-    while (true) {
-      final (text, done, contextLimit) = next();
-      count++;
-      if (text.isNotEmpty) onChunk(text);
-      if (done || contextLimit) return (hitOutputCap: false, stopped: false, error: null);
-      if (count >= maxOutputTokens) return (hitOutputCap: true, stopped: false, error: null);
-      await Future<void>.delayed(Duration.zero);
-      if (stopRequested()) return (hitOutputCap: false, stopped: true, error: null);
-    }
-  } catch (e) {
-    return (hitOutputCap: false, stopped: false, error: e.toString());
-  }
-}
-
-/// [LlmEngine] that owns a `Llama` instance on one long-lived worker isolate. Generation
-/// yields between tokens, so stop and dispose take effect within one token.
+/// [LlmEngine] that owns a [NativeLlamaBackend] and its [LlmGenerationLoop] on one long-lived
+/// worker isolate. The loop returns to the worker's event loop after every prompt chunk and every
+/// generated token, so stop and dispose take effect within one of them.
 class LlamaIsolateEngine implements LlmEngine {
   static const Duration disposeTimeout = Duration(seconds: 5);
 
   final LLMConfig config;
   final AppLogger? _logger;
+
+  /// The libllama to open; the ggml libraries are looked up next to it.
+  final String libraryPath;
 
   Isolate? _isolate;
   SendPort? _commands;
@@ -54,7 +28,7 @@ class LlamaIsolateEngine implements LlmEngine {
   _IsolatePromptSession? _current;
   int _nextPromptId = 0;
 
-  LlamaIsolateEngine(this.config, [this._logger]);
+  LlamaIsolateEngine(this.config, [this._logger, this.libraryPath = NativeLlamaBackend.defaultLibraryPath]);
 
   @override
   Future<void> load(String modelPath) async {
@@ -62,17 +36,6 @@ class LlamaIsolateEngine implements LlmEngine {
     if (!await File(modelPath).exists()) {
       throw Exception('LLM model not found at $modelPath');
     }
-
-    final contextParams = ContextParams()
-      ..nCtx = config.kvCacheMaxSize
-      // The binding rejects any prompt longer than nBatch, so the batch must span the context.
-      ..nBatch = max(config.batchSize, config.kvCacheMaxSize)
-      // The per-call cap is enforced by the worker's token loop; -1 is unlimited.
-      ..nPredict = -1
-      ..nThreads = config.threads
-      ..nThreadsBatch = config.threads
-      ..typeK = config.kvCacheType
-      ..typeV = config.kvCacheType;
 
     final replies = _replies = ReceivePort();
     final exit = _exit = ReceivePort();
@@ -93,14 +56,11 @@ class LlamaIsolateEngine implements LlmEngine {
       final commands = _commands = await ready.future;
       commands.send(<Object?>[
         _Op.load.index,
-        Llama.libraryPath,
+        libraryPath,
         modelPath,
-        // The bundled library is CPU-only; the load fails unless no GPU device is selected.
-        ModelParams()
-          ..nGpuLayers = 0
-          ..mainGpu = -1,
-        contextParams,
-        SamplerParams()..greedy = config.greedySampling,
+        config.kvCacheMaxSize,
+        config.promptChunkTokens,
+        config.reusePromptPrefix,
       ]);
       final error = await loaded.future.timeout(config.modelLoadTimeout);
       if (error != null) throw Exception('The language model failed to load: $error');
@@ -118,19 +78,16 @@ class LlamaIsolateEngine implements LlmEngine {
       case _Reply.loaded:
         final loaded = _loadReply;
         if (loaded != null && !loaded.isCompleted) loaded.complete(reply[1] as String?);
-      case _Reply.chunk:
-        final session = _current;
-        if (session != null && session.id == reply[1]) session._addChunk(reply[2] as String);
       case _Reply.done:
         final session = _current;
         // Messages for a prompt that is no longer current are ignored.
         if (session == null || session.id != reply[1]) return;
         _current = null;
-        final error = reply[4] as String?;
+        final error = reply[2] as String?;
         if (error != null) {
           session._fail(Exception('Language model error: $error'));
         } else {
-          session._finish(LlmPromptCompletion(hitOutputCap: reply[2] as bool, stopped: reply[3] as bool));
+          session._finish(reply[3] as LlmPromptCompletion);
         }
       case _Reply.disposed:
         final ack = _disposeAck;
@@ -154,7 +111,7 @@ class LlamaIsolateEngine implements LlmEngine {
   }
 
   @override
-  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens}) async {
+  Future<LlmPromptSession> sendPrompt(String prompt, {required int maxOutputTokens, String? grammar}) async {
     final commands = _commands;
     if (commands == null || _isolate == null) {
       throw StateError('LlamaIsolateEngine.sendPrompt called before load.');
@@ -162,7 +119,7 @@ class LlamaIsolateEngine implements LlmEngine {
     if (_current != null) throw StateError('LlamaIsolateEngine.sendPrompt called while a prompt is running.');
     final id = _nextPromptId++;
     final session = _current = _IsolatePromptSession(id, () => commands.send(<Object?>[_Op.stop.index, id]));
-    commands.send(<Object?>[_Op.prompt.index, id, prompt, maxOutputTokens]);
+    commands.send(<Object?>[_Op.prompt.index, id, prompt, maxOutputTokens, grammar]);
     return session;
   }
 
@@ -210,15 +167,10 @@ class LlamaIsolateEngine implements LlmEngine {
 class _IsolatePromptSession implements LlmPromptSession {
   final int id;
   final void Function() _sendStop;
-  final StreamController<String> _chunks = StreamController<String>();
   final Completer<LlmPromptCompletion> _completion = Completer<LlmPromptCompletion>();
 
   _IsolatePromptSession(this.id, this._sendStop) {
     _completion.future.ignore();
-  }
-
-  void _addChunk(String chunk) {
-    if (!_chunks.isClosed) _chunks.add(chunk);
   }
 
   void _finish(LlmPromptCompletion completion) {
@@ -230,56 +182,61 @@ class _IsolatePromptSession implements LlmPromptSession {
   }
 
   @override
-  Stream<String> get chunks => _chunks.stream;
-
-  @override
   Future<LlmPromptCompletion> get completion => _completion.future;
 
   @override
   Future<void> stop() async {
     if (!_completion.isCompleted) _sendStop();
   }
-
-  @override
-  Future<void> close() async {
-    await _chunks.close();
-  }
 }
 
 enum _Op { load, prompt, stop, dispose }
 
-enum _Reply { loaded, chunk, done, disposed }
+enum _Reply { loaded, done, disposed }
 
-/// Worker isolate: owns the `Llama` instance. Each prompt starts from an empty context.
+/// Worker isolate: owns the backend and the loop, one prompt at a time. The thread counts are
+/// chosen again before every prompt because the allowed cores change with the app's state.
 void _llamaWorkerMain(SendPort replies) {
   final commands = ReceivePort();
-  Llama? llama;
+  LlamaBackend? backend;
+  LlmGenerationLoop? loop;
   int? runningId;
   var stopRequested = false;
   Future<void> running = Future.value();
 
-  Future<void> generate(int id, String prompt, int maxOutputTokens) async {
-    final active = llama;
-    if (active == null) {
-      replies.send(<Object?>[_Reply.done.index, id, false, false, 'model not loaded']);
+  Future<void> generate(int id, String prompt, int maxOutputTokens, String? grammar) async {
+    final activeBackend = backend;
+    final activeLoop = loop;
+    if (activeBackend == null || activeLoop == null) {
+      replies.send(<Object?>[_Reply.done.index, id, 'model not loaded']);
       return;
     }
-    TokenLoopOutcome outcome;
     try {
-      // Resets position, prompt and pending bytes and clears the KV memory; setPrompt then
-      // also resets the sampler because the position is 0 (AGENTS.md 4.C).
-      active.clear();
-      active.setPrompt(prompt);
-      outcome = await runTokenLoop(
-        next: active.getNextWithStatus,
-        maxOutputTokens: maxOutputTokens,
-        onChunk: (chunk) => replies.send(<Object?>[_Reply.chunk.index, id, chunk]),
-        stopRequested: () => stopRequested,
-      );
+      final threads = readCpuThreads();
+      activeBackend.setThreads(reading: threads.reading, writing: threads.writing);
+      final r = await activeLoop.run(prompt,
+          maxOutputTokens: maxOutputTokens, grammar: grammar, stopRequested: () => stopRequested);
+      replies.send(<Object?>[
+        _Reply.done.index,
+        id,
+        null,
+        LlmPromptCompletion(
+          text: r.text,
+          hitOutputCap: r.hitOutputCap,
+          stopped: r.stopped,
+          promptTokens: r.promptTokens,
+          reusedPromptTokens: r.reusedPromptTokens,
+          outputTokens: r.outputTokens,
+          readMs: r.readMs,
+          writeMs: r.writeMs,
+          readingThreads: threads.reading,
+          writingThreads: threads.writing,
+          allowedCores: threads.allowedCores,
+        ),
+      ]);
     } catch (e) {
-      outcome = (hitOutputCap: false, stopped: false, error: e.toString());
+      replies.send(<Object?>[_Reply.done.index, id, e.toString()]);
     }
-    replies.send(<Object?>[_Reply.done.index, id, outcome.hitOutputCap, outcome.stopped, outcome.error]);
   }
 
   replies.send(commands.sendPort);
@@ -289,14 +246,13 @@ void _llamaWorkerMain(SendPort replies) {
     switch (_Op.values[request[0] as int]) {
       case _Op.load:
         try {
-          final libraryPath = request[1] as String?;
-          if (libraryPath != null) Llama.libraryPath = libraryPath;
-          llama = Llama(
+          final loaded = backend = NativeLlamaBackend.load(
             request[2] as String,
-            modelParams: request[3] as ModelParams,
-            contextParams: request[4] as ContextParams,
-            samplerParams: request[5] as SamplerParams,
+            libraryPath: request[1] as String,
+            contextSize: request[3] as int,
+            batchSize: request[4] as int,
           );
+          loop = LlmGenerationLoop(loaded, reusePromptPrefix: request[5] as bool);
           replies.send(<Object?>[_Reply.loaded.index, null]);
         } catch (e) {
           replies.send(<Object?>[_Reply.loaded.index, e.toString()]);
@@ -304,21 +260,23 @@ void _llamaWorkerMain(SendPort replies) {
       case _Op.prompt:
         final id = request[1] as int;
         if (runningId != null) {
-          replies.send(<Object?>[_Reply.done.index, id, false, false, 'another prompt is running']);
+          replies.send(<Object?>[_Reply.done.index, id, 'another prompt is running']);
           return;
         }
         runningId = id;
         stopRequested = false;
-        running = generate(id, request[2] as String, request[3] as int).whenComplete(() => runningId = null);
+        running = generate(id, request[2] as String, request[3] as int, request[4] as String?)
+            .whenComplete(() => runningId = null);
       case _Op.stop:
         if (runningId != null && runningId == request[1]) stopRequested = true;
       case _Op.dispose:
         stopRequested = true;
         await running;
         try {
-          llama?.dispose();
+          backend?.dispose();
         } catch (_) {}
-        llama = null;
+        backend = null;
+        loop = null;
         replies.send(<Object?>[_Reply.disposed.index]);
         commands.close();
     }

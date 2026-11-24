@@ -1,35 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 
 /// Configuration for on-device LLM inference.
 @immutable
 class LLMConfig {
-  /// Maximum token capacity for the Key-Value (KV) cache / context window.
-  /// Maps directly to `ContextParams.nCtx`; selectable per load. Default is 4096 tokens.
+  /// Maximum token capacity for the Key-Value (KV) cache / context window: prompt and output
+  /// together. Maps to `llama_context_params.n_ctx`; selectable per load. Default is 4096 tokens.
   final int kvCacheMaxSize;
-
-  /// Quantization type for Key and Value cache tensors.
-  /// Options include `f16`, `q8_0`, `q4_0`. Using `q8_0` or `q4_0` drastically
-  /// reduces KV cache RAM usage while preserving high context length.
-  final LlamaKvCacheType kvCacheType;
 
   /// Idle time after which `ModelLifecycleManager` unloads the speech model from RAM.
   /// The language model is not governed by this value: a synthesis run unloads it when the
   /// run ends. Default is 3 minutes.
   final Duration modelInactivityTtl;
-
-  /// Minimum batch size for prompt evaluation. `LLMService` raises `ContextParams.nBatch`
-  /// to at least `kvCacheMaxSize`, because the binding rejects prompts longer than nBatch.
-  final int batchSize;
-
-  /// Number of CPU threads used for prompt evaluation and generation.
-  /// Maps to `ContextParams.nThreads`. Default is 4 threads.
-  final int threads;
-
-  /// Whether sampling is greedy (always picks the most likely token).
-  /// Maps to `SamplerParams.greedy`. Default is `true`: replies are structured text, so deterministic output is preferred; measured speed is the same as sampled.
-  final bool greedySampling;
 
   /// Maximum time to wait for a single completion before generation is stopped
   /// and the call fails with a `TimeoutException` (partial text is discarded).
@@ -37,42 +19,43 @@ class LLMConfig {
   /// Pixel 7a. Must stay below the synthesis wake-lock window.
   final Duration generationTimeout;
 
-  /// Longest time to wait for the model to finish loading. A slow first load can exceed the
-  /// llama_cpp_dart library's internal 60-second limit, after which the load is still
-  /// running; `LLMService` keeps waiting up to this duration. Default is 180 seconds.
+  /// Longest time to wait for the model to finish loading (one native call on the worker);
+  /// after it the worker is killed. Default is 180 seconds.
   final Duration modelLoadTimeout;
+
+  /// Prompt tokens decoded per native call (`n_batch` = `n_ubatch`). A stop waits for at most
+  /// one chunk, and only whole chunks of a shared prompt start are reused. Default is 64.
+  final int promptChunkTokens;
+
+  /// Whether a prompt reuses the memory of the whole chunks it shares with the previous prompt
+  /// (IMPLEMENTATION.md 4.D). The reply is the same either way. Default is `true`.
+  final bool reusePromptPrefix;
 
   const LLMConfig({
     this.kvCacheMaxSize = 4096,
-    this.kvCacheType = LlamaKvCacheType.f16,
     this.modelInactivityTtl = const Duration(minutes: 3),
-    this.batchSize = 512,
-    this.threads = 4,
-    this.greedySampling = true,
     this.generationTimeout = const Duration(minutes: 8),
     this.modelLoadTimeout = const Duration(seconds: 180),
+    this.promptChunkTokens = 64,
+    this.reusePromptPrefix = true,
   })  : assert(kvCacheMaxSize > 0, 'kvCacheMaxSize must be positive'),
-        assert(threads > 0, 'threads must be positive');
+        assert(promptChunkTokens > 0, 'promptChunkTokens must be positive');
 
   LLMConfig copyWith({
     int? kvCacheMaxSize,
-    LlamaKvCacheType? kvCacheType,
     Duration? modelInactivityTtl,
-    int? batchSize,
-    int? threads,
-    bool? greedySampling,
     Duration? generationTimeout,
     Duration? modelLoadTimeout,
+    int? promptChunkTokens,
+    bool? reusePromptPrefix,
   }) {
     return LLMConfig(
       kvCacheMaxSize: kvCacheMaxSize ?? this.kvCacheMaxSize,
-      kvCacheType: kvCacheType ?? this.kvCacheType,
       modelInactivityTtl: modelInactivityTtl ?? this.modelInactivityTtl,
-      batchSize: batchSize ?? this.batchSize,
-      threads: threads ?? this.threads,
-      greedySampling: greedySampling ?? this.greedySampling,
       generationTimeout: generationTimeout ?? this.generationTimeout,
       modelLoadTimeout: modelLoadTimeout ?? this.modelLoadTimeout,
+      promptChunkTokens: promptChunkTokens ?? this.promptChunkTokens,
+      reusePromptPrefix: reusePromptPrefix ?? this.reusePromptPrefix,
     );
   }
 
@@ -82,30 +65,21 @@ class LLMConfig {
       other is LLMConfig &&
           runtimeType == other.runtimeType &&
           kvCacheMaxSize == other.kvCacheMaxSize &&
-          kvCacheType == other.kvCacheType &&
           modelInactivityTtl == other.modelInactivityTtl &&
-          batchSize == other.batchSize &&
-          threads == other.threads &&
-          greedySampling == other.greedySampling &&
           generationTimeout == other.generationTimeout &&
-          modelLoadTimeout == other.modelLoadTimeout;
+          modelLoadTimeout == other.modelLoadTimeout &&
+          promptChunkTokens == other.promptChunkTokens &&
+          reusePromptPrefix == other.reusePromptPrefix;
 
   @override
-  int get hashCode =>
-      kvCacheMaxSize.hashCode ^
-      kvCacheType.hashCode ^
-      modelInactivityTtl.hashCode ^
-      batchSize.hashCode ^
-      threads.hashCode ^
-      greedySampling.hashCode ^
-      generationTimeout.hashCode ^
-      modelLoadTimeout.hashCode;
+  int get hashCode => Object.hash(
+      kvCacheMaxSize, modelInactivityTtl, generationTimeout, modelLoadTimeout, promptChunkTokens, reusePromptPrefix);
 
   @override
   String toString() {
     return 'LLMConfig(kvCacheMaxSize: $kvCacheMaxSize, '
-        'kvCacheType: ${kvCacheType.name}, '
-        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, batchSize: $batchSize, threads: $threads, greedySampling: $greedySampling, generationTimeout: ${generationTimeout.inSeconds}s)';
+        'modelInactivityTtl: ${modelInactivityTtl.inMinutes}m, generationTimeout: ${generationTimeout.inSeconds}s, '
+        'promptChunkTokens: $promptChunkTokens, reusePromptPrefix: $reusePromptPrefix)';
   }
 }
 
