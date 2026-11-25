@@ -1,12 +1,12 @@
 # COMPETITIVE_LANDSCAPE.md — Verified Market Facts for Eudemonia (Competitors, Platforms, Benchmarks)
 
-> **Facts only.** No recommendations here; those live in [`STRATEGY.md`](STRATEGY.md). Promoted from research wave 1 (2026-11-24). Every source URL is in the raw report named at the head of each section, under [`research/`](research/).
+> **Facts only.** No recommendations here; those live in [`STRATEGY.md`](STRATEGY.md). Sections 2–10 promoted from research wave 1 (2026-11-24); Sections 11–12 from wave 2 (2026-11-25; 22 claims re-checked: 15 confirmed, 5 partly confirmed, 2 unverifiable, none refuted). Every source URL is in the raw report named at the head of each section, under [`research/`](research/).
 
 ---
 
 ## 1. Reading Guide (Verification Status Codes & Evidence Grades)
 
-- **V** = independently re-checked on 2026-11-24 by a second agent against the company's or platform's own page.
+- **V** = independently re-checked by a second agent against the company's or platform's own page (on 2026-11-24 in Sections 2–10, on 2026-11-25 in Sections 11–12).
 - **P** = reported by press or the founder; seen by the researcher, not independently re-checked. Treat as likely, not certain.
 - **U** = unverified: third-party estimate, aggregator listing, or a claim the checker could not confirm.
 - Prices are US list prices on the date above. Re-verify anything older than three months before relying on it.
@@ -168,8 +168,80 @@ Raw report: `research/05_platform_incumbents_policy_risk_market.md`, Part C. All
 
 1. Prices, installs and ratings of the on-device Android rivals (Offscript, Offhand) — needs a look at the store on a phone.
 2. Whether Google's Eloquent has reached Android; Nothing's current pricing.
-3. How Google Play reviewers treat a volume-key trigger specifically; current store status of button-remapping apps.
+3. How Google Play reviewers treat a volume-key trigger specifically, and how long the Accessibility declaration takes (Section 12 has precedents, no review accounts).
 4. Share of Android phones in use with 8 GB or more, by country.
-5. Any conversion data for one-time-priced Android apps, or for honour-system payment.
+5. Any conversion data for one-time-priced Android apps, for honour-system payment, or for a single app cutting its price to about $1 a month (Section 11 has cross-app benchmarks only).
 6. Whether Google Play's billing component adds an internet permission; whether purchase restore works offline.
 7. Where the paying users of private journaling apps are (Android or iPhone).
+8. Whether any capture route starts a recording without unlocking, on Android or iPhone; whether a 4B model can run in the background on iPhone.
+9. Google Play's current minimum prices; the net per sale for a developer located in India after GST.
+
+---
+
+## 11. Price Level Against Conversion, Voluntary Payment & India Pricing (Benchmarks, Named Cases, Google Play Price Mechanics)
+
+Raw report: `research/06_low_price_and_honour_system_evidence.md` (wave 2, 2026-11-25). **V** here means re-checked on 2026-11-25.
+
+**Benchmarks across many apps (RevenueCat, State of Subscription Apps 2026 edition, data year 2025).** Price tiers are relative to other apps (below average / average / above average), not dollar bands, and the figures compare *different apps*; they do not show what happens when one app changes its price. **V**
+
+| Median | Low-priced apps | Mid-priced | High-priced |
+| :--- | ---: | ---: | ---: |
+| Installs that pay within 35 days | 1.4% | 2.0% | 2.8% |
+| Revenue per install after 60 days | $0.11 | — | $0.94 |
+| Yearly plans still paying after one year | 36% | 26% | 23% |
+| Refund rate (**P**) | 2.7% | 3.9% | 4.5% |
+
+- India and South-East Asia (by user location): 0.7% of installs pay, the lowest of any region **V**; refund rate 7.7%, the highest; prices at about half of top-tier markets (**P**).
+- In the 2025 edition's data, the cheapest quarter of monthly plans starts at $3.26 and the median is $6.68 (via a third party citing RevenueCat, **U**). $0.59–0.99 a month is far below the range these benchmarks describe.
+- 2025 edition: among users who start a trial, low-priced apps convert more of them (47.8% against 28.4%) (**P**).
+
+**Price tests on single apps.** No published test was found of a cut to about $1 a month or less. Published tests go the other way and are vendor case studies, likely selected for success (**P**): a 50% price rise cut conversions 19% and raised income per user 25% (BuyBye); a 43% rise raised income per user 47.5% (PropGPT); a cut from $59.99 to $44.99 a year raised income per user 10% (SellRaze).
+
+**Named apps at about $1 a month.**
+- **HabitKit** (habit tracker, solo founder, iPhone and Android): founder reports for 2025 total revenue $602,000, monthly recurring revenue $28,000, 25,100 active subscribers, 272,000 App Store and 290,000 Google Play downloads (**V** that the founder states this; the figures themselves are a founder claim). US App Store prices today: $0.99, $1.99 and $4.99 a month **V**. Interviews say the price began at $0.99 a month, was raised to $2 on iPhone, and that a price test on Android "failed"; no numbers published (**P**). Release year not established.
+- **WhatsApp** charged $0.99 a year and dropped the fee in January 2016; its founder said "It really doesn't work that well" **V**.
+- **Bitwarden** raised its personal plan from $10 to $19.80 a year in January 2026 (**P**).
+
+**Voluntary payment.** Thunderbird's appeal page is titled "Only 3% of users support Thunderbird" (in the page title only; method not given) — partly confirmed. FUTO publishes no payer count. Pay-what-you-want experiments report 38–45% of *buyers* paying something, which is not comparable with a free app's whole user base (**U**). No in-app tip-jar result for any named independent app was found.
+
+**India.**
+- No named consumer app was found at or below ₹29 a month on a renewing monthly plan. Reference points (company pages and App Store India, **P**): Google One Lite ₹59, Truecaller ₹99, HabitKit from ₹89, Spotify ₹139, Netflix Mobile ₹149, ChatGPT Go ₹399, Todoist ₹330 a month.
+- Recurring payments: India's central bank requires a notice to the customer at least 24 hours before each recurring debit, with no exemption found for small amounts (press report of the 2026 framework, **P**). One press report says 55–90% of UPI Autopay debits failed in August 2025 (**U**, snippet only).
+- Tax: India is a tax-inclusive price market on Google Play **V**. Google collects and remits GST on behalf of developers located *outside* India; developers located *in* India handle GST themselves — partly confirmed; the exact net per sale for an India-based developer was not established.
+
+**Google Play price mechanics.**
+- Raising a subscription price affects new buyers only; existing subscribers stay on their old price by default ("legacy price cohort") **V**.
+- Play Console's built-in price experiments cover one-time products only, not subscriptions **V**.
+- Price floor: Google announced in May 2022 that products can be priced "as low as the equivalent of 5 US cents in any market" **V**. The current official minimum-price table could not be opened; $0.59 and ₹19 are above every floor figure found.
+
+---
+
+## 12. Capture Entry Points & Store Launch Mechanics (Accessibility Precedents on Google Play, Closed-Testing Rule, Lock-Screen Routes on Android and iPhone)
+
+Raw report: `research/07_capture_trigger_precedents_and_launch_mechanics.md` (wave 2, 2026-11-25). **V** here means re-checked on 2026-11-25. Google Play pages returned only their titles to both researcher and checker, so listing *text* comes from third-party mirrors.
+
+**Apps on Google Play that read hardware buttons through the Accessibility API for a non-accessibility purpose.**
+- Key Mapper (about 12M installs), Button Mapper (about 7M), Tasker and MacroDroid are listed and were updated in October–November 2026 — listing existence partly confirmed (page titles load); install counts, dates and disclosure wording from mirrors (**U**).
+- **"Action Button-Voice Automation"** (`app.voice.automation`): a voice recorder started by a volume-key long-press through an accessibility service, advertised as recording on a locked screen; first released January 2026; about 267 installs. Listing exists (title loads); description from a mirror — partly confirmed. A second recorder, VolRec (about 3.2K installs), starts from volume keys by an unknown mechanism (**U**).
+- No documented removal or forced feature removal of a hardware-button app since the 2021 declaration rules was found. This is absence of evidence: Reddit and XDA could not be searched directly.
+- The only first-hand rejection account found is a screen-time app rejected four times, first for a missing prominent disclosure; rejections continued until old builds in every testing track were replaced (**P**, founder post).
+- Google on permission declarations in general: "Your request may require up to several weeks to process", and the app or update stays in pending publication until reviewed **V**. No account was found of how long an Accessibility declaration takes.
+
+**Launch requirements for a new Google Play developer.**
+- Personal accounts created after 13 November 2023: a closed test with at least 12 testers opted in continuously for 14 days before applying for production; review of that application "usually takes seven days or less" **V**. Google's setup page heads the testing requirement "(Personal accounts only)"; no explicit exemption wording for organisation accounts was found. Organisation accounts need a D-U-N-S number (**P**).
+- Registration fee $25, one time (**P**, official page seen by researcher).
+
+**Android capture routes that need no Accessibility permission.**
+- Android's documentation allows a microphone foreground service to start from the background when the user interacts with a **notification** or an **app widget**, or when the app provides the voice-assistant service. Quick-settings tiles are not on that list **V**.
+- No official statement was found on whether any of these can start a recording **without unlocking**. A notification action can be marked as requiring unlock; otherwise "the OS will decide" (**P**, official reference page).
+- Lock-screen widgets reached Pixel phones with Android 16 QPR2 (December 2025); other makers differ (**P**). Android's lock-screen note shortcut has not shipped publicly (**P**).
+- Samsung's side-button double press can start its own Voice Recorder **V**; whether it works past the lock, and for other apps, was not established. Pixel Quick Tap can open an app (**P**).
+
+**iPhone capture routes.**
+- Action Button: iPhone 15 Pro and later, all iPhone 16 and 17 models (**U**, third-party list). Whisper Memos states its Action Button recording works "even when your phone is locked" **V** (that the vendor claims it). Just Press Record claims Lock Screen, Control Centre and Action Button recording (**P**). Letterly requires Face ID first (**P**).
+- A July 2026 Apple developer-forum thread reports that starting a recording from the Action Button on a locked iPhone fails or asks for Face ID; no replies **V**. Whether a third-party app can reliably do it is **unresolved**.
+- Apple's `AudioRecordingIntent` (iOS 18) requires a Live Activity for the whole recording (**P**; Apple's page would not load for the checker).
+
+**Running a local language model on iPhone.**
+- Private LLM says iPhones with 6 GB (12 Pro and later) run 3–4B models; an independent guide says 8 GB (15 Pro and later) (**P** / **U**).
+- Apple restricts a background app's access to the graphics chip; an Apple engineer said in October 2025 that background access was iPad-only (**P**; Apple's page would not load for the checker). PocketPal unloads its model when it goes to the background (**P**). Whether processor-only inference can continue in the background was not established.

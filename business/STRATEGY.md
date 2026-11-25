@@ -1,6 +1,6 @@
 # STRATEGY.md — Eudemonia Business Strategy (Positioning, Business Model, Risks & Tests)
 
-> **Status**: Draft v0.1, 2026-11-24. Written by the orchestrator after research wave 1. **Nothing here is decided.** The recommendation is conditional on the founder questions in [`BUSINESS_LOG.md`](BUSINESS_LOG.md). Facts are in [`COMPETITIVE_LANDSCAPE.md`](COMPETITIVE_LANDSCAPE.md) and are referenced here as `[CL §n]`, never restated as new facts.
+> **Status**: Draft v0.3, 2026-11-25. Revised after the user's answers to the founder questions (recorded in [`BUSINESS_LOG.md`](BUSINESS_LOG.md)) and after research wave 2 (price evidence, trigger precedents; `[CL §11–12]`). **The price and the model are not decided.** Facts are in [`COMPETITIVE_LANDSCAPE.md`](COMPETITIVE_LANDSCAPE.md) and are referenced here as `[CL §n]`, never restated as new facts.
 
 ---
 
@@ -17,9 +17,10 @@
 ## 2. Positioning Hypothesis (Category, Promise & Proof)
 
 - **Category**: thought capture, not dictation (Wispr types into a text box), not meeting notes (Granola, Otter), not a journal app.
-- **Promise**: *"Press both volume keys, say it, keep walking. Your phone turns the rambling into organised notes — by itself, on the phone."*
-- **Lead with the outcome** (nothing is lost; nothing needs sorting), **support with the proof** (works in a tunnel; no account; the app holds no internet permission — a claim anyone can check and no cloud competitor can make).
-- **Stance on price as part of the position**: *"No subscription. Nothing runs on our servers, so there is nothing to rent."* Against $144–180 a year for cloud dictation this is a differentiator in its own right.
+- **Promise (v0.2)**: *"Ramble. Get clean, organised notes. Nothing leaves your phone."* The outcome leads because it is what the user's first customer (Section 3) wants and because it holds on both Android and iPhone.
+- **The trigger is no longer the identity.** v0.1 led with "press both volume keys, keep walking". The user reports that the screen-off trigger does not work today, that store approval is doubtful and that the approach is impossible on iPhone. The position therefore becomes *the fastest capture each phone allows* — volume keys where permitted, lock-screen entry points elsewhere. Pocket capture with the screen off must not be advertised until it works.
+- **Support with the proof**: works in a tunnel; no account; no cloud processing — claims no cloud competitor can make. (A licence check, now acceptable to the user, means "the app holds no internet permission" can no longer be the proof; "your words never leave the phone" still can.)
+- **Stance on price as part of the position**: nothing runs on our servers, so the price can be a fraction of cloud rivals' $99–180 a year. Whether that is "no subscription" or "a very cheap one" is the open pricing decision (Sections 4–5).
 
 ---
 
@@ -27,7 +28,8 @@
 
 | Order | Customer | Why this order | Weakness |
 | :--- | :--- | :--- | :--- |
-| 1 | **Builders and thinkers on high-end Android** (founders, engineers, researchers, writers; on-device-AI and local-first enthusiasts) | They own 8–12 GB phones, understand "runs locally", gather in reachable communities, and value Capture + Synthesis, which is what exists. | Small; price-sensitive towards subscriptions; expects export to their own note system. |
+| 1 (user's picture, 2026-11-25) | **The "lazy dumper"**: someone who wants to talk thoughts into one place and get a clean, structured result without effort | It is the customer AudioPen and its imitators already sell to at about $99 a year `[CL §3]`, so willingness to pay for the outcome is demonstrated; Capture + Synthesis is exactly what they need. | A mass audience with no single gathering place, so it is expensive to reach; it compares output quality with cloud models; many are on iPhone. |
+| 1b (reachable beachhead) | **Builders and thinkers on high-end Android** (founders, engineers, researchers, writers; on-device-AI and local-first enthusiasts) | They own 8–12 GB phones, understand "runs locally", gather in reachable communities, and value Capture + Synthesis, which is what exists. A way to reach the first lazy dumpers, not a different product. | Small; price-sensitive towards subscriptions; expects export to their own note system. |
 | 2 | **Private journalers** | Proven willingness to pay ($50–130 a year at Day One, Rosebud `[CL §4]`); privacy matters most here. | Needs the Insights stage, which is not built; audience may skew to iPhone (unverified). |
 | 3 | **Professionals bound by confidentiality** (therapists, lawyers, clinicians) | The only segment where "no data leaves the phone" removes a legal obstacle; teams are where dictation money is `[CL §2]`. | Needs sales effort, domain features and probably iPhone. A later bet, not a launch market. |
 | Not now | **Rapid task capturers** | Competes directly with free assistants and Google Keep. | Weakest willingness to pay. |
@@ -44,13 +46,33 @@
 | **D. Honour system / open source** | Everything works; a notice asks for payment (FUTO's model `[CL §7]`). | Maximum trust and reach; strongest story for the enthusiast audience. | No data anywhere on what share pays; likely the lowest income. Right only if the goal is reputation. |
 | **E. Free app + paid service with a real server cost** | Encrypted backup or sync across devices, sold monthly (Obsidian's model `[CL §7]`). | The only local-first model with proven recurring income. | Breaks "zero outbound bytes" unless strictly optional; needs infrastructure and accounts. A principle change — the user's decision. |
 | **F. Hardware bundle** | A small Bluetooth button sold with the app (Plaud's logic `[CL §4]`). | Removes dependence on the Accessibility API; hardware is a trust and distribution lever. | Capital, logistics, support; far too heavy before demand is proven. |
-| **G. Venture-scale company** | Raise money, add iPhone, cloud, teams. | Where the large outcomes are. | Requires abandoning several principles; competes head-on with a $2B-valued leader and platform owners. |
+| **G. Venture-scale company** | Raise money, add iPhone, cloud, teams. | Where the large outcomes are. | Requires abandoning several principles; competes head-on with a $2B-valued leader and platform owners. Ruled out by the user's "no cloud" decision (2026-11-25). |
+| **H. Floor-price monthly subscription (the user's proposal, 2026-11-25)** | US $0.59–0.99 and India ₹19–29 a month, presented as an honour system. | Serves the reach ambition; at this level the objection "why rent software that runs on my phone" largely disappears; Play's fee on subscriptions is lower than on one-time purchases `[CL §6]`; cheap plans are cancelled less `[CL §11]`; one solo app earns $28K a month this way `[CL §11]`. | Needs three to five times as many payers as a $2.99 plan for the same income, and the benchmarks point the other way: low-priced apps convert fewer installs, not more `[CL §11]`; cannot reach the user's revenue target (Section 6); more payers per dollar means more support per dollar; "honour system" and "subscription" are different models (D versus B) and must not be blurred in what users are told. |
 
 ---
 
-## 5. Current Recommendation (Conditional on the Founder Questions)
+## 5. Current Recommendation (v0.3 After Wave 2 Evidence; Price and Model Still the User's Decision)
 
-**If the ambition is a profitable independent product (the assumption until the user says otherwise): Option A now, with E kept open as a later, explicitly optional add-on.**
+**What the evidence says about the user's floor-price proposal (Option H)** `[CL §11]`:
+
+- *Against*: across many apps, low-priced apps convert **fewer** installs into payers than high-priced ones (1.4% against 2.8%) and earn about an eighth of the income per install. This compares different apps, so it does not prove a price cut lowers conversion — but nothing found supports the idea that a floor price multiplies payers. No test of a cut to about $1 a month was found; published tests show price rises paying off. WhatsApp abandoned its $0.99 fee. India and South-East Asia convert worst of all regions (0.7%).
+- *For*: low-priced apps keep subscribers longer (36% against 23% after a year) and are refunded less. **HabitKit is the existence proof**: a solo founder reports $28,000 a month from 25,100 subscribers at about $1–2 a month. It also shows the price of that route: about 560,000 downloads, both iPhone and Android, an app that runs on any phone, and a price the founder later doubled on iPhone.
+- *Neutral but useful*: Google Play keeps existing subscribers on their old price when the price rises, so a low launch price is reversible for newcomers.
+
+**Recommendation**
+
+1. **Reach is delivered by the free tier.** Capture and transcription free for ever, on any phone.
+2. **Synthesis is paid by a cheap subscription with a lifetime price beside it** (Option C at a low level). This replaces the v0.1 one-time-only recommendation: the user prefers it, Play's fee is lower, the "renting local software" objection is weak at this level, and cheap plans retain well.
+3. **Start in the US at about $1.99 a month and $14.99–19.99 a year, with lifetime at about $29, and test $0.99 a month in a comparable country** (H7). Whichever earns more per install wins. $1.99 is the level the one successful $1 app moved to; it is still about a quarter of AudioPen's price ($99 a year `[CL §3]`). Confidence in the exact numbers: low. Confidence that $0.99 should be tested rather than assumed: high.
+4. **India: price for reach, expect little income.** ₹49–99 a month is already below every named reference found (₹59–149); ₹29 is possible but nothing suggests it is needed. Offer a yearly plan (about ₹399–499) because every monthly debit triggers a mandatory notice and many automatic debits fail.
+5. **Do not call an enforced subscription an honour system.** If Synthesis works unpaid, expect a few per cent to pay at most (Thunderbird: 3%) and treat income as incidental. The user decides which model it is.
+6. **The $10–15K target within two quarters should not be planned on** (Section 6). Replace it with measured gates: launch date, installs per month, share who pay, income per install — and a decision point at month six of the runway.
+7. **Launch sequence that cannot be blocked by the Accessibility review** `[CL §12]`: first store release with the notification and widget routes only (both officially allowed to start the microphone); recruit 12 testers now, because the closed test must run 14 days before production access; add the volume trigger as a later update with its declaration, which Google says can take weeks and holds the update while pending.
+8. **Check iPhone feasibility early** — it is the largest income lever `[CL §8]` and two things are unresolved `[CL §12]`: recording from a locked phone, and running the language model when the app is not in front. Engineering questions for the user to route.
+
+The v0.1 reasoning below (Option A) is kept as the comparison case; items 1, 3 and 5 of it still stand.
+
+**v0.1 (2026-11-24): Option A, with E kept open as a later, explicitly optional add-on.**
 
 1. **Never charge for capture.** All triggers, recording, transcription, playback and the Capture stream are free for ever, on any phone. This is the wedge, the source of store reviews, and it honours the first product principle. It also resolves the device problem honestly: phones too small for the language model still get a better voice-memo app.
 2. **Charge once for Synthesis.** A generous on-device trial (value before payment raises what people pay `[CL §7]`), then a single unlock. Working price range **$25–40**, to be tested; anchors: on-device rivals $40 a year and $25–64 one-time, cloud rivals about $99 a year `[CL §2, §3, §7]`.
@@ -80,6 +102,23 @@ Monthly income ≈ installs per month × share who pay × net per sale.
 
 **Reading**: without a channel that works, this is pocket money; with one, it is a real but modest independent income; the breakout row is what AudioPen-class success looks like and should not be planned on. Costs are near zero in every row, so every row is profitable. **The business question is therefore distribution, not pricing.**
 
+### Subscription Arithmetic Against the User's Target of $10–15K a Month (Added 2026-11-25)
+
+Paying subscribers needed = target ÷ net per payer per month. Play keeps 15% of subscriptions `[CL §6]`. India figures assume about ₹88 to the dollar and that the listed price includes 18% GST (assumptions; the net for a developer located in India was not established `[CL §11]`).
+
+| Price | Net per payer / month | Payers for $10K | Payers for $15K |
+| :--- | ---: | ---: | ---: |
+| US $0.59 a month | ≈ $0.50 | ≈ 20,000 | ≈ 30,000 |
+| US $0.99 a month | ≈ $0.84 | ≈ 11,900 | ≈ 17,900 |
+| US $2.99 a month | ≈ $2.54 | ≈ 3,900 | ≈ 5,900 |
+| US $29.99 a year | ≈ $2.12 | ≈ 4,700 | ≈ 7,100 |
+| India ₹29 a month | ≈ $0.24 | ≈ 42,000 | ≈ 63,000 |
+| India ₹19 a month | ≈ $0.16 | ≈ 64,000 | ≈ 96,000 |
+
+**Reference case** `[CL §11]`: HabitKit's reported 25,100 subscribers on about 562,000 downloads is roughly 4.5 subscribers per 100 downloads (rough: the download period is not stated). At that ratio $10K a month needs about 265,000 downloads at $0.99 and about 130,000 at $1.99.
+
+**Reading**: at $0.99, 11,900 payers means about 600,000 installs at the 2% benchmark `[CL §8]`, or 120,000 even if one in ten pays — on phones with 8 GB or more, within six months, before cancellations. The one on-device Android voice app with a known figure has about 63K installs after roughly three years `[CL §7]`. The solo cloud voice-note apps that reached this income did so at about $99 a year with web and iPhone reach `[CL §3]`. The floor price and the target cannot both hold; the target is unlikely in two quarters at any price.
+
 **What raises the ceiling** (each a separate later decision): iPhone (about 85% of subscription revenue `[CL §8]`); a professional/teams edition; a paid optional service (E); becoming the capture front-end for people who keep notes in Markdown systems.
 
 ---
@@ -107,6 +146,8 @@ Monthly income ≈ installs per month × share who pay × net per sale.
 | H4 | People who try Synthesis will pay $25–40 once. | Closed beta of 20–50 users; ask for payment at the end of the trial; talk to those who decline. | Yes |
 | H5 | Buyers do not need their notes on a second device. | Ask every beta user; count requests for export, backup and sync. | No |
 | H6 | The trigger survives real phones (Samsung, Xiaomi, Android 17 with Advanced Protection). | Beta users' devices; an engineering check, outside this workstream. | Engineering |
+| H7 | (The user's) A floor price converts so many more people that it earns at least as much as a moderate price. | Set different prices in comparable countries during the beta (for example $0.99 in one, $2.99 in another) and compare income per install, not payer counts. The floor price must bring more than three times the payers to win. | Yes |
+| H8 | The lazy dumper accepts on-device output quality. | Give beta users the same ramble processed by Eudemonia and ask whether the result is good enough to pay for; note every comparison with cloud tools. | No |
 
 ---
 
@@ -114,9 +155,9 @@ Monthly income ≈ installs per month × share who pay × net per sale.
 
 These follow from the business analysis. Each needs the user's decision before it enters `PRODUCT_SPEC.md`.
 
-1. **Launch scope**: launch with Capture + Synthesis and sell Synthesis; build Insights and Action only after Synthesis has buyers. The specification currently treats all four stages as version 1.
-2. **Free/paid line**: capture and transcription free for ever; Synthesis behind a one-time unlock after a trial.
-3. **Export to plain Markdown files** brought forward from the version 2 roadmap: the first audience keeps notes in such systems and will ask for it first. Involves no network.
-4. **Trigger redundancy as a stated product goal**: the app must remain fully usable when the Accessibility route is denied by Play, by Advanced Protection or by the user.
-5. **"No internet permission" as a checkable promise**, including a check that Google Play's billing component does not add one (unverified `[CL §7]`).
-6. **Later, openly**: revisit the iPhone non-goal (newer iPhones have a programmable hardware button — from memory, not researched), and an optional encrypted backup service.
+1. **Launch scope** — **agreed by the user 2026-11-25**: launch with Capture + Synthesis; Insights and Action later.
+2. **Free/paid line**: capture and transcription free for ever; Synthesis is the paid part. How it is paid for (one-time, cheap subscription, honour system) is open — Section 5.
+3. **Export to plain Markdown files** brought forward from the version 2 roadmap: the beachhead audience keeps notes in such systems and will ask for it first. Involves no network.
+4. **Trigger redundancy, strengthened 2026-11-25 — the launch must not depend on the Accessibility permission**: ship the store build so that it is complete with entry points that need no special permission (lock-screen notification, quick-settings tile, widget); treat the volume-key trigger as an optional extra that can be added, reviewed or dropped without holding the launch. A build with the volume trigger can also be offered outside the store, which the user accepts. Notification and widget routes are officially allowed to start the microphone `[CL §12]`; whether they work without unlocking is an engineering check.
+5. **The privacy promise must be restated now that a licence check is acceptable**: "your words and notes never leave the phone" rather than "no internet permission". The exact wording should be true and checkable.
+6. **iPhone** — **direction set by the user 2026-11-25** (after Android is live). Its capture entry point and the limits on running the language model there are unresolved `[CL §12]`. **Later, openly**: an optional encrypted backup service.
