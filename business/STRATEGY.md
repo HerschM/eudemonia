@@ -1,6 +1,6 @@
 # STRATEGY.md — Eudemonia Business Strategy (Positioning, One-Time Price, Growth Plan to the Revenue Target, Risks & Tests)
 
-> **Status**: v0.4, 2026-11-25. Clean rewrite after the user's decisions of 2026-11-25 (dated in [`BUSINESS_LOG.md`](BUSINESS_LOG.md)) and research waves 1–3. Facts live in [`COMPETITIVE_LANDSCAPE.md`](COMPETITIVE_LANDSCAPE.md) and are cited as `[CL §n]`, never restated as new facts. Everything here that is not marked **Decided** is the orchestrator's recommendation or hypothesis.
+> **Status**: v0.5, 2026-11-25 (v0.4 plus the user's fourth reply: price and quiet release agreed, paywall not yet built, no existing audience). Clean rewrite after the user's decisions of 2026-11-25 (dated in [`BUSINESS_LOG.md`](BUSINESS_LOG.md)) and research waves 1–3. Facts live in [`COMPETITIVE_LANDSCAPE.md`](COMPETITIVE_LANDSCAPE.md) and are cited as `[CL §n]`, never restated as new facts. Everything here that is not marked **Decided** is the orchestrator's recommendation or hypothesis.
 
 ---
 
@@ -11,7 +11,10 @@
 - **Decided — launch**: Capture + Synthesis on Google Play at the end of November 2026 (buffer to about 3 December), from an organisation developer account; **first release without the Accessibility permission** (notification and widget capture only), volume trigger in a later update.
 - **Decided — sequence**: Android release → daily marketing routine → iPhone → Insights and Action.
 - **Decided — boundaries**: English only; direct sale outside the stores deferred; cloud processing or bring-your-own-key not ruled out in principle, not planned; nothing is posted or sent publicly without the user being informed.
-- **Open — price**: the user asked the orchestrator for the number (Section 5). **Open**: quiet release before the public push (Section 7); whether the paywall is built.
+- **Decided — price and trial (fourth reply)**: $39.99 list, $29.99 launch offer, usage-based trial counted in **Synthesis sessions** (one automatic run over all pending thoughts, whatever number of notes it produces), about 10–15.
+- **Decided — release shape (fourth reply)**: quiet release now, public push in the first half of January 2027.
+- **Reported by the user (fourth reply)**: the paywall is not started; the payments profile's status is unknown; there is no existing audience.
+- **Open**: whether the quiet release ships with Synthesis free (Section 7, recommended); the exact trial number (Section 5, recommended 10); whether Action and iPhone are attempted before the January push (Section 7, recommended against committing to either).
 
 ---
 
@@ -53,7 +56,10 @@
 - **Launch offer: $29.99 until the end of the public launch period**, with a stated end date, as a discount offer on the same product. Limited lifetime offers are what produced fast early sales for AudioPen and Voicenotes `[CL §13]`. Never extend it silently; early buyers keep everything.
 - **iPhone, later**: $39.99–49.99; Apple keeps 15% under its small-business programme `[CL §14]`.
 - **India**: about ₹999–1,499. Expect little income `[CL §11]`.
-- **Trial — usage-based, built in the app**: Google Play has no free trial for one-time products `[CL §14]`. Recommendation: the first *N* Syntheses free (hypothesis: about 15–20), not a number of days, so that nobody's trial runs out during the model download or an idle week. No evidence exists on which trial design converts better for one-time apps `[CL §14]`; this is a judgement. An on-device counter can be reset by reinstalling; accept that leakage.
+- **Trial — usage-based, built in the app**: Google Play has no free trial for one-time products `[CL §14]`. The unit is the **Synthesis session** (user's definition: one automatic run over the pending thoughts; ten thoughts becoming three notes is one session), not a number of days, so that nobody's trial runs out during the model download or an idle week. No evidence exists on which trial design converts better for one-time apps `[CL §14]`; what follows is judgement. An on-device counter can be reset by reinstalling; accept that leakage.
+  - **Recommended number: 10 sessions.** The user offered 10–15; the lower end asks for the decision while interest is fresh, and the number can be raised later without upsetting anyone (lowering it cannot).
+  - **Weakness of counting sessions, and the guards against it**: sessions start automatically, so a person who records one thought at a time uses up the trial on ten single thoughts, and a session can be spent while the user is not looking. Guards (proposals): a session counts only if it produced or changed a note; the remaining count is always visible on the Synthesis screen; the trial never ends before the user has opened at least one synthesized note. A floor in days ("never before day 7") was considered and set aside as one rule too many for the first build.
+  - **After the trial**: recording and transcription continue and thoughts queue up unsynthesized. The visible backlog is the strongest reason to buy; say so on the paywall ("12 thoughts are waiting").
 - **Paywall placement**: never between the user and a recording. It appears only when Synthesis is asked for after the trial.
 - **Price test**: Play's built-in experiment (one variant, $49.99 against $39.99) once volume allows; at low volume it returns nothing `[CL §14]`. Compare revenue per install, not buyer counts.
 - **Confidence**: moderate on $39.99 as a starting point; low on any claim about conversion, because no published conversion rate for one-time unlocks exists `[CL §14]`.
@@ -85,15 +91,21 @@ Net per sale: about **$30** on Google Play at $39.99 (Play keeps 25% in the US, 
 
 | Phase | When | What happens | Tripwire to pass |
 | :--- | :--- | :--- | :--- |
-| **0. Quiet release** | 30 Nov → about 10 Jan | Publish on Play without the big community launches. Recruit the first 20–50 users by hand; talk to each; fix what they hit; gather first store reviews; film the demo from the stable build; start the daily routine (below). | At least 5 unprompted purchases among the first 50 capable-phone users; no blocking onboarding failure. |
+| **0a. Quiet release, Synthesis free ("early access")** | 30 Nov → about mid-December | The paywall is not built, so the first release ships without it rather than slipping: Synthesis free and said to be free *for now* in the listing and the app. No payments profile or billing library is needed for this release. Recruit the first 20–50 users by hand; talk to each; fix what they hit; start the daily routine (below); start the payments profile on day one (bank and tax checks take days to weeks `[CL §15]`). | No blocking onboarding failure; at least half of capable-phone users run a second session. |
+| **0b. Paywall update** | about mid-December → about 10 Jan | Ship the purchase, the session counter and the locked state. Early-access users keep Synthesis (recommendation: Play promo codes or a local flag; a few dozen people, worth more as reviewers than as buyers). Gather first reviews; film the demo from the stable build. | **Real purchases seen before any public push**: at least 5 unprompted purchases among the first 50 new capable-phone users. If the paywall is not live by about 20 December, move the public push rather than launch it blind. |
 | **1. Public Android launch** | about mid-January 2027 (a "get organised" month; late December is weak — judgement) | Launch offer with an end date; demo video; founder posts; community posts where rules allow; Show HN. | About 3,000 installs and 60 sales in the launch month. |
 | **2. Find one repeatable channel** | to end of February | Run the daily routine; double down on whichever source shows the best revenue per install in Play Console. iPhone build in progress. | **About 100 sales a month and one source producing 100+ installs a day.** If not, the six-month target is out of reach on this plan — reopen price, audience and product with the user. |
 | **3. iPhone launch** | March–April | Second launch moment in the paying market; Product Hunt saved for this (its audience is not Android-first, and the comparable Android app got almost nothing there `[CL §13]`). | iPhone revenue per install at or above Android's. |
 | **4. Scale** | May onward | Price test; next paid stage; whichever channel works. | 335+ sales a month. |
 
-**Channels, ranked by evidence and cost** `[CL §13]`:
+**What is deliberately not in the plan before the January push (the user raised both on 2026-11-25; orchestrator's recommendation, the user decides):**
 
-1. **Founder-led posting in public (X and similar), daily.** The first sales of both fast comparables came from a founder's own posts; it needs an audience, which takes months to build — start now. *Unknown: the user's current audience.*
+- **The Action screen.** The specified version (FR14: extraction, checkboxes, calendar time-blocks, calendar accounts) is a new stage with a new permission and new store declarations; nobody has yet asked for it, and the paywall, the launch fixes and daily posting already fill one person's December. "Raw thoughts to actions" may well be the stronger pitch — that is a hypothesis (H10), and the cheap test is the first outreach question ("what did you do with the note afterward?"). If the answer is "copied the to-dos out", build Action next and sell it as its own unlock (Section 12).
+- **An iPhone launch date.** iPhone is where the buyers are (Section 2), so earlier is better — but two things are unresolved and either can sink a date: whether the model can run within iPhone memory limits, and whether Synthesis can run when the app is not in front `[CL §12]`. Recommendation: a two-to-three-day feasibility check in the week after the Android release, then set the date on what it shows. If it is clean, February is realistic; the end of January needs everything to go right while the Android public launch is also running. The "new-year resolutions" lift is a judgement, not a measured fact, and is not worth a rushed second platform.
+
+**Channels, ranked by evidence and cost** `[CL §13]`. **The user has no existing audience (fourth reply)**, which changes the order for the January push: channels that lend an audience (communities, Show HN, store search) carry the launch; founder posting starts now but pays later.
+
+1. **Founder-led posting in public (X and similar), daily.** The first sales of both fast comparables came from a founder's own posts; it needs an audience, which takes months to build — start now, from zero, and expect little from it by mid-January.
 2. **Founder-filmed short videos** of one ramble becoming one clean note. The one detailed account found credits founder-made videos and says paid creators brought almost no conversions; AudioPen's paid-creator test also failed (secondary source). Costs time only.
 3. **Store search.** One solo app's breakthrough came from ranking in the top five for a major store keyword. Slow (weeks) and uncertain, but free and compounding: title, short description and screenshots matter from day one.
 4. **Communities** (on-device AI, note-taking, Android). Useful for the first hundreds; several have tightened self-promotion rules — check each before posting.
@@ -138,12 +150,13 @@ Sales per day (the target yardstick) · installs per day by source · buyers per
 | H7 | $39.99 earns more per install than $49.99 or $29.99. | Play price experiment when volume allows. | Yes |
 | H8 | The volume trigger can pass Play review. | Submit it as a later update with its declaration. | Yes |
 | H9 | A usage-based trial converts better than a time-based one. | Cannot be A/B tested without telemetry; compare cohorts if the design is ever changed. | — |
+| H10 | "Raw thoughts to actions" sells better than "clean notes". | Ask the first 20–50 users what they did with each note; count those who pulled tasks out by hand. | Yes (outreach) |
 
 ---
 
 ## 11. Product Proposals Awaiting the User's Decision (Not Tasks, Not Specification)
 
-1. **Usage-based Synthesis trial** (first *N* Syntheses free) and paywall wording — Section 5.
+1. **Usage-based Synthesis trial** (first 10 Synthesis sessions free, with the three guards) and paywall wording — Section 5. Also: **first release without a paywall**, Synthesis labelled free during early access, and how early-access users keep it — Section 7.
 2. **Launch offer** of $29.99 with a stated end date — Section 5.
 3. **Whether the first release requests the battery-optimisation exemption** — a store-review risk `[CL §15]`; engineering question.
 4. **Export to plain Markdown files**, brought forward: the first reachable audience will ask for it; involves no network.
