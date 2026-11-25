@@ -1,12 +1,12 @@
 # COMPETITIVE_LANDSCAPE.md — Verified Market Facts for Eudemonia (Competitors, Platforms, Benchmarks)
 
-> **Facts only.** No recommendations here; those live in [`STRATEGY.md`](STRATEGY.md). Sections 2–10 promoted from research wave 1 (2026-11-24); Sections 11–12 from wave 2 (2026-11-25; 22 claims re-checked: 15 confirmed, 5 partly confirmed, 2 unverifiable, none refuted). Every source URL is in the raw report named at the head of each section, under [`research/`](research/).
+> **Facts only.** No recommendations here; those live in [`STRATEGY.md`](STRATEGY.md). Sections 2–10 promoted from research wave 1 (2026-11-24); Sections 11–12 from wave 2 (2026-11-25; 22 claims re-checked: 15 confirmed, 5 partly confirmed, 2 unverifiable, none refuted). Sections 13–15 from wave 3 (2026-11-25; 32 claims re-checked: 23 confirmed, 9 partly confirmed, none refuted). Every source URL is in the raw report named at the head of each section, under [`research/`](research/).
 
 ---
 
 ## 1. Reading Guide (Verification Status Codes & Evidence Grades)
 
-- **V** = independently re-checked by a second agent against the company's or platform's own page (on 2026-11-24 in Sections 2–10, on 2026-11-25 in Sections 11–12).
+- **V** = independently re-checked by a second agent against the company's or platform's own page (on 2026-11-24 in Sections 2–10, on 2026-11-25 in Sections 11–15).
 - **P** = reported by press or the founder; seen by the researcher, not independently re-checked. Treat as likely, not certain.
 - **U** = unverified: third-party estimate, aggregator listing, or a claim the checker could not confirm.
 - Prices are US list prices on the date above. Re-verify anything older than three months before relying on it.
@@ -175,6 +175,9 @@ Raw report: `research/05_platform_incumbents_policy_risk_market.md`, Part C. All
 7. Where the paying users of private journaling apps are (Android or iPhone).
 8. Whether any capture route starts a recording without unlocking, on Android or iPhone; whether a 4B model can run in the background on iPhone.
 9. Google Play's current minimum prices; the net per sale for a developer located in India after GST.
+10. Any conversion rate for a one-time unlock app, and which trial design converts best (Section 14).
+11. Measured results of community posts, press features or short video for a paid Android app; a reliable cost per install for US productivity apps (Section 13).
+12. Which of RevenueCat's two conflicting Google Play conversion figures (0.9% or 2.6%) is right (Section 13).
 
 ---
 
@@ -245,3 +248,100 @@ Raw report: `research/07_capture_trigger_precedents_and_launch_mechanics.md` (wa
 **Running a local language model on iPhone.**
 - Private LLM says iPhones with 6 GB (12 Pro and later) run 3–4B models; an independent guide says 8 GB (15 Pro and later) (**P** / **U**).
 - Apple restricts a background app's access to the graphics chip; an Apple engineer said in October 2025 that background access was iPad-only (**P**; Apple's page would not load for the checker). PocketPal unloads its model when it goes to the background (**P**). Whether processor-only inference can continue in the background was not established.
+
+---
+
+## 13. How Comparable Independent Apps Got Users & Base Rates for Reaching $10K a Month (Channels, Named Cases, Paid-Install Costs, Play Launch Tools)
+
+Raw report: `research/08_user_acquisition_channels_and_time_to_revenue.md` (wave 3, 2026-11-25). **V** here means re-checked on 2026-11-25. Success figures are founders' own claims unless stated; they come from winners.
+
+**Base rates (RevenueCat, State of Subscription Apps 2026; subscription apps, about three quarters of new launches on iPhone).**
+- 17.3% of newly launched apps reach $1K a month and 4.6% reach $10K a month within two years; medians of 58 days to $1K and 109 days to $10K, with no statement of whether the medians count only apps that got there **V**.
+- Installs that pay within 35 days: the report's data section gives a median of **2.6% on the App Store against 0.9% on Google Play**; its own summary gives "2.9% vs 2.6%". Revenue per install after 60 days: $0.42 App Store against $0.16 Google Play in the data section, $0.23 in the summary. **The report contradicts itself**; both versions seen by the checker **V**.
+- Apps that ask for money up front convert 10.7% of installs against 2.1% for freemium (median, day 35, subscriptions only) **V**.
+
+**Named cases.**
+
+| App | What happened | Status |
+| :--- | :--- | :--- |
+| **AudioPen** (web app, 2023) | 543 paying customers about a month after a launch tweet, on a $19 lifetime deal; Product Hunt passed 1,000 upvotes; early users came from the founder building in public on Twitter. Later relies on word of mouth; about $15K a month in 2024. A $7,000 paid TikTok-creator test brought "no notable traffic boost" (secondary, undated). | **V** first month and Product Hunt; **P** later income; **U** creator test |
+| **Voicenotes** (web, iPhone, Android, 2024) | Limited-time $50 lifetime "believer" plan; the company said it had earned $100,000; built by the founder of Buy Me a Coffee, an existing audience. About $8.5K a month in November 2024. | **V** offer and company claim; **P** later income |
+| **HabitKit** (iPhone + Android, solo) | $1.5K in the first month; $51K in 2023; a jump in June 2023 when it ranked in the top five for a major store keyword; the founder's previous app made $100 in six months. First-day sales came from a Twitter post. | **V** (keyword not named on the page); **P** Twitter detail |
+| **NaturalWrite** (AI writing tool) | Growth from founder-filmed TikTok videos posted daily; paid influencers "generated just some views and almost no conversions". | **V** |
+| **Offscript** (Android, on-device voice memos — the closest comparable) | Product Hunt launch in 2026: 2 points, no reviews. Price reported as $60 once or $3–20 a month (aggregator). Installs and revenue not found. | **V** Product Hunt; **U** price |
+| **Minimalist Phone** (Android only, 2020, freemium) | $1K a month after six months, $10K a month after about 22 months; Google Ads named as the main channel. The only Android-only $10K case found. | **P** (source contradicts itself on dates) |
+| **Voicy** (dictation; browser extension first) | About $11–13K a month roughly a year after founding; store listing, about 200 blog posts, own YouTube channel. | **P** / **U** |
+| Small on-device dictation apps with public figures (FluidVox, VibeWhisper, Dictato) | Totals of $92 to $3,147 since launch. Self-selected listings. | **U** |
+
+- **Not found**: any solo, Android-only, one-time-priced app reaching $10K a month in 2024–2026; any measured result of a Reddit post, a Hacker News launch or an Android press feature for a paid Android app.
+
+**Channels — what little is measured.**
+- Product Hunt: consumer productivity launches reported at 500–1,500 sign-ups (one author's averages, **P**); individual top-three launches reported 70–210 sign-ups and a handful of sales (**P**).
+- Reddit: r/androidapps reportedly no longer accepts launch posts and redirects them to r/droidappshowcase; r/LocalLLaMA reportedly tightened self-promotion rules in 2026 (secondary sources; Reddit itself could not be read, **U**).
+- Short video: one founder test — 3,653 views, 45 installs, one subscriber (**P**).
+- Sponsorship prices: roughly $200–1,500 for a video on a 10–50K-subscriber YouTube channel; newsletters $10–150 per thousand readers (compiled estimates, **U**).
+
+**Paid installs.** Reported cost per install ranges from $0.68 (Android, global, all categories) to $14.80 (iPhone, North America, productivity); sources conflict and none is a primary dataset for US productivity apps (**U**). No source tests payback for a one-time price of about $40. Arithmetic only: $3.40 an install at 0.9% paying is about $378 per buyer.
+
+**Google Play launch tools.**
+- Promo codes: up to 500 per quarter across all non-subscription promotions in an app **V**.
+- Devices can be excluded by RAM size **V**; the console shows RAM as an attribute of the install base (**P**).
+- Pre-registration lasts at most 90 days; store-listing experiments test icon, graphics, screenshots and descriptions with up to two variants (**P**, official pages seen by researcher).
+
+---
+
+## 14. One-Time ("Lifetime") Pricing: Comparable Prices, Evidence, Trial Rules & Store Terms (Google Play and Apple)
+
+Raw report: `research/09_one_time_pricing_evidence_and_store_mechanics.md` (wave 3, 2026-11-25). **V** = re-checked on 2026-11-25. Google Play listings could not be read by any agent, so Android store prices are mostly unknown; iPhone prices come from App Store listings, which also show old price tiers.
+
+**One-time prices of comparable apps.**
+
+| App | One-time price | Yearly price | Status |
+| :--- | :--- | :--- | :--- |
+| FluidVox (dictation, iPhone) | $39.00 lifetime | monthly $14.99 | **V** |
+| Notability "Classic" (notes) | $39.99 on its website, $49.99 on the App Store | subscription tiers $11.99–79.99 a year | **V** prices; reintroduction in July 2026 **P** |
+| Daylio (journal, iPhone) | $59.99 lifetime | $35.99 listed, not labelled yearly | partly confirmed |
+| Habitify (habits) | $59.99 | about $29.88 | **P** |
+| Journey (journal) | $199 | $49.99 | **P** |
+| Superwhisper / Voicy (dictation) | $249.99 / $260 | $84.99 / $82 | **V** / **U** |
+| Whisper Notes (on-device transcription, iPhone; no Android version) | $7.99 | — | **V** |
+| Private Transcribe; Viska; Private LLM (on-device transcription or chat) | $9.99; $4.99–6.99; $4.99 | — | **P** / **U** |
+| Offscript (Android, on-device voice memos) | $60 reported | $3–20 a month reported | **U** |
+
+- Lifetime-to-yearly ratios in apps that offer both run from about 1.7× to 4× (**P**).
+- Without a lifetime option: Voicenotes, Day One, Tasks.org; Daylio may have dropped lifetime on Google Play (**U**).
+
+**Evidence on one-time against subscription.**
+- **No published conversion rate for one-time unlock apps was found anywhere.**
+- Adapty: 14% of apps offer a lifetime plan; it brings 1% of total subscription revenue, 5.6% in the typical app that sells it **V**. One-time purchases were 10.32% of app revenue in 2025, up from 6.42% in 2023 **V**.
+- RevenueCat 2026: apps whose best-selling plan is lifetime earn a median $0.19 per install after 14 days and $0.24 after 60 **V**. About one app in four offers a lifetime plan (**P**).
+- Halide (2021): subscribers outnumbered one-time buyers almost five to one, yet one-time revenue was 39% of the total **V**.
+- Notability moved from one-time to subscription in 2021 and met wide criticism; it brought a one-time plan back in 2026 (**P**).
+
+**Trials for a one-time purchase.**
+- Google Play offers only pre-order and discount offers for one-time products; there is no free-trial offer type **V**. A trial must be built inside the app.
+- Apple: "Non-subscription apps may offer a free time-based trial period before presenting a full unlock option by setting up a Non-Consumable IAP item at Price Tier 0 that follows the naming convention: 'XX-day Trial.'" (Guideline 3.1.1) **V**.
+- Named apps use time limits (7–15 days), usage limits (minutes or words per day or week) or feature limits (**P**). **No published result compares these designs for one-time apps.**
+
+**Store terms.**
+- Apple: 15% commission under the Small Business Program for developers with up to $1 million in proceeds in the prior year; $99 annual membership **V**.
+- Google Play price experiments (one-time products only): at most two variants and a control; minimum detectable effect 5–50% (default 30%); confidence 70–99% (default 90%); at most six months; the console warns when volume is too low **V**.
+- Whether Play Billing needs the app to hold the internet permission: Google's documentation is silent. Developer reports say the permission arrives through a bundled library and that billing works without it; nobody reported a full device test (**U**).
+
+**Earning later from one-time buyers.** Examples found: a new major version sold again (Things 3 — mixed reactions); a separate new app (Procreate Dreams); a one-time app converted to a subscription (Notability, Plex — backlash and refund requests) (**P**). No 2025–2026 Google Play example of a paid add-on sold to lifetime buyers was found.
+
+---
+
+## 15. Google Play Submission Requirements That Affect a Launch Date (Review Time, Declarations, Restricted Permissions, Billing)
+
+Checked directly against Google's pages on 2026-11-25 (no separate raw report).
+
+- **Review time**: "For certain developer accounts, we'll take more time to thoroughly review your app… This may result in review times of up to seven days or longer in exceptional cases." The page does not say which accounts — partly confirmed.
+- **Foreground-service declaration**: every foreground-service type used must be declared on the App content page with a description and a video showing the user triggering the feature; for the microphone type, "Show the user initiate the microphone actively recording audio" **V**.
+- **Battery-optimisation exemption**: "Google Play policies prohibit apps from requesting direct exemption from Power Management features — Doze and App Standby — in Android 6.0 and above unless the core function of the app is adversely affected." The table of acceptable uses lists safety, task-automation, companion-device and (conditionally) messaging or calling apps; **there is no voice-recording row**. Play's abuse policy gives as a violation "apps that are not eligible for allowlisting and attempt to bypass system power management" — partly confirmed (no explicit rejection wording).
+- **Privacy policy**: "You must link to a privacy policy on your store listing and within your app, even if your app doesn't access personal or sensitive user data" **V** (wording).
+- **Data safety form**: "Even developers with apps that do not collect any user data must complete this form" **V**.
+- **Payments profile**: needed to sell; the bank account must be in the profile's country; Google's India page warns "this process can take significant time to complete" — partly confirmed.
+- **Target API level**: new apps and updates must target Android 16 (API level 36) **V**.
+- **One-time product**: must be created and activated in Play Console; draft purchase options are not returned to the app **V**.
+- **Billing library**: latest release 9.1.0 (2026-06-18). The deprecation table gives version 7 a deadline of 31 August 2026 (extension to 1 November 2026) and version 8 a deadline of 31 August 2027, so version 8 is the oldest still within its deadline (checker's inference from the table) — partly confirmed.

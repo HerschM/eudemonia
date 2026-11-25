@@ -64,6 +64,7 @@ A strategy may **challenge** a principle when the evidence shows it costs more t
 | [`COMPETITIVE_LANDSCAPE.md`](COMPETITIVE_LANDSCAPE.md) | Verified facts about other companies, platforms and the market, with sources and verification status. | Facts only |
 | [`STRATEGY.md`](STRATEGY.md) | Positioning, target customer, business-model options with pros and cons, the current recommendation, hypotheses and their tests, product proposals awaiting the user. | Forward-looking |
 | [`research/`](research/) | Raw subagent reports, one file per research brief, kept as delivered. Not authoritative until promoted into `COMPETITIVE_LANDSCAPE.md`. | Raw evidence |
+| [`launch/`](launch/) | Draft public-facing texts (store listing, landing page, paywall wording, outreach messages, Play submission texts, video script), one file per purpose. **Drafts only: nothing is posted, sent or submitted without the user's decision.** | Drafts for the user |
 
 Headings in these files follow the root rule: descriptive, never single-word. Read large files by outline first (`grep -E -n "^#{2,3} " <file>`), then by line range.
 

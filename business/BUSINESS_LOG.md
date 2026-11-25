@@ -10,11 +10,13 @@
 - **Wave 1 (2026-11-24) is complete and promoted**: five reports in `research/01–05`, 24 load-bearing claims re-checked (16 confirmed, 3 partly confirmed, 1 corrected, 4 unverifiable), facts in `COMPETITIVE_LANDSCAPE.md` Sections 1–10, strategy draft in `STRATEGY.md`.
 - **2026-11-25: the user answered the six founder questions, reported the state of the trigger, and proposed a price** (all recorded below). `STRATEGY.md` is now Draft v0.2 and reflects them.
 - **Wave 2 (2026-11-25) is complete and promoted**: `research/06` (price level against conversion, voluntary payment, India, Play price mechanics) and `research/07` (Accessibility precedents, closed-testing rule, lock-screen capture routes on Android and iPhone, iPhone model limits). 22 claims re-checked (15 confirmed, 5 partly confirmed, 2 unverifiable, none refuted). Facts in `COMPETITIVE_LANDSCAPE.md` Sections 11–12.
-- **The open disagreement (not settled by the user)**: the user proposes US $0.59–0.99 and India ₹19–29 a month, presented as an honour system. The orchestrator's recommendation (`STRATEGY.md` Section 5, v0.3): free capture; Synthesis on a cheap enforced subscription with a lifetime price beside it; US about $1.99 a month with $0.99 tested in a comparable country; India ₹49–99 a month plus a yearly plan; do not plan on $10–15K a month in two quarters; first store release without the Accessibility permission, volume trigger added as a later update; recruit 12 closed-test testers now; check iPhone feasibility early.
-- **Evidence the user should weigh, both ways**: low-priced apps convert fewer installs and earn about an eighth per install (cross-app benchmark, not a test); HabitKit earns $28K a month at $1–2 with 25,100 subscribers and about 560K downloads on both platforms.
-- **Next**: the user answers the four open questions below and reacts to the v0.3 recommendation. If approved, draft the public-test materials (Play declaration text, demo video script, waiting-list page copy, community posts) — the orchestrator drafts, the user submits and posts. Further research only where a decision needs it (candidates: distribution channels for the first audience; gaps 1, 8 and 9 in `COMPETITIVE_LANDSCAPE.md` Section 10).
-- **No subagents are running. Safe to compact.**
-- **Engineering questions handed to the user, not investigated here**: (1) Android's rule that a microphone foreground service cannot be created from the background (notification and widget interaction are official exemptions); (2) Android 17 per-app memory limits against a resident 2.5 GB model; (3) whether any capture route records without unlocking; (4) on iPhone, recording from a locked phone and running the model when the app is not in front.
+- **2026-11-25 (second reply): the user settled the pricing disagreement and reset the brief** — one-time lifetime price, no honour system, target kept, organisation Play account, drafting of public-test materials approved (all recorded under User Decisions). The earlier v0.3 recommendation (cheap subscription) is superseded.
+- **`STRATEGY.md` is v0.4 (clean rewrite, 2026-11-25)** and is the current plan: lifetime price $39.99 with a $29.99 launch offer; usage-based Synthesis trial built in the app; target = 335–500 sales a month (11–17 a day); quiet release 30 Nov → public Android launch about mid-January → one repeatable channel by end of February (tripwire: about 100 sales a month and 100+ installs a day from one source) → iPhone in March–April → 335+ sales a month by May. Channels ranked: founder posting in public, founder-filmed short video, store search, communities, personal outreach; Product Hunt saved for iPhone; no paid installs or paid influencers. Metrics: `STRATEGY.md` Section 8.
+- **Orchestrator's stated judgement (the user has heard it and kept the target)**: reaching $10–15K a month within six months is unlikely and not impossible; it needs both a repeatable channel and iPhone inside the window. The tripwires exist to find out early.
+- **Wave 3 (2026-11-25) is complete and promoted**: `research/08` (acquisition channels, base rates), `research/09` (one-time pricing, trials, store terms) and a direct check of Play submission requirements. 32 claims re-checked (23 confirmed, 9 partly confirmed, none refuted). Facts in `COMPETITIVE_LANDSCAPE.md` Sections 13–15. Notable: RevenueCat's Google Play conversion figure contradicts itself (0.9% or 2.6%); no conversion data exists for one-time unlock apps; the battery-optimisation exemption has no voice-recording use case in Google's policy table.
+- **Launch drafts** are under `business/launch/` (written by a Sonnet subagent on 2026-11-25, reviewed by the orchestrator — see the review note at the top of each file or the status line below). Nothing has been posted, submitted or sent. No demo video is to be made until the app is ready (script only).
+- **Next**: the user answers the open questions below → adjust price/trial wording in the drafts → the user submits to Play. After release: weekly review of the Section 8 numbers against the tripwires. Research only where a decision needs it (candidates: reading Play listings on a real phone for rivals' Android prices; iPhone feasibility is engineering).
+- **Engineering questions handed to the user, not investigated here**: (0) whether the first release should request the battery-optimisation exemption at all, given Play's policy (`COMPETITIVE_LANDSCAPE.md` Section 15); whether the build uses Play Billing Library 8 or newer; (1) Android's rule that a microphone foreground service cannot be created from the background (notification and widget interaction are official exemptions); (2) Android 17 per-app memory limits against a resident 2.5 GB model; (3) whether any capture route records without unlocking; (4) on iPhone, recording from a locked phone and running the model when the app is not in front.
 
 ---
 
@@ -29,6 +31,19 @@
 - **2026-11-25 — Language**: English only at first.
 - **2026-11-25 — First customer**: not certain; pictured as "a lazy person" who dumps thoughts in one place and expects a clean, structured result.
 - **2026-11-25 — Launch scope**: launch with Capture and Synthesis only, quickly, to test the market. Both screens are nearly done.
+- **2026-11-25 (second reply) — Stance**: "I'm here to learn business and do business"; open to ideas, including a pivot. Prefers step-by-step validation through an early launch over perfecting the product without user insight.
+- **2026-11-25 (second reply) — Price model**: a one-time lifetime purchase at a higher price point ($35–45; the orchestrator to give the number). **The honour system is dropped.** Synthesis does not work for someone who has not paid.
+- **2026-11-25 (second reply) — Target kept**: $10–15K a month within two quarters is **not** dropped; the strategy must be designed to reach it and must scale in the long run.
+- **2026-11-25 (second reply) — iPhone**: will launch on Apple soon, "since that is the paying market".
+- **2026-11-25 (second reply) — Direct sale of the APK**: acceptable, but can wait until sales pick up.
+- **2026-11-25 (second reply) — Cloud**: now open to cloud transcription or letting users add their own API key, but believes that space is overcrowded and offers no moat; saw "fully local + lifetime price" as the moat. Open to ideas. (Supersedes "no cloud stays, firmly" as an absolute; the preference for local remains.)
+- **2026-11-25 (second reply) — Google Play account**: exists, approved as an **organisation** account, so the 12-tester closed-test rule does not apply.
+- **2026-11-25 (second reply) — Public-test materials**: the orchestrator may draft them. **No demo video with the current app** (not ready). **No official posting or communication anywhere without informing the user.**
+- **2026-11-25 (second reply) — Launch**: Capture and Synthesis as soon as possible.
+- **2026-11-25 (third reply) — Target definition**: monthly revenue (not recurring) is accepted as the reading of the $10–15K target; the user accepts it will fluctuate and asked for any further metrics worth tracking.
+- **2026-11-25 (third reply) — Launch date**: Google Play launch aimed at the end of November 2026 (about 2026-11-30), with two to three days of buffer (about 2026-12-03).
+- **2026-11-25 (third reply) — First release without the Accessibility permission**: notification and widget only; the volume trigger comes in a later update. The launch must not be held up.
+- **2026-11-25 (third reply) — Sequence after launch**: set up a daily marketing routine → start the iPhone version immediately → the remaining stages (Insights, Action) after the iPhone launch.
 
 ---
 
@@ -43,7 +58,8 @@
 
 ## Open Questions for the User (Answers Shape the Strategy)
 
-1. **Honour system or subscription?** Does Synthesis keep working for someone who does not pay (a true honour system), or is it locked until payment (a cheap subscription described as a fair price)?
-2. **Which gives way: the $10–15K target or the floor price?** At $0.99 a month they do not fit together.
-3. **Google Play developer account**: does one exist, and is it personal or an organisation account? (It affects how soon a production launch is possible.)
-4. **Public tests**: may the orchestrator draft the materials (the user would submit and post them)?
+1. **Is the paywall (Play purchase, trial counter, locked Synthesis) built and tested?** It decides whether the launch date holds.
+2. **Is the Google payments profile set up and verified?** Needed to sell; Google's India page warns it can take significant time.
+3. **Quiet release now, public push about mid-January?** (Orchestrator's recommendation.)
+4. **Price and offer**: $39.99 list, $29.99 launch offer with an end date, usage-based trial (first *N* Syntheses) — agree, or change?
+5. **Does the user have an existing audience** (X, LinkedIn, a community, a newsletter)? The fast comparables started from one.
