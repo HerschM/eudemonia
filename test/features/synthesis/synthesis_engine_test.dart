@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_engine.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_prompts.dart';
@@ -338,6 +339,170 @@ void main() {
       await SynthesisEngine(generate: model.call, profile: profile).write(plan([th(1, 0, 'a b c')]));
       expect(model.prompts.single, buildStructuredWritePrompt(['a b c']));
       expect(model.budgets.single, structuredOutputBudget(3));
+    });
+  });
+
+  group('note styles', () {
+    const structured = SynthesisModelProfile(
+      modelFileName: 'x.gguf',
+      chatFormat: ChatFormat.chatml,
+      noteStyle: NoteStyle.structured,
+      organiseBatchSize: 5,
+      writeWordLimit: 700,
+      minOutputRatio: 0.5,
+      maxOutputRatio: 1.3,
+    );
+
+    SessionPlan styled(List<SynthesisThought> all, String styleId, {List<SynthesisThought>? added, String? note}) =>
+        SessionPlan(
+          existingSessionId: 's',
+          folder: 'Work',
+          currentNote: note,
+          thoughts: all,
+          newThoughts: added ?? all,
+          styleId: styleId,
+        );
+
+    test('a plan is organised unless it names a style', () {
+      final plan = SessionPlan(existingSessionId: null, folder: 'Work', currentNote: null, thoughts: const [], newThoughts: const []);
+      expect(plan.styleId, 'organised');
+    });
+
+    test('organise carries an existing session\'s style into its plan; a new session is organised', () async {
+      final model = FakeModel((p, _) => labelAll(p, (t) => t.contains('home') ? 'Personal' : 'Work'));
+      final existing = ExistingSession(
+          id: 's1', folder: 'Work', note: 'Old.', thoughts: [th(1, 0)], styleId: 'journal');
+      final out = await SynthesisEngine(generate: model.call)
+          .organise([th(2, 5, 'more work'), th(3, 6, 'clean the home')], [existing]);
+      expect({for (final p in out.plans) p.folder: p.styleId}, {'Work': 'journal', 'Personal': 'organised'});
+      expect(const ExistingSession(id: 'x', folder: 'Work', note: '', thoughts: []).styleId, 'organised');
+    });
+
+    test('a new session takes the default style of its folder; an unknown or hand-edit default reads as organised',
+        () async {
+      final model = FakeModel((p, _) => labelAll(p, (t) => t.contains('home') ? 'Personal' : 'Work'));
+      const folders = [
+        FolderDefinition(name: 'Work', description: 'w', defaultStyleId: 'journal'),
+        FolderDefinition(name: 'Personal', description: 'p', defaultStyleId: manualStyleId),
+        FolderDefinition(name: 'Uncategorized', description: 'u'),
+      ];
+      final existing = ExistingSession(id: 's1', folder: 'Work', note: 'Old.', thoughts: [th(1, 0)], styleId: 'bullets');
+      final out = await SynthesisEngine(generate: model.call, folders: folders)
+          .organise([th(2, 5, 'more work'), th(3, 6, 'clean the home'), th(4, 300, 'later work')], [existing]);
+      expect([for (final p in out.plans) '${p.existingSessionId} ${p.folder} ${p.styleId}'],
+          ['s1 Work bullets', 'null Personal organised', 'null Work journal']);
+    });
+
+    test('new thoughts of a hand-edited note are written alone, organised, and appended under Added later', () async {
+      final model = FakeModel((p, _) => ok('**New bits**\n\n- I need to move the release to Monday.'));
+      final all = [th(1, 0, 'plan the release'), th(2, 5, 'move the release to Monday')];
+      final note = await SynthesisEngine(generate: model.call, profile: structured).write(
+          styled(all, manualStyleId, added: [all[1]], note: '**My plan**\n\nI wrote this myself.'));
+      expect(model.prompts.single, buildStyleWritePrompt(['move the release to Monday'], noteStyleById('organised')));
+      expect(note, '**My plan**\n\nI wrote this myself.\n\n**Added later**\n\n- I need to move the release to Monday.');
+    });
+
+    test('a hand-edited note is held to the every-thought check and an invalid fragment appends nothing', () async {
+      final rejected = <String>[];
+      final model = FakeModel((p, _) => ok('**New**\n\n- Something else entirely.'));
+      final all = [th(1, 0, 'plan'), th(2, 5, 'Call the dentist tomorrow morning about the broken crown.')];
+      final note = await SynthesisEngine(
+              generate: model.call, profile: structured, onRejected: (k, ids, r) => rejected.add('$k $ids $r'))
+          .write(styled(all, manualStyleId, added: [all[1]], note: 'Mine.'));
+      expect(note, isNull);
+      expect(rejected.single, 'write [2] the note leaves out thought(s) [1]');
+    });
+
+    test('write uses the prompt of the plan\'s style', () async {
+      for (final style in noteStyles) {
+        final model = FakeModel((p, _) => ok('**T**\n\n- a b c'));
+        await SynthesisEngine(generate: model.call, profile: structured).write(styled([th(1, 0, 'a b c')], style.id));
+        expect(model.prompts.single, buildStyleWritePrompt(['a b c'], style), reason: style.id);
+        expect(model.prompts.single, contains(style.systemPrompt), reason: style.id);
+        expect(model.budgets.single, structuredOutputBudget(3), reason: style.id);
+      }
+    });
+
+    test('the small-model clean-up prompt is kept for organised notes only', () async {
+      final organised = FakeModel((p, _) => ok('A b c.'));
+      await SynthesisEngine(generate: organised.call).write(styled([th(1, 0, 'a b c')], 'organised'));
+      expect(organised.prompts.single, buildWritePrompt(['a b c']));
+      final journal = FakeModel((p, _) => ok('**T**\n\nA b c.'));
+      await SynthesisEngine(generate: journal.call).write(styled([th(1, 0, 'a b c')], 'journal'));
+      expect(journal.prompts.single, buildStyleWritePrompt(['a b c'], noteStyleById('journal')));
+    });
+
+    test('a reply that breaks its style\'s form is rejected with the style named, never the text', () async {
+      final rejected = <String>[];
+      final model = FakeModel((p, _) => ok('**Day**\n\n**Errands**\n- I went to the market.'));
+      final engine = SynthesisEngine(
+          generate: model.call, profile: structured, onRejected: (k, ids, r) => rejected.add('$k $ids $r'));
+      expect(await engine.write(styled([th(1, 0, 'I went to the market.')], 'bullets')), isNull);
+      expect(rejected.single, startsWith('write [1] not in the Key points form: '));
+      expect(rejected.single, isNot(contains('market')));
+      // The same reply is a valid organised note.
+      expect(await engine.write(styled([th(1, 0, 'I went to the market.')], 'organised')), isNotNull);
+    });
+
+    test('actionable notes are not held to every thought or to a minimum length', () async {
+      final thoughts = [
+        th(1, 0, 'Call the dentist tomorrow morning and book a cleaning appointment for Tuesday.'),
+        th(2, 1, 'I really enjoyed the long walk along the river yesterday evening with my sister.'),
+        th(3, 2, words(40)),
+      ];
+      final model = FakeModel((p, _) => ok('**Dentist**\n\n- [ ] Call the dentist tomorrow morning.'));
+      final note = await SynthesisEngine(generate: model.call, profile: structured).write(styled(thoughts, 'actionable'));
+      expect(note, '**Dentist**\n\n- [ ] Call the dentist tomorrow morning.');
+      expect(model.prompts, hasLength(1));
+      // The same reply as an organised note leaves thoughts out and is far too short.
+      final strict = FakeModel((p, _) => ok('**Dentist**\n\n- [ ] Call the dentist tomorrow morning.'));
+      expect(await SynthesisEngine(generate: strict.call, profile: structured).write(styled(thoughts, 'organised')),
+          isNull);
+    });
+
+    test('a summary of a session over the write limit is invalid before any model call and is never split',
+        () async {
+      final rejected = <String>[];
+      final model = FakeModel((p, _) => ok('**T**\n\nShort.'));
+      final engine = SynthesisEngine(
+          generate: model.call, profile: structured, onRejected: (k, ids, r) => rejected.add('$k $ids $r'));
+      final long = styled([th(1, 0, words(400)), th(2, 1, words(400))], 'concise');
+      expect(engine.unwritableReason(long), tooLongForShortSummary);
+      expect(await engine.write(long), isNull);
+      expect(model.prompts, isEmpty);
+      expect(rejected.single, 'write [1, 2] $tooLongForShortSummary');
+      // Over the limit with a note: still not appended in pieces.
+      expect(await engine.write(styled(long.thoughts, 'concise', added: [long.thoughts.last], note: 'Old.')), isNull);
+      expect(model.prompts, isEmpty);
+
+      // Under the limit, a rejected summary is not retried in halves.
+      final bad = FakeModel((p, _) => ok('**T**\n\n- a bullet'));
+      final short = styled([th(1, 0, 'one two'), th(2, 1, 'three four')], 'concise');
+      expect(SynthesisEngine(generate: bad.call, profile: structured).unwritableReason(short), isNull);
+      expect(await SynthesisEngine(generate: bad.call, profile: structured).write(short), isNull);
+      expect(bad.prompts, hasLength(1));
+    });
+
+    test('pieces of a long session written in a style other than organised join into one titled note', () async {
+      var n = 0;
+      final model = FakeModel((p, _) {
+        n++;
+        return ok('**Part $n**\n\n${words(250)} sentence.');
+      });
+      final all = [th(1, 0, words(400)), th(2, 1, words(400))];
+      final note = await SynthesisEngine(generate: model.call, profile: structured).write(styled(all, 'journal'));
+      expect(model.prompts, hasLength(2));
+      expect('**'.allMatches(note!).length, 2, reason: 'one title');
+      expect(note, startsWith('**Part 1**\n\n'));
+      expect(note, isNot(contains('Part 2')));
+    });
+
+    test('new thoughts appended to a long styled note do not add a second title', () async {
+      final model = FakeModel((p, _) => ok('**New**\n\n- [ ] Buy milk.'));
+      final all = [th(1, 0, words(700)), th(2, 1, 'buy milk')];
+      final note = await SynthesisEngine(generate: model.call, profile: structured)
+          .write(styled(all, 'actionable', added: [all[1]], note: '**Old**\n\n- [ ] Call Ana.'));
+      expect(note, '**Old**\n\n- [ ] Call Ana.\n\n- [ ] Buy milk.');
     });
   });
 

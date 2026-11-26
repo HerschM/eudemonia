@@ -3,4 +3,9 @@
     <string name="capture_widget_label">Capture thought</string>
     <string name="capture_widget_description">One tap to record a thought from your home screen. Tap again to stop and save it.</string>
     <string name="capture_widget_record">Record</string>
+    <!-- Idle texts of the widget layouts (previews and first render); the live texts come from CaptureWidgetRenderState. -->
+    <string name="capture_widget_title">Capture a thought</string>
+    <string name="capture_widget_subtitle">Tap to record</string>
+    <string name="capture_widget_content_description">Record a thought</string>
+    <string name="capture_tile_label">Record thought</string>
 </resources>

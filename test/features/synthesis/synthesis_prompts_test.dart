@@ -154,6 +154,30 @@ void main() {
       expect(parseOrganiseReply(reply, 3, defaultFolders), ['Journal', 'Work', 'Uncategorized']);
     });
 
+    test('user folder names with spaces, an apostrophe, quotes, a colon or a leading digit work end to end', () {
+      const folders = [
+        FolderDefinition(name: 'Side project', description: 'evenings.'),
+        FolderDefinition(name: "Kid's school", description: 'homework.'),
+        FolderDefinition(name: 'The "Big" Move', description: 'the flat.'),
+        FolderDefinition(name: 'Work: Clients', description: 'customers.'),
+        FolderDefinition(name: '2027 Goals', description: 'plans.'),
+        FolderDefinition(name: 'Uncategorized', description: 'none.'),
+      ];
+      final prompt = buildOrganisePrompt(['x'], folders: folders);
+      for (final f in folders) {
+        expect(prompt, contains('- ${f.name}: ${f.description}\n'));
+      }
+      expect(
+        buildOrganiseGrammar(1, folders),
+        endsWith('folder ::= "Side project" | "Kid\'s school" | "The \\"Big\\" Move" | "Work: Clients" | '
+            '"2027 Goals" | "Uncategorized"\n'),
+      );
+      const reply = '1: Side project\n2: Kid\'s school\n3: The "Big" Move\n4: Work: Clients\n5: 2027 Goals';
+      expect(parseOrganiseReply(reply, 5, folders),
+          ['Side project', "Kid's school", 'The "Big" Move', 'Work: Clients', '2027 Goals']);
+      expect(parseOrganiseReply('1: Side Project', 1, folders), isNull, reason: 'names match exactly');
+    });
+
     test('rejects a turn without thoughts or folders', () {
       expect(() => buildOrganiseGrammar(0, defaultFolders), throwsArgumentError);
       expect(() => buildOrganiseGrammar(2, const []), throwsArgumentError);

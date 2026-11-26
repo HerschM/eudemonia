@@ -21,6 +21,8 @@ Written by the engineering orchestrator on 2026-11-26 for the business workstrea
 
 **Also present, added automatically by Android libraries**: `com.eudemonia.eudemonia.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (an internal marker that protects the app's own internal messages; it grants nothing) and a `queries` entry for text selection (`PROCESS_TEXT`, lets the standard copy/share menu appear on selected text).
 
+**Added 2026-11-27 without any new permission**: a Quick Settings tile (`Record thought`) that starts and stops a recording the same way the notification and the widget do (it needs the system's `BIND_QUICK_SETTINGS_TILE` protection on the app's own tile service, which is not a permission the app requests); and a request for audio focus while recording, which asks other apps to pause their sound so music is not recorded with the voice. Neither appears in the permission list and neither needs a Play declaration.
+
 ## 2. Removed or Never Requested
 
 | Capability | Status | Why |

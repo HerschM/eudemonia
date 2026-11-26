@@ -6,9 +6,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:eudemonia/features/capture/native_capture_channel.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
+import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
 
 import '../capture/capture_test_doubles.dart';
 import 'fake_permission_gateway.dart';
+import 'settings_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -58,12 +60,16 @@ void main() {
           overrides: [
             runtimePermissionGatewayProvider.overrideWithValue(permissions),
             nativeCaptureChannelProvider.overrideWithValue(capture),
+            folderStoreProvider.overrideWithValue(InMemoryFolderStore()),
           ],
           child: const MaterialApp(home: SettingsScreen()),
         ),
       );
       await tester.pumpAndSettle();
     }
+
+    /// Permissions start collapsed; open them.
+    Future<void> openPermissions(WidgetTester tester) => expandSection(tester, 'settings_permissions_header');
 
     Finder badgeIn(String rowKey) => find.descendant(
           of: find.byKey(Key(rowKey)),
@@ -73,10 +79,12 @@ void main() {
     testWidgets('shows Microphone and Notifications rows with Disabled badges, and no accessibility, volume or battery wording',
         (tester) async {
       await pumpSettings(tester);
+      await openPermissions(tester);
 
       expect(find.text('Microphone'), findsOneWidget);
       expect(find.text('Notifications (lock-screen Record button)'), findsOneWidget);
-      expect(find.text('CAPTURE PERMISSIONS'), findsOneWidget);
+      expect(find.text('PERMISSIONS'), findsOneWidget);
+      expect(find.text('CAPTURE PERMISSIONS'), findsNothing);
       expect(find.textContaining('Battery'), findsNothing);
       expect(find.descendant(of: badgeIn('settings_microphone_row'), matching: find.text('Disabled')),
           findsOneWidget);
@@ -95,6 +103,7 @@ void main() {
       mockForegroundRunning = true;
 
       await pumpSettings(tester);
+      await openPermissions(tester);
 
       expect(find.text('Enabled'), findsNWidgets(2));
       expect(find.text('Disabled'), findsNothing);
@@ -102,9 +111,12 @@ void main() {
 
     testWidgets('tapping the Microphone and Notifications rows requests the permissions', (tester) async {
       await pumpSettings(tester);
+      await openPermissions(tester);
 
+      await tester.ensureVisible(find.byKey(const Key('settings_microphone_row')));
       await tester.tap(find.byKey(const Key('settings_microphone_row')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('settings_notifications_row')));
       await tester.tap(find.byKey(const Key('settings_notifications_row')));
       await tester.pumpAndSettle();
 
@@ -116,6 +128,8 @@ void main() {
       await pumpSettings(tester);
       final row = find.byKey(const Key('settings_add_widget_row'));
       await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
 
       expect(find.text('Add capture widget to home screen'), findsOneWidget);
       await tester.tap(row);
@@ -131,12 +145,45 @@ void main() {
       await pumpSettings(tester);
       final row = find.byKey(const Key('settings_add_widget_row'));
       await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
 
       await tester.tap(row);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Long-press your home screen, choose Widgets, then Eudemonia.'), findsOneWidget);
+    });
+
+    testWidgets('Add Record tile asks the system to offer the Quick Settings tile and stays quiet on success',
+        (tester) async {
+      await pumpSettings(tester);
+      final row = find.byKey(const Key('settings_add_tile_row'));
+      await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add Record tile to Quick Settings'), findsOneWidget);
+      await tester.tap(row);
+      await tester.pump();
+
+      expect(capture.tileCalls, 1);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('when the system cannot offer the tile, a SnackBar explains how to add it by hand', (tester) async {
+      capture.tileOffered = false;
+      await pumpSettings(tester);
+      final row = find.byKey(const Key('settings_add_tile_row'));
+      await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+
+      await tester.tap(row);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.textContaining('drag "Record thought" into your tiles'), findsOneWidget);
     });
   });
 }

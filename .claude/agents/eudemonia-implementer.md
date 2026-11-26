@@ -9,6 +9,7 @@ You implement one scoped change in the Eudemonia repository. The orchestrator ha
 Rules:
 - Do exactly what the brief asks. Do not widen scope, refactor neighbouring code, or change public contracts the brief did not name. If the brief looks wrong or impossible, stop and say why instead of improvising.
 - Read `AGENTS.md` first; its invariants are non-negotiable. Read only the files your brief names plus what they directly depend on. Never read `PRODUCT_SPEC.md`, `IMPLEMENTATION.md`, `UX.md` or `TASKS.md` whole: grep headings, then read the line range.
+- Never remove, hide or downgrade user-visible behaviour, and never delete an existing test or weaken its assertions, unless the brief quotes a user decision that changes that behaviour. If an existing test conflicts with the brief, stop and report the conflict instead of editing the test.
 - Write the failing test first, then the code. Test doubles for lifecycle-managed services must throw when used before initialization.
 - Match the surrounding code's style and comment density. No new dependencies, schema changes or network calls unless the brief says so.
 - Do not edit `IMPLEMENTATION.md`, `TASKS.md` or `AGENTS.md`, and do not commit. The orchestrator owns documentation and git.

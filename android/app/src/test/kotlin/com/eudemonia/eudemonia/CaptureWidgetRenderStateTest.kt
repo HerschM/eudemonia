@@ -14,11 +14,15 @@ class CaptureWidgetRenderStateTest {
     fun idleWithPermissionStartsCapture() {
         val render = CaptureWidgetRenderState.from(idle, hasMicPermission = true, nowWallMs = 0, nowElapsedMs = 0)
 
-        assertEquals("Record", render.label)
+        assertEquals("Capture a thought", render.title)
+        assertEquals("Tap to record", render.subtitle)
+        assertEquals("Record", render.compactLabel)
+        assertEquals("Record a thought", render.contentDescription)
         assertEquals(CaptureWidgetRenderState.Icon.MIC, render.icon)
         assertEquals(CaptureWidgetRenderState.ClickTarget.START_CAPTURE, render.clickTarget)
         assertFalse(render.isRecording)
         assertNull(render.chronometerBase)
+        assertNull(render.chronometerFormat)
     }
 
     @Test
@@ -33,7 +37,11 @@ class CaptureWidgetRenderStateTest {
             nowElapsedMs = 90_000,
         )
 
-        assertEquals("Stop", render.label)
+        assertEquals("Recording", render.title)
+        assertEquals("Tap to stop and save", render.subtitle)
+        assertEquals("Recording", render.compactLabel)
+        assertEquals("Stop and save the recording", render.contentDescription)
+        assertEquals("Recording %s", render.chronometerFormat)
         assertEquals(CaptureWidgetRenderState.Icon.STOP, render.icon)
         assertEquals(CaptureWidgetRenderState.ClickTarget.STOP_CAPTURE, render.clickTarget)
         assertTrue(render.isRecording)
@@ -54,8 +62,40 @@ class CaptureWidgetRenderStateTest {
     fun idleWithoutPermissionOpensTheApp() {
         val render = CaptureWidgetRenderState.from(idle, hasMicPermission = false, nowWallMs = 0, nowElapsedMs = 0)
 
-        assertEquals("Record", render.label)
+        assertEquals("Capture a thought", render.title)
+        assertEquals("Open the app to allow the microphone", render.subtitle)
+        assertEquals("Record", render.compactLabel)
+        assertEquals("Record a thought", render.contentDescription)
         assertEquals(CaptureWidgetRenderState.Icon.MIC, render.icon)
         assertEquals(CaptureWidgetRenderState.ClickTarget.OPEN_APP, render.clickTarget)
+    }
+
+    @Test
+    fun layoutIsCompactBelowTheFullWidthThresholdAndFullFromIt() {
+        val threshold = CaptureWidgetRenderState.FULL_MIN_WIDTH_DP
+
+        assertEquals(180, threshold)
+        assertEquals(CaptureWidgetRenderState.LayoutSize.COMPACT, CaptureWidgetRenderState.layoutSizeFor(threshold - 1))
+        assertEquals(CaptureWidgetRenderState.LayoutSize.FULL, CaptureWidgetRenderState.layoutSizeFor(threshold))
+        assertEquals(CaptureWidgetRenderState.LayoutSize.FULL, CaptureWidgetRenderState.layoutSizeFor(threshold + 70))
+    }
+
+    @Test
+    fun twoCellWidgetIsCompactAndFourCellWidgetIsFull() {
+        // Typical launcher widths: ~110dp for two cells, ~250dp for four.
+        assertEquals(CaptureWidgetRenderState.LayoutSize.COMPACT, CaptureWidgetRenderState.layoutSizeFor(110))
+        assertEquals(CaptureWidgetRenderState.LayoutSize.FULL, CaptureWidgetRenderState.layoutSizeFor(250))
+    }
+
+    @Test
+    fun unknownWidthFallsBackToTheFullLayout() {
+        assertEquals(CaptureWidgetRenderState.LayoutSize.FULL, CaptureWidgetRenderState.layoutSizeFor(null))
+        assertEquals(CaptureWidgetRenderState.LayoutSize.FULL, CaptureWidgetRenderState.layoutSizeFor(0))
+    }
+
+    @Test
+    fun compactThresholdIsTheSmallestResizableWidth() {
+        assertEquals(110, CaptureWidgetRenderState.COMPACT_MIN_WIDTH_DP)
+        assertTrue(CaptureWidgetRenderState.COMPACT_MIN_WIDTH_DP < CaptureWidgetRenderState.FULL_MIN_WIDTH_DP)
     }
 }

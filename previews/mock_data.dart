@@ -286,6 +286,14 @@ class MockPipelineStatus {
   bool get hasActiveJobs => totalPending > 0;
 }
 
+/// A folder in the Settings folder list: its name and the description Synthesis files by.
+class MockSettingsFolder {
+  final String name;
+  final String description;
+
+  const MockSettingsFolder({required this.name, required this.description});
+}
+
 /// Settings and batching configuration
 class MockSettingsConfig {
   final bool isForegroundKeepAlive;
@@ -299,6 +307,9 @@ class MockSettingsConfig {
   final int thermalHeadroomPercent;
   final String ramFootprint;
   final int evictionCountdownSeconds;
+  final List<MockSettingsFolder> folders; // Uncategorized last, read-only
+  final bool isMicrophoneGranted;
+  final bool areNotificationsEnabled;
 
   const MockSettingsConfig({
     this.isForegroundKeepAlive = true,
@@ -312,6 +323,28 @@ class MockSettingsConfig {
     this.thermalHeadroomPercent = 84,
     this.ramFootprint = '1.58 GB',
     this.evictionCountdownSeconds = 104,
+    this.folders = const [
+      MockSettingsFolder(
+        name: 'Work',
+        description: 'the job and the app or software being built; colleagues, clients, meetings, budgets, '
+            'invoices, design, features, product plans, work travel.',
+      ),
+      MockSettingsFolder(
+        name: 'Personal',
+        description: "running the speaker's own life; shopping, errands, home, appointments, family plans, "
+            'places and things to remember.',
+      ),
+      MockSettingsFolder(
+        name: 'Journal',
+        description: 'how the speaker feels; mood, sleep, health, exercise, reflections on the day.',
+      ),
+      MockSettingsFolder(
+        name: 'Uncategorized',
+        description: 'only when the text fits none of these or makes no sense.',
+      ),
+    ],
+    this.isMicrophoneGranted = true,
+    this.areNotificationsEnabled = false,
   });
 
   MockSettingsConfig copyWith({
@@ -340,6 +373,9 @@ class MockSettingsConfig {
       thermalHeadroomPercent: thermalHeadroomPercent,
       ramFootprint: ramFootprint,
       evictionCountdownSeconds: evictionCountdownSeconds,
+      folders: folders,
+      isMicrophoneGranted: isMicrophoneGranted,
+      areNotificationsEnabled: areNotificationsEnabled,
     );
   }
 }

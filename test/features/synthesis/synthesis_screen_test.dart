@@ -1,12 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/presentation/notes_view_prefs.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+
+import 'notes_view_test_support.dart';
+
+class _StoredFolders implements FolderStore {
+  final List<FolderDefinition> folders;
+  _StoredFolders(this.folders);
+
+  @override
+  Future<List<FolderDefinition>?> load() async => folders;
+
+  @override
+  Future<void> save(List<FolderDefinition> folders) async {}
+}
 
 void main() {
   group('SynthesisScreen Widget & Contract Tests', () {
@@ -40,7 +55,7 @@ void main() {
     });
 
     testWidgets(
-      'renders compact dual dropdown filters, batch banner, and cluster cards on 360dp narrow viewport',
+      'renders the bar, the folder panel filters, batch banner, and cluster cards on 360dp narrow viewport',
       (WidgetTester tester) async {
         tester.view.physicalSize = const Size(360, 800);
         tester.view.devicePixelRatio = 1.0;
@@ -107,6 +122,7 @@ void main() {
           ProviderScope(
             overrides: [
               notesRepositoryProvider.overrideWithValue(mockNotesRepo),
+              notesViewPrefsStoreProvider.overrideWithValue(InMemoryNotesViewPrefsStore(openEditPrefs)),
               synthesisRepositoryProvider.overrideWith(
                 () => SynthesisRepository(initialClusters),
               ),
@@ -119,12 +135,19 @@ void main() {
 
         await tester.pumpAndSettle();
 
-        // 1. Title and Dual Filters
-        expect(find.text('SYNTHESIS SESSIONS'), findsOneWidget);
-        expect(find.byKey(const Key('synthesis_triage_filter_dropdown')),
-            findsOneWidget);
-        expect(find.byKey(const Key('synthesis_folder_filter_dropdown')),
-            findsOneWidget);
+        // 1. The bar (the header and the two dropdowns moved into it and the folder panel)
+        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
+        expect(find.byKey(const Key('synthesis_folder_button')), findsOneWidget);
+        expect(find.byKey(const Key('synthesis_mode_toggle')), findsOneWidget);
+        expect(find.byKey(const Key('synthesis_expand_all_toggle')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('synthesis_folder_button')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('triage_chip_unread')), findsOneWidget);
+        expect(find.byKey(const Key('folder_panel_row_Work')), findsOneWidget);
+        // The panel covers 80 % of the width; the scrim is what is left of the list on its right.
+        await tester.tapAt(const Offset(350, 500));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('folder_panel')), findsNothing);
 
         // 2. Pending Batch Synthesis Banner
         expect(
@@ -135,23 +158,25 @@ void main() {
             findsOneWidget);
 
         // 3. Cluster Cards
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-01')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_1')),
             findsOneWidget);
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-02')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_2')),
             findsOneWidget);
 
         // 4. Header elements: Sequence number, unread dot, style, merge
         expect(find.text('#S-01'), findsOneWidget);
-        expect(find.byKey(const Key('unread_dot_#S-01')), findsOneWidget);
-        expect(find.byKey(const Key('style_button_#S-01')), findsOneWidget);
-        expect(find.byKey(const Key('merge_button_#S-01')), findsOneWidget);
+        expect(find.byKey(const Key('unread_dot_cluster_1')), findsOneWidget);
+        expect(find.byKey(const Key('style_button_cluster_1')), findsOneWidget);
+        expect(find.byKey(const Key('merge_button_cluster_1')), findsOneWidget);
 
-        // 5. Expandable Raw Notes Pill
-        final expandPill = find.byKey(const Key('expand_raw_notes_#S-01'));
+        // 5. Expandable raw thoughts link
+        final expandPill = find.byKey(const Key('expand_raw_notes_cluster_1'));
         expect(expandPill, findsOneWidget);
-        expect(find.text('2 Raw Notes'), findsOneWidget);
+        expect(find.text('From 2 thoughts'), findsOneWidget);
 
-        // Tap to expand
+        // Tap to expand (sessions of one day are listed highest number first, so #S-01 is lower down)
+        await tester.ensureVisible(expandPill);
+        await tester.pumpAndSettle();
         await tester.tap(expandPill);
         await tester.pumpAndSettle();
 
@@ -165,7 +190,7 @@ void main() {
         expect(find.byKey(const Key('move_out_note_2')), findsOneWidget);
 
         // Single Note Guard: Cluster #S-02 has only 1 origin note
-        final expandPill2 = find.byKey(const Key('expand_raw_notes_#S-02'));
+        final expandPill2 = find.byKey(const Key('expand_raw_notes_cluster_2'));
         await tester.scrollUntilVisible(expandPill2, 100,
             scrollable: find.byType(Scrollable).first);
         await tester.ensureVisible(expandPill2);
@@ -173,8 +198,8 @@ void main() {
         await tester.tap(expandPill2);
         await tester.pumpAndSettle();
 
-        expect(find.text('1 Raw Note'), findsOneWidget);
-        expect(find.text('1 Raw Notes'), findsNothing);
+        expect(find.text('From 1 thought'), findsOneWidget);
+        expect(find.text('From 1 thoughts'), findsNothing);
         // [Move Out] must be hidden for 1-note cluster to prevent orphaned sessions
         expect(find.byKey(const Key('move_out_note_3')), findsNothing);
       },
@@ -207,6 +232,7 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
+              notesViewPrefsStoreProvider.overrideWithValue(InMemoryNotesViewPrefsStore(openEditPrefs)),
               synthesisRepositoryProvider.overrideWith(() => SynthesisRepository(clusters)),
             ],
             child: const MaterialApp(home: Scaffold(body: SynthesisScreen())),
@@ -217,23 +243,25 @@ void main() {
         expect(tester.takeException(), isNull);
         for (var i = 0; i < names.length; i++) {
           final dropdown = find.descendant(
-            of: find.byKey(Key('cluster_folder_dropdown_#S-0${i + 1}')),
+            of: find.byKey(Key('cluster_folder_dropdown_cluster_$i')),
             matching: find.byType(DropdownButton<String>),
           );
           expect(tester.widget<DropdownButton<String>>(dropdown).value, names[i]);
         }
 
-        // Every assignable folder can be chosen in the filter.
-        await tester.tap(find.byKey(const Key('synthesis_folder_filter_dropdown')));
+        // Every assignable folder can be chosen in the folder panel, and so can a folder that is
+        // not in the list but still holds a note.
+        await tester.tap(find.byKey(const Key('synthesis_folder_button')));
         await tester.pumpAndSettle();
         for (final f in defaultFolders) {
-          expect(find.text(f.name), findsWidgets);
+          expect(find.byKey(Key('folder_panel_row_${f.name}')), findsOneWidget);
         }
+        expect(find.byKey(const Key('folder_panel_row_Ideas')), findsOneWidget);
       },
     );
 
     testWidgets(
-      'Filter dropdowns correctly filter clusters by folder and triage status',
+      'The folder panel correctly filters clusters by folder and triage status',
       (WidgetTester tester) async {
         final clusters = [
           SynthesisCluster(
@@ -276,22 +304,29 @@ void main() {
         await tester.pumpAndSettle();
 
         // Both clusters visible initially
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-01')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_work')),
             findsOneWidget);
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-02')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_personal')),
             findsOneWidget);
 
-        // Filter by Triage: Unread
-        await tester.tap(find.byKey(const Key('synthesis_triage_filter_dropdown')));
+        // Filter by Triage: Unread (a chip at the top of the folder panel)
+        await tester.tap(find.byKey(const Key('synthesis_folder_button')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Unread').last);
+        await tester.tap(find.byKey(const Key('triage_chip_unread')));
         await tester.pumpAndSettle();
+        expect(find.byKey(const Key('synthesis_filter_badge')), findsOneWidget);
 
         // Only #S-01 is unread
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-01')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_work')),
             findsOneWidget);
-        expect(find.byKey(const Key('synthesis_cluster_card_#S-02')),
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_personal')),
             findsNothing);
+
+        // Filter by folder: Personal has no unread note
+        await tester.tap(find.byKey(const Key('folder_panel_row_Personal')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_work')), findsNothing);
+        expect(find.byKey(const Key('synthesis_cluster_card_cluster_personal')), findsNothing);
       },
     );
 
@@ -350,6 +385,7 @@ void main() {
           ProviderScope(
             overrides: [
               notesRepositoryProvider.overrideWithValue(NotesRepository()),
+              notesViewPrefsStoreProvider.overrideWithValue(InMemoryNotesViewPrefsStore(openReadPrefs)),
               synthesisRepositoryProvider.overrideWith(
                 () => SynthesisRepository([cluster]),
               ),
@@ -361,7 +397,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('Flat and Contract Updates'), findsOneWidget);
+        // The title is on the row and again at the top of the opened note.
+        expect(find.text('Flat and Contract Updates'), findsNWidgets(2));
         expect(find.text("Daniel's contract"), findsOneWidget);
         expect(find.text('I signed the contract with Daniel on Monday.'),
             findsOneWidget);
@@ -370,5 +407,60 @@ void main() {
         expect(cluster.synthesizedContent, stored);
       },
     );
+
+    testWidgets('the folder panel and the note folder menu list the user\'s folders', (tester) async {
+      tester.view.physicalSize = const Size(360, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final cluster = SynthesisCluster(
+        clusterId: 'c1',
+        sequenceNumber: '#S-01',
+        folder: 'Garden',
+        synthesizedContent: 'Water the tomatoes.',
+        sessionStart: DateTime.now(),
+        sessionEnd: DateTime.now(),
+        sessionDuration: const Duration(minutes: 5),
+        originNotes: const [],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            notesRepositoryProvider.overrideWithValue(NotesRepository()),
+            notesViewPrefsStoreProvider.overrideWithValue(InMemoryNotesViewPrefsStore()),
+            folderStoreProvider.overrideWithValue(_StoredFolders(const [
+              FolderDefinition(name: 'Garden', description: 'plants.'),
+              FolderDefinition(name: 'Work', description: 'the job.'),
+            ])),
+            synthesisRepositoryProvider.overrideWith(() => SynthesisRepository([cluster])),
+          ],
+          child: const MaterialApp(home: Scaffold(body: SynthesisScreen())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('synthesis_folder_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Garden'), findsWidgets);
+      expect(find.text('Personal'), findsNothing, reason: 'a default folder the user no longer has');
+      await tester.tap(find.byKey(const Key('folder_panel_row_Garden')));
+      await tester.pumpAndSettle();
+      expect(find.text('Water the tomatoes.'), findsOneWidget);
+
+      // The folder menu is a control of Edit mode, on an opened note.
+      await tester.tap(find.byKey(const Key('synthesis_mode_edit')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('note_row_c1')));
+      await tester.pumpAndSettle();
+
+      final menu = find.descendant(
+        of: find.byKey(const Key('cluster_folder_dropdown_c1')),
+        matching: find.byType(DropdownButton<String>),
+      );
+      expect(tester.widget<DropdownButton<String>>(menu).items!.map((i) => i.value),
+          ['Garden', 'Work', 'Uncategorized']);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

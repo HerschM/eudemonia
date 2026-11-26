@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/capture/capture_controller.dart';
+import 'package:eudemonia/features/capture/thought_actions.dart';
+import 'package:eudemonia/features/home/application/shell_state.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_texts.dart';
@@ -12,8 +14,11 @@ import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/notes/presentation/thought_card.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/day_header.dart';
 import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
+import 'package:eudemonia/features/theme/widgets/read_on_dwell.dart';
 import 'floating_capture_capsule.dart';
 
 enum CaptureTriageFilter { all, unread, read }
@@ -31,9 +36,14 @@ class CaptureScreen extends ConsumerStatefulWidget {
   ConsumerState<CaptureScreen> createState() => _CaptureScreenState();
 }
 
-class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindingObserver {
+class _CaptureScreenState extends ConsumerState<CaptureScreen>
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   CaptureTriageFilter _triageFilter = CaptureTriageFilter.all;
   CaptureStatusFilter _statusFilter = CaptureStatusFilter.all;
+
+  /// The shell swipes between tabs; this one keeps its scroll position and filters while away.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -88,12 +98,10 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
           .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
   }
 
-  static bool _isUnread(Note n) => !n.isRead && n.state == ThoughtState.processed;
-
   bool _matchesFilters(Note n) {
     final matchesTriage = switch (_triageFilter) {
       CaptureTriageFilter.all => true,
-      CaptureTriageFilter.unread => _isUnread(n),
+      CaptureTriageFilter.unread => !n.isRead,
       CaptureTriageFilter.read => n.isRead,
     };
     final matchesStatus = switch (_statusFilter) {
@@ -124,6 +132,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final isRecording = ref.watch(captureControllerProvider);
     final startedAt = ref.read(captureControllerProvider.notifier).startedAt;
     final notesAsync = ref.watch(recentNotesProvider);
@@ -167,7 +176,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
     final rows = <Object>[];
     String? currentDay;
     for (final note in displayed) {
-      final day = _dayLabel(note.createdAt);
+      final day = dayHeaderLabel(note.createdAt);
       if (day != currentDay) {
         currentDay = day;
         rows.add(day);
@@ -185,7 +194,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
           return displayed.isEmpty ? _buildEmptyState(allThoughts.isEmpty) : const SizedBox.shrink();
         }
         final row = rows[index - 1];
-        return row is Note ? _buildCard(row) : _buildDayHeader(row as String);
+        return row is Note ? _buildCard(row) : DayHeader(label: row as String);
       },
     );
   }
@@ -418,21 +427,6 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
     );
   }
 
-  Widget _buildDayHeader(String label) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.0,
-          color: AppColors.textSecondary.withValues(alpha: 0.7),
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmptyState(bool hasNoThoughtsAtAll) {
     return Padding(
       padding: const EdgeInsets.all(32),
@@ -454,52 +448,65 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
 
     String? sessionLabel;
     if (note.state == ThoughtState.synthesized) {
-      for (final cluster in ref.watch(synthesisRepositoryProvider)) {
-        if (cluster.originNotes.any((origin) => origin.id == note.id)) {
-          sessionLabel = cluster.sequenceNumber;
-          break;
-        }
+      ref.watch(synthesisRepositoryProvider);
+      final session = ref.read(synthesisRepositoryProvider.notifier).sessionOfThought(note.id);
+      if (session != null) {
+        sessionLabel = sessionReferenceLabel(session, relativeTo: note.createdAt ?? session.sessionStart);
       }
     }
 
-    return ThoughtCard(
+    Future<void> markRead() async {
+      if (note.isRead || !isPersisted) return;
+      await ref.read(notesRepositoryProvider).markAsRead(note.id);
+    }
+
+    final card = ThoughtCard(
       key: ValueKey(note.id),
       note: note,
       sequenceNumber: note.dailySequenceNumber,
       synthesizedSessionLabel: sessionLabel,
+      onOpenSession: note.state == ThoughtState.synthesized ? () => _openSession(note) : null,
       isPlaying: playbackState.isPlaying && playbackState.currentlyPlayingPath == audioPath,
       onPlayAudio: hasAudio
           ? () => ref.read(audioPlaybackControllerProvider.notifier).togglePlayback(audioPath)
           : null,
       onEdit: (newText) async {
         if (!isPersisted) return;
-        await ref.read(notesRepositoryProvider).updateNoteText(note.id, newText);
+        await ref.read(thoughtActionsProvider).editText(note, newText);
       },
       onDelete: () async {
         if (isPersisted) {
-          await ref.read(notesRepositoryProvider).deleteNote(note.id);
-          } else if (hasAudio) {
+          await ref.read(thoughtActionsProvider).delete(note);
+        } else if (hasAudio) {
           await ref.read(audioQueueServiceProvider).removeItemByAudioPath(audioPath);
         }
       },
       onRetry: () => ref.read(audioQueueServiceProvider).retryFailed(),
-      onTap: () async {
-        if (note.isRead || !isPersisted) return;
-        await ref.read(notesRepositoryProvider).markAsRead(note.id);
-      },
+      onTap: markRead,
+    );
+    // A thought is also read once it has stayed on screen for a while (while this tab is in front).
+    return ReadOnDwell(
+      key: ValueKey('dwell_${note.id}'),
+      enabled: isPersisted && !note.isRead,
+      active: ref.watch(shellTabActiveProvider(ShellTab.capture)),
+      onRead: markRead,
+      child: card,
     );
   }
 
-  static String _dayLabel(DateTime? date) {
-    if (date == null) return 'UNDATED';
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(date.year, date.month, date.day);
-    final dd = date.day.toString().padLeft(2, '0');
-    final mm = date.month.toString().padLeft(2, '0');
-    final difference = today.difference(day).inDays;
-    if (difference == 0) return 'TODAY — $dd/$mm';
-    if (difference == 1) return 'YESTERDAY — $dd/$mm';
-    return '$dd/$mm/${date.year}';
+  /// The session number on a synthesized thought opens that note in the Synthesis tab.
+  void _openSession(Note note) {
+    final session = ref.read(synthesisRepositoryProvider.notifier).sessionOfThought(note.id);
+    if (session == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.surfaceElevated,
+          duration: Duration(seconds: 2),
+          content: Text('That note no longer exists.', style: TextStyle(color: AppColors.textPrimary)),
+        ),
+      );
+      return;
+    }
+    ref.read(synthesisFocusRequestProvider.notifier).request(session.clusterId);
   }
 }

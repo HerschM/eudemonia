@@ -15,7 +15,7 @@ Unlike traditional voice memos or cloud-tethered note applications, Eudemonia ca
 
 $$\mathbf{Capture} \longrightarrow \mathbf{Synthesis} \longrightarrow \mathbf{Insights} \longrightarrow \mathbf{Action}$$
 
-By eliminating UI latency, network dependencies, cloud privacy liabilities, and open-ended tag sprawl, Eudemonia ensures that fleeting thoughts are captured cleanly, synthesized into disciplined folders (`Work`, `Ideas`, `Todos`, `Journal`), and converted into actionable momentum.
+By eliminating UI latency, network dependencies, cloud privacy liabilities, and open-ended tag sprawl, Eudemonia ensures that fleeting thoughts are captured cleanly, synthesized into disciplined folders (`Work`, `Personal`, `Journal`, `Uncategorized`), and converted into actionable momentum.
 
 ---
 
@@ -46,9 +46,9 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 | Persona | Description | Primary Needs |
 | :--- | :--- | :--- |
-| **The High-Velocity Thinker / Founder** | Generates 20+ raw ideas daily while commuting, in meetings, or between tasks. | Instant physical trigger without looking at the screen; automated clustering and synthesis of walk ideas into cohesive notes categorized into `Ideas` or `Work`. |
+| **The High-Velocity Thinker / Founder** | Generates 20+ raw ideas daily while commuting, in meetings, or between tasks. | Instant physical trigger without looking at the screen; automated clustering and synthesis of walk ideas into cohesive notes categorized into `Work` or `Personal`. |
 | **The Privacy-Conscious Journaler** | Uses voice for stream-of-consciousness personal journaling and reflection. | 100% offline, zero cloud leakage; automated cleanup of verbal disfluencies (*"um"*, *"like"*); long-term emotional climate tracking under `Journal`. |
-| **The Rapid Task Capturer** | Captures urgent action items and errands on the go. | Fast capture that converts speech into clean, actionable commitments and calendar time-blocks with zero manual sorting under `Todos`. |
+| **The Rapid Task Capturer** | Captures urgent action items and errands on the go. | Fast capture that converts speech into clean, actionable commitments and calendar time-blocks with zero manual sorting under `Personal`. |
 
 ### Key User Scenarios
 
@@ -72,7 +72,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **Context**: User opens Eudemonia after a morning walk where they captured 4 disjointed ideas about app architecture and 1 grocery errand.
 - **Outcome**:
   - In **Capture**: All 5 raw thoughts appear in chronological order with daily sequence numbers (`#01` to `#05`), immediate audio playback buttons, unread dots, and date-time (`05/11  07:15 AM`).
-  - In **Synthesis**: The 4 architecture thoughts are automatically clustered into a single synthesized note (`#S-01`) classified under the **`Ideas`** folder, while the errand is synthesized into a note under **`Todos`**. The user uses the **Folder Filter Dropdown** in the header (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`) to filter sessions by folder, inspects included raw notes via the expandable count drawer, and can eject or reassign notes as needed.
+  - In **Synthesis**: The 4 architecture thoughts are automatically clustered into a single synthesized note (`#S-01`) classified under the **`Work`** folder, while the errand is synthesized into a note under **`Personal`**. The user uses the **Folder Filter Dropdown** in the header (`All Folders`, `Work`, `Personal`, `Journal`, `Uncategorized`) to filter sessions by folder, inspects included raw notes via the expandable count drawer, and can eject or reassign notes as needed.
   - In **Insights**: The user reviews the weekly emotional valence heatmap and topic density matrix.
   - In **Action**: The grocery errand and any architecture commitments appear in the todo list with 1-tap calendar time-blocking.
 
@@ -106,7 +106,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 3. **Absolute Privacy & Local Autonomy**: No telemetry, audio data, or text embeddings ever leave the physical handset. All STT (Sherpa-ONNX) and LLM (Qwen-2.5 1.5B GGUF) run directly on device hardware.
 4. **Four-Stage Maturation with Single-Folder Discipline**: Instead of forcing raw thoughts prematurely into folders or allowing open-ended tag sprawl, thoughts mature through four stages:
    - **Capture**: Unadulterated, unclassified speech cleanup with immediate playback.
-   - **Synthesis**: Multi-thought clustering by temporal proximity and semantic similarity. Notes are classified strictly into predefined folders (`Work`, `Ideas`, `Todos`, `Journal`, fallback `Uncategorized`) with a compact folder filter dropdown. Open-ended auto-tagging is strictly avoided to prevent taxonomy explosion.
+   - **Synthesis**: Multi-thought clustering by temporal proximity and semantic similarity. Notes are classified strictly into predefined folders (`Work`, `Personal`, `Journal`, `Uncategorized`, fallback `Uncategorized`) with a compact folder filter dropdown. Open-ended auto-tagging is strictly avoided to prevent taxonomy explosion.
    - **Insights**: Higher-order emotional climate, topic load, and recurrent pattern dashboards.
    - **Action**: Commitments extraction and calendar time-blocking.
 5. **Mobile Resource Respect**: Mobile operating systems aggressively kill memory-heavy apps. Models must load sequentially and be evicted after 2 minutes of idle time to prevent phone slowdowns and Android Low Memory Killer (LMK) kills.
@@ -154,6 +154,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - Hardware-accelerated 60/120fps progress indicator decoupled from inference load.
 - Diagnostic logging system with 2MB rotating disk cap and in-app viewer.
 
+> **Folder names (confirmed by the user 2026-11-26)**: the active folders are `Work`, `Personal`, `Journal` and `Uncategorized`. `Ideas` and `Todos` were removed earlier because they described a kind of note rather than an area of life and clashed with the other folders. Users can add, describe, rename and remove folders of their own (FR11.14, FR17.1); `Uncategorized` always exists.
+
 ### B. Out-of-Scope (Explicit Non-Goals for v1.0)
 - Multi-tag many-to-many graph tagging (reserved for v1.5; v1.0 organizes via 4-stage pipeline and predefined single-folder synthesis).
 - Cloud synchronization (Dropbox, Google Drive, iCloud) or cross-device sync.
@@ -194,7 +196,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR5.1**: The system must run an on-device quantized LLM (Qwen-2.5 1.5B GGUF) via `llama_cpp_dart`.
 - **FR5.2 (Tier 1 — Capture Shows the Transcript As Spoken, No LLM)**: A raw capture is saved and displayed as the speech recognizer's transcript (with the recognizer's own punctuation and capitalization), including filler words and misspoken or self-corrected words. No LLM runs at capture time. Strictly NO grammar rewriting, filler removal, folder classification, style transformation, or color tinting is applied at this stage: the Capture stream is the user's fact check that everything spoken was heard. All cleanup, correction-resolving, condensing and filing belongs to Synthesis (FR5.4). *(Decided 2026-11-21; previously the LLM performed grammar and filler cleanup per capture.)*
 - **FR5.3 (AI Style Re-Writer on Synthesized Notes)**: Users can re-write any synthesized note on-demand using preset style prompts (*Concise & Direct*, *Bullet Points*, *Professional*, *Journal/Reflective*, *Actionable*, *Casual*). The active style is indicated with a checkmark; changing styles transitions the note to Yellow (`pending re-processing`) for local LLM re-synthesis.
-- **FR5.4 (Tier 2 — Synthesis & Single-Folder Classification)**: When notes are clustered, the LLM analyzes semantic similarity, assigns exactly one predefined folder (`Work`, `Ideas`, `Todos`, `Journal`, or fallback `Uncategorized`), and synthesizes fragments into a cohesive note. Arbitrary tag generation is strictly prohibited.
+- **FR5.4 (Tier 2 — Synthesis & Single-Folder Classification)**: When notes are clustered, the LLM analyzes semantic similarity, assigns exactly one predefined folder (`Work`, `Personal`, `Journal`, `Uncategorized`, or fallback `Uncategorized`), and synthesizes fragments into a cohesive note. Arbitrary tag generation is strictly prohibited.
 - **FR5.5 (No Fallback)**: Every LLM reply is validated (the organise turn must give each thought exactly one valid folder). An invalid or missing reply is retried a bounded number of times; until both the organise and the write turn have succeeded no session is created and the thoughts stay untouched in Capture (an existing session being rewritten keeps its previous note). There is no heuristic or keyword substitute for an LLM result. *(Decided 2026-11-21; previously a keyword classifier was the fallback.)*
 - **FR5.6**: The system must purge the KV cache (`_llama.disposeScope()`) after every turn (`clearKvCacheEveryXTurns = 1`) to eliminate lingering RAM consumption.
 
@@ -206,7 +208,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 #### FR7: Local Persistence
 - **FR7.1**: Raw and synthesized thoughts must be saved to an embedded local database (Isar) containing `id`, `sequenceNumber`, `rawText`, `cleanedText`, `synthesizedContent`, `clusterId`, `folder`, `createdAt`, and `originalAudioPath`.
-- **FR7.2**: The notes repository must support retrieval sorted by recency and filtered by stage (`capture`, `synthesis`) and by folder (`Work`, `Ideas`, `Todos`, `Journal`).
+- **FR7.2**: The notes repository must support retrieval sorted by recency and filtered by stage (`capture`, `synthesis`) and by folder (`Work`, `Personal`, `Journal`, `Uncategorized`).
 
 #### FR8: Background Reliability & Permissions
 - **FR8.1**: The app must provide an Android Foreground Service (`EudemoniaForegroundService`) with an ongoing low-priority notification to protect the process from OS termination.
@@ -232,6 +234,9 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR9.6**: The card heading layout must adhere to the strict order: `[# Number]` $\rightarrow$ `[▶ Play Audio]` $\rightarrow$ `[• Unread Dot]` $\rightarrow$ `[🗑️ Delete]`. This guarantees visual horizontal alignment across read and unread notes.
 - **FR9.7**: Timestamps at the card footer must strictly display date then time: `DD/MM  HH:MM AM/PM` (e.g. `05/11  09:42 AM`).
 - **FR9.8**: Tapping `[ ✎ Edit ]` allows manual text editing. (High-level AI Style Re-Writing is located in the Synthesis screen where final consolidated text is formed).
+- **FR9.9 (Link to the Synthesized Note, user 2026-11-26)**: a thought that has been synthesized shows the number of its note; tapping it opens the Synthesis screen at that note.
+- **FR9.10 (Unread Is About Reading, user 2026-11-26)**: a thought stays unread until the user has actually seen it (tap, or a few seconds in view, FR11.10). Being synthesized does not mark a thought as read.
+- **FR9.11 (A Silent Recording Is Not a Failure, 2026-11-26)**: a recording in which nothing was heard is shown as a calm card (`Nothing was heard in this recording.`) with Play and Delete, not as a failed item.
 
 #### FR10: Lock Screen & Notification Center Capture Trigger
 - **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
@@ -240,12 +245,15 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR10.4 (Home-Screen Capture Widget, added 2026-11-26)**: The app provides a home-screen widget with one tap target: `Record thought` when idle; while recording it shows the running elapsed time and `Stop & save`. Settings offers `Add capture widget to home screen`.
 - **FR10.5 (Capture Without the App, added 2026-11-26)**: Starting or stopping a recording from the notification or the widget must never open the app or bring it in front of what the user is doing, and must work when the app's screen has been closed. The recording is saved on the device at once; it is transcribed in the background while the app's process is alive, otherwise the next time the app is opened. The start and stop haptics (FR1.3 patterns) are given natively for every way of capturing.
 - **FR10.6 (Nothing Shown Over the Lock Screen, added 2026-11-26)**: The app's screens and the user's notes are never displayed over the lock screen; only the notification with its timer and buttons is.
+- **FR10.7 (Quick Settings Tile, user 2026-11-27)**: a `Record thought` tile in Quick Settings starts and stops a recording with one swipe and one tap, also from the locked phone, without opening the app. Settings offers to add the tile.
+- **FR10.8 (Other Sound Pauses While Recording, user 2026-11-27)**: when a recording starts, the app asks other apps to pause their sound so that music playing on the phone is not recorded with the voice; playback resumes when the recording ends. No additional permission is involved.
+- **FR10.9 (No Media-Player Style Lock-Screen Card, user 2026-11-27)**: rejected as redundant — a recording is stopped where it was started. A corner shortcut on the lock screen like Google Home's is not available to third-party apps on Pixel phones; the capture widget is marked as usable on the lock-screen widget page of recent Android versions.
 
 #### FR11: Synthesis, Predefined Folders & Session Clustering
 - **FR11.1**: The system must automatically cluster disjointed raw notes captured within an active temporal window (e.g. 15–45 minutes) that share contextual continuity or topical affinity into a unified synthesized note.
 - **FR11.2 (Compact Folder Filter Dropdown)**: The horizontal folder carousel is removed. The Synthesis view provides a compact folder filter dropdown (`[ 📁 Filter: All Folders ▾ ]`) situated in the section sub-header, allowing users to filter synthesized notes by predefined folder without taking up vertical screen real estate.
-- **FR11.3 (Single-Folder Badge & 1-Tap Card Reassignment)**: Each synthesized note displays its assigned folder badge (`[ 💡 Ideas ▾ ]`, `[ 💼 Work ▾ ]`). Tapping opens a quick-picker dropdown to reassign the note among the predefined folders.
-- **FR11.4**: Synthesized notes receive a sequential identifier (`#S-01`, `#S-02`), consolidated synthesis narrative, session time span (`05/11  07:10 AM - 07:45 AM`), session duration (`⏱️ 35m session`), and an expandable raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`).
+- **FR11.3 (Single-Folder Badge & 1-Tap Card Reassignment)**: Each synthesized note displays its assigned folder badge (`[ 💼 Work ▾ ]`, `[ 🏠 Personal ▾ ]`). Tapping opens a quick-picker dropdown to reassign the note among the predefined folders.
+- **FR11.4**: Synthesized notes receive a sequential identifier (`#S-01`, `#S-02`), consolidated synthesis narrative, session time span (`05/11  07:10 AM - 07:45 AM`), session duration (`⏱️ 35m session`), and an expandable raw notes count pill (`[ 🧩 3 Raw Notes ▾ ]`). **Numbering (user, 2026-11-26)**: the counter restarts every calendar day, exactly like Capture's `#NN`; a session is identified by its day and its number, the number is given once when the session is created and never changes, and gaps left by deleted sessions are allowed. Where a session is referred to from another day, the day is shown with it (`#S-02 · 23/11`).
 - **FR11.5 (Raw Note Ejection & Re-Synthesis Guard)**:
   - If a synthesized cluster contains only 1 note (`originNotes.length <= 1`), the `[ ⤢ Move Out ]` button is hidden/disabled.
   - For clusters with $\ge 2$ notes, users can eject any raw note via `[ ⤢ Move Out ]` through a clean sheet (free of debug filler instructions):
@@ -262,6 +270,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
   - **Blue (`stateProcessedBg`)**: Synthesized narrative ready; awaiting action-item extraction pass.
   - **Green (`stateSynthesizedBg`)**: Action extraction pass completed (closed and promoted to Action tab). Note: Reflective or journal notes with 0 action items turn Green upon extraction pass completion, confirming the thought is fully processed.
 - **FR11.10 (Synthesis Triage & Unread Tracking)**:
+  - **Becoming read (user, 2026-11-26)**: a note is marked read by tapping it, or by itself once it has stayed in view for a few seconds; the unread dot then fades out with a small, noticeable dissolve. The same rule applies to thoughts on the Capture screen (FR9.10).
   - Synthesis cluster cards display an electric blue unread indicator dot (`• Unread`) when newly clustered.
   - The Synthesis screen sub-header provides an `[ 👁️ All Triage ▾ ]` dropdown (`All`, `Unread`, `Read`) alongside `[ 📁 All Folders ▾ ]` to filter new vs reviewed synthesized sessions.
 - **FR11.11 (Active Session Horizon & 2D Domain-Bounded Clustering)**:
@@ -283,8 +292,14 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
   - **Asynchronous Living Manifesto Evolution**: After every 5 notes filed into a folder, a low-priority background task refreshes `autoGeneratedSummary` with dominant keywords and entities.
   - **Enriched Classification Prompting**: Stage 1 language cleanup and Stage 2 clustering inject folder manifestos into prompts, allowing the local LLM to accurately categorize abrupt, context-dependent voice notes (e.g., *"Need to finish UI/UX"* matches `Eudemonia` because UI/UX is explicitly in its manifesto).
   - **Default Note Style per Folder (proposed by the user 2026-11-22, decision pending)**: Settings may let the user choose, for each folder, the style in which its notes are written by default (for example bullets under headings for `Work`, flowing paragraphs for `Personal` or `Journal`). Not decided and not built; until then every folder uses the same structured style.
+  - **Default Note Style per Folder — DECIDED (user 2026-11-27)**: every folder has an editable default style in Settings. A new note takes its folder's default style; moving a note to another folder rewrites it in that folder's default style; a style picked by hand on a note stays when later thoughts join it; changing a folder's default affects new notes only.
   - **Fidelity Before Brevity (user requirement 2026-11-22)**: whatever the style, a synthesized note must not lose details that were spoken — who, what, when, how many, and whether something has already happened or is only planned. A shorter note is never worth a missing or altered fact.
 - **FR11.15 (Synthesized Notes Are Markdown, Shown Formatted — decided by the user 2026-11-26)**: the model's note is stored exactly as written, as Markdown (a title, short headings, `- ` bullets, `**bold**`). Every screen that shows a synthesized note renders it formatted: the title and headings in bold, bullets with a hanging indent, no literal `*` or `#` markers. The user's own spoken thoughts are plain text and are never interpreted as Markdown. Keeping notes as `.md` files for easy export is the stated direction (roadmap); only the display is required in R1.
+- **FR11.16 (A Run Is Visible, user 2026-11-26)**: while Synthesis is running, every `Synthesize Now` control is disabled and shows a "thinking" indicator, and the pipeline pill says so. Starting a run never looks like nothing happened.
+- **FR11.17 (Restyling a Note Works and Finishes, user 2026-11-26)**: choosing a style rewrites the note from its raw thoughts at once, with the card showing that it is being rewritten; the chosen style is kept when later thoughts join the note. If the model's answer is not valid, the note stays as it was and the user is told (no fallback text, FR5.5). The style `Actionable next steps` produces a checklist whose boxes the user can tick; ticks are stored in the note's Markdown (`- [x]`).
+- **FR11.18 (Deleting or Editing a Thought Updates Its Note, user 2026-11-26)**: when a synthesized thought is deleted or its text edited, it is removed from (or updated in) the note's raw thoughts and the note is rewritten without waiting for a new thought; a note left with no thoughts is removed.
+- **FR11.19 (A Note Edited by Hand Belongs to the User, user 2026-11-27)**: in Edit mode the user can edit a note's text. From then on the note is never rewritten automatically: a later thought that belongs to it is written on its own and added underneath under `Added later`; deleting or editing one of its raw thoughts changes the raw list only. Choosing a style is the one action that regenerates it from the raw thoughts, after a confirmation that this replaces the user's edits. Ticking a checklist box is not an edit.
+- **FR11.20 (Synthesis Screen for Many Notes, approved by the user 2026-11-27)**: the screen is a list of note titles grouped by day (number, title, time, unread dot); a note opens in place when tapped, and several can be open. A folder panel slides in from the left when its button is tapped (never by swiping, which changes stages) and lists `All notes` and every folder with note and unread counts. A Read / Edit switch sits at the top: Read mode (default) shows only the note and a quiet link to its raw thoughts; Edit mode adds folder, style, text editing, merge, delete and the per-thought actions. A setting (`Show notes opened`) and a quick toggle show all notes opened or collapsed.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating
 - **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
@@ -318,6 +333,11 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR16.5 (No Model, Honest Message)**: When no listed language model fits the phone, or none has been downloaded, Synthesis says so plainly and Capture and transcription keep working. No fallback output of any kind is produced (FR5.5).
 - **FR16.6 (What the Network Is Used For)**: The network permission is used for these downloads only. No recording, transcript, note, identifier or usage data is sent anywhere.
 
+#### FR17: Settings Organisation (User, 2026-11-26)
+- **FR17.1**: Settings opens on what the user changes most, in this order: Folders (FR11.14, with each folder's description, add, edit, rename and remove), automatic Synthesis, on-device models, the capture widget.
+- **FR17.2**: `Phone memory and temperature` is second to last and `Permissions` is last; both are collapsed until opened.
+- **FR17.3**: The in-app log viewer is not part of the first release (parked for later; the app still writes its rotating log file for support). Open-source and model credits are required by their licences (the speech model's licence demands attribution) but stay out of the way: one small `Open-source licences` link at the very bottom.
+
 ---
 
 ### D. Non-Functional Requirements (NFR)
@@ -348,7 +368,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 > For the exhaustive design token dictionary, component sandbox architecture (`previews/`), ASCII wireframes, and component contracts for every screen, refer to [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
 
 ### A. The 4-Stage Navigation Shell
-> **R1 (2026-11-26)**: the shell shows two stages, Capture and Synthesis, each half of the segmented bar; stages 3 and 4 below return with FR14 and FR15.
+> **R1 (2026-11-26)**: the shell shows two stages, Capture and Synthesis, each half of the segmented bar; stages 3 and 4 below return with FR14 and FR15. Swiping left or right moves between the stages as well as tapping, and the tab highlight keeps the rounded shape of the bar (no rectangular flash).
 
 The app shell separates machine pipeline tasks from human consumption:
 - **Global Header**: Features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` or `[ 🌿 In Sync ▾ ]`), opening the Pipeline HUD with stage breakdowns and `[ ⚡ Synthesize Now ]` manual override.

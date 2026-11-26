@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/thinking_indicator.dart';
+import 'package:eudemonia/features/home/application/shell_state.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/application/model_settings.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
-import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
@@ -39,28 +40,29 @@ class MainNavigationShell extends ConsumerStatefulWidget {
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _stages = ['Capture', 'Synthesis'];
-  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
     _tabController = TabController(
-      length: _stages.length,
+      length: ShellTab.values.length,
       vsync: this,
       initialIndex: widget.initialIndex,
     );
-    _tabController.addListener(() {
-      if (_tabController.indexIsChanging) {
-        setState(() {
-          _currentIndex = _tabController.index;
-        });
-      }
-    });
+    // Taps, swipes and the jump from a Capture card's session number all move this one controller.
+    _tabController.addListener(_publishSelectedTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && ref.read(shouldOfferModelSetupProvider)) _offerModelSetup();
+      if (!mounted) return;
+      _publishSelectedTab();
+      if (ref.read(shouldOfferModelSetupProvider)) _offerModelSetup();
     });
+  }
+
+  /// Tells the screens which tab is in front (they read thoughts only while theirs is).
+  void _publishSelectedTab() {
+    if (!mounted) return;
+    final tab = ShellTab.values[_tabController.index];
+    if (ref.read(selectedShellTabProvider) != tab) ref.read(selectedShellTabProvider.notifier).select(tab);
   }
 
   /// First launch without a speech model: open the setup screen once, never again on its own.
@@ -116,6 +118,11 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     ref.listen(shouldOfferModelSetupProvider, (previous, offer) {
       if (offer) _offerModelSetup();
     });
+    // The session number on a Capture card asks for that note: show the Synthesis tab.
+    ref.listen(synthesisFocusRequestProvider, (previous, clusterId) {
+      if (clusterId != null) _tabController.animateTo(ShellTab.synthesis.index);
+    });
+    final synthesisBusy = ref.watch(synthesisBusyProvider);
     final pendingQueueCount = ref.watch(pendingQueueCountProvider);
     final notesAsync = ref.watch(recentNotesProvider);
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
@@ -127,10 +134,8 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     final hasActivePipeline = totalPipelinePending > 0;
 
     // Unread count for Capture
-    final unreadCaptureNotesCount = notesAsync.value
-            ?.where((n) => !n.isRead && n.state == ThoughtState.processed)
-            .length ??
-        0;
+    // A thought counts until it has been seen, whatever its state (a synthesized one too).
+    final unreadCaptureNotesCount = notesAsync.value?.where((n) => !n.isRead).length ?? 0;
     final totalCaptureUnread = unreadCaptureNotesCount + pendingQueueCount;
 
     // Unread count for Synthesis
@@ -179,43 +184,49 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8.0, vertical: 3.5),
                     decoration: BoxDecoration(
-                      color: hasActivePipeline
+                      color: synthesisBusy || hasActivePipeline
                           ? AppColors.accentAI.withValues(alpha: 0.18)
                           : AppColors.accentCapture.withValues(alpha: 0.15),
                       borderRadius:
                           BorderRadius.circular(AppColors.pillRadius),
                       border: Border.all(
-                        color: hasActivePipeline
+                        color: synthesisBusy || hasActivePipeline
                             ? AppColors.accentAI.withValues(alpha: 0.35)
                             : AppColors.accentCapture.withValues(alpha: 0.3),
                         width: 1.0,
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          hasActivePipeline ? Icons.bolt : Icons.check_circle_outline,
-                          size: 13.0,
-                          color: hasActivePipeline
-                              ? AppColors.accentAI
-                              : AppColors.accentCapture,
-                        ),
-                        const SizedBox(width: 4.0),
-                        Text(
-                          hasActivePipeline
-                              ? '$totalPipelinePending in Pipeline ▾'
-                              : 'In Sync ▾',
-                          style: TextStyle(
-                            color: hasActivePipeline
-                                ? AppColors.accentAI
-                                : AppColors.accentCapture,
-                            fontSize: 11.0,
-                            fontWeight: FontWeight.w600,
+                    // While a synthesis run is on, the pill says so and shows the AI thinking.
+                    child: synthesisBusy
+                        ? const ThinkingIndicator(
+                            label: 'Synthesizing…',
+                            style: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w600),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                hasActivePipeline ? Icons.bolt : Icons.check_circle_outline,
+                                size: 13.0,
+                                color: hasActivePipeline
+                                    ? AppColors.accentAI
+                                    : AppColors.accentCapture,
+                              ),
+                              const SizedBox(width: 4.0),
+                              Text(
+                                hasActivePipeline
+                                    ? '$totalPipelinePending in Pipeline ▾'
+                                    : 'In Sync ▾',
+                                style: TextStyle(
+                                  color: hasActivePipeline
+                                      ? AppColors.accentAI
+                                      : AppColors.accentCapture,
+                                  fontSize: 11.0,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               ),
@@ -225,7 +236,7 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
         actions: [
           IconButton(
             key: const Key('settings_gear_button'),
-            tooltip: 'Settings & Diagnostics',
+            tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined,
                 color: AppColors.textSecondary, size: 22.0),
             onPressed: _openSettings,
@@ -247,6 +258,11 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
               controller: _tabController,
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
+              // No rectangular ink frame around the rounded pill; the pill itself slides with the
+              // swipe (it follows the controller's animation), so the tap needs no splash.
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              indicatorAnimation: TabIndicatorAnimation.linear,
               indicator: BoxDecoration(
                 color: AppColors.surfaceElevated,
                 borderRadius: BorderRadius.circular(AppColors.pillRadius),
@@ -263,11 +279,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
                 fontWeight: FontWeight.w500,
               ),
               labelPadding: EdgeInsets.zero,
-              onTap: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
               tabs: [
                 Tab(text: _formatTabTitle('Capture', totalCaptureUnread)),
                 Tab(text: _formatTabTitle('Synthesis', totalSynthesisUnread)),
@@ -276,8 +287,9 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _currentIndex,
+      // Swiping the body moves between the stages like the bar does; each page keeps its state.
+      body: TabBarView(
+        controller: _tabController,
         children: const [
           CaptureScreen(),
           SynthesisScreen(),

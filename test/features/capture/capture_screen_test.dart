@@ -267,6 +267,31 @@ void main() {
       expect(find.textContaining('Synthesized in #S-04'), findsOneWidget);
     });
 
+    testWidgets('a thought consumed by a session of another day names that day', (tester) async {
+      final repo = NotesRepository();
+      final now = DateTime.now();
+      final late = DateTime(now.year, now.month, now.day, 0, 5);
+      final dayBefore = late.subtract(const Duration(minutes: 20));
+      final clubbed = Note(correctedText: 'Just after midnight.', createdAt: late, state: ThoughtState.synthesized);
+      await repo.saveNote(clubbed);
+      final cluster = SynthesisCluster(
+        clusterId: 'c1',
+        sequenceNumber: '#S-03',
+        folder: 'Work',
+        synthesizedContent: 'Narrative',
+        sessionStart: dayBefore,
+        sessionEnd: late,
+        sessionDuration: const Duration(minutes: 20),
+        originNotes: [SynthesisOriginNote.fromNote(clubbed)],
+      );
+
+      await pumpCapture(tester, notesRepo: repo, clusters: [cluster]);
+
+      final dd = dayBefore.day.toString().padLeft(2, '0');
+      final mm = dayBefore.month.toString().padLeft(2, '0');
+      expect(find.textContaining('Synthesized in #S-03 · $dd/$mm'), findsOneWidget);
+    });
+
     testWidgets('filters that match nothing explain themselves', (tester) async {
       final repo = NotesRepository();
       await repo.saveNote(Note(correctedText: 'Unread thought.'));

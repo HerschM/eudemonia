@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Capture widget, compact (two cells wide): round button and one short line (Record / the timer).
+     Same ids as capture_widget.xml minus the subtitle, so CaptureWidgetUpdater drives both. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/capture_widget_bg_idle"
+    android:clickable="true"
+    android:contentDescription="@string/capture_widget_content_description"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="6dp"
+    android:paddingEnd="10dp">
+
+    <FrameLayout
+        android:id="@+id/capture_widget_button"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:background="@drawable/capture_widget_button_idle">
+
+        <ImageView
+            android:id="@+id/capture_widget_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_widget_mic" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/capture_widget_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:text="@string/capture_widget_record"
+        android:textColor="@color/capture_text_primary"
+        android:textSize="14sp" />
+
+    <Chronometer
+        android:id="@+id/capture_widget_chronometer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:textColor="@color/capture_widget_text_recording"
+        android:textSize="14sp"
+        android:visibility="gone" />
+</LinearLayout>

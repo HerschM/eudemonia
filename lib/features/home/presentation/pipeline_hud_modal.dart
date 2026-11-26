@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/busy_action_button.dart';
 
 class PipelineHudModal extends StatelessWidget {
   final int captureTranscribingCount;
@@ -9,12 +12,16 @@ class PipelineHudModal extends StatelessWidget {
   /// Live memory line. Resolves after the sheet is already on screen so opening never waits on it.
   final Future<String> memoryTelemetry;
 
+  /// A synthesis run is going: the button is disabled and shows the AI thinking in its place.
+  final bool synthesizing;
+
   const PipelineHudModal({
     super.key,
     required this.captureTranscribingCount,
     required this.synthesisReadyCount,
     required this.onSynthesizeNow,
     required this.memoryTelemetry,
+    this.synthesizing = false,
   });
 
   static void show(
@@ -33,11 +40,15 @@ class PipelineHudModal extends StatelessWidget {
           top: Radius.circular(AppColors.modalRadius),
         ),
       ),
-      builder: (context) => PipelineHudModal(
-        captureTranscribingCount: captureTranscribingCount,
-        synthesisReadyCount: synthesisReadyCount,
-        onSynthesizeNow: onSynthesizeNow,
-        memoryTelemetry: memoryTelemetry,
+      // The sheet stays open while a run starts and ends, so it follows the run itself.
+      builder: (context) => Consumer(
+        builder: (context, ref, _) => PipelineHudModal(
+          captureTranscribingCount: captureTranscribingCount,
+          synthesisReadyCount: synthesisReadyCount,
+          onSynthesizeNow: onSynthesizeNow,
+          memoryTelemetry: memoryTelemetry,
+          synthesizing: ref.watch(synthesisBusyProvider),
+        ),
       ),
     );
   }
@@ -127,26 +138,15 @@ class PipelineHudModal extends StatelessWidget {
                   ? Icons.extension_outlined
                   : Icons.check_circle_outline,
               trailing: synthesisReadyCount > 0
-                  ? ElevatedButton(
+                  ? BusyActionButton(
                       key: const Key('hud_synthesize_now_button'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accentAction,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6)),
-                      ),
+                      label: 'Synthesize Now',
+                      busyLabel: 'Synthesizing…',
+                      busy: synthesizing,
                       onPressed: () {
                         Navigator.pop(context);
                         onSynthesizeNow();
                       },
-                      child: const Text(
-                        'Synthesize Now',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
                     )
                   : null,
             ),

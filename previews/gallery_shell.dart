@@ -211,7 +211,7 @@ class _GalleryShellState extends State<GalleryShell>
         actions: [
           IconButton(
             key: const Key('settings_gear_button'),
-            tooltip: 'Settings & Diagnostics',
+            tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined,
                 color: PreviewTheme.textSecondary, size: 22.0),
             onPressed: _openSettings,
@@ -233,6 +233,10 @@ class _GalleryShellState extends State<GalleryShell>
               controller: _tabController,
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
+              // No rectangular ink frame around the rounded pill; the pill slides with the swipe.
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              indicatorAnimation: TabIndicatorAnimation.linear,
               indicator: BoxDecoration(
                 color: PreviewTheme.surfaceElevated,
                 borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),

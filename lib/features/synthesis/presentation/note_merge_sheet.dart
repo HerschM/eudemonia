@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
 
@@ -116,97 +117,101 @@ class NoteMergeModal extends StatelessWidget {
                 ),
               )
             else
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: targets.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  final target = targets[index];
-                  return Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      key: Key('merge_target_${target.sequenceNumber}'),
-                      borderRadius: BorderRadius.circular(AppColors.buttonRadius),
-                      onTap: () {
-                        Navigator.pop(context);
-                        onMergeToTargetCluster(target);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius:
-                              BorderRadius.circular(AppColors.buttonRadius),
-                          border: Border.all(color: AppColors.borderSubtle),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.accentAction
-                                    .withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                target.sequenceNumber,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentAction,
+              // Scrolls when the targets do not fit: there can be dozens of notes to merge into.
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: targets.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final target = targets[index];
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        key: Key('merge_target_${target.clusterId}'),
+                        borderRadius: BorderRadius.circular(AppColors.buttonRadius),
+                        onTap: () {
+                          Navigator.pop(context);
+                          onMergeToTargetCluster(target);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius:
+                                BorderRadius.circular(AppColors.buttonRadius),
+                            border: Border.all(color: AppColors.borderSubtle),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accentAction
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  // Two sessions of different days can both be #S-01: name the day.
+                                  sessionReferenceLabel(target, relativeTo: sourceCluster.sessionStart),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.accentAction,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        target.folder,
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.accentAction,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Wraps rather than overflows when the label above takes more room (a day is named).
+                                    Wrap(
+                                      spacing: 6,
+                                      children: [
+                                        Text(
+                                          target.folder,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.accentAction,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        '• ${target.originNotes.length} notes',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.textSecondary
-                                              .withValues(alpha: 0.8),
+                                        Text(
+                                          '• ${target.originNotes.length} notes',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondary
+                                                .withValues(alpha: 0.8),
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    plainNotePreview(target.synthesizedContent),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12.5,
-                                      color: AppColors.textPrimary,
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      plainNotePreview(target.synthesizedContent),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward_ios,
-                                size: 14, color: AppColors.textTertiary),
-                          ],
+                              const SizedBox(width: 8),
+                              const Icon(Icons.arrow_forward_ios,
+                                  size: 14, color: AppColors.textTertiary),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             const SizedBox(height: 12),
           ],
@@ -215,4 +220,3 @@ class NoteMergeModal extends StatelessWidget {
     );
   }
 }
-

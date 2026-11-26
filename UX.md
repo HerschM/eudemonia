@@ -97,9 +97,9 @@ When designing, modifying, or refactoring any screen in Eudemonia, AI agents and
 ## 3. Four-Stage Navigation Architecture & Screen Naming
 
 ### A. The Paradigm Shift: From Category Folders to Thought Maturation
-In the previous UX design, category folder pills (`Work`, `Ideas`, `Todos`, `Journal`) occupied the global top bar of the home screen. In the revised architecture:
+In the previous UX design, category folder pills (`Work`, `Personal`, `Journal`, `Uncategorized`) occupied the global top bar of the home screen. In the revised architecture:
 - **Global top folders are relocated**: The app-level header now hosts the persistent 4-stage segmented bar (**`Capture`**, **`Synthesis`**, **`Insights`**, **`Action`**).
-- **Predefined Folder Taxonomy is preserved inside `Synthesis`**: The structured folder system (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`) lives directly within the **Synthesis** screen via a sleek **Folder Filter Dropdown** (e.g. `[ 📁 Filter: All Folders ▾ ]`) and card reassignment dropdowns. This eliminates heavy horizontal carousels while preserving strict Single-Folder Discipline and preventing uncontrolled, chaotic auto-tag explosion.
+- **Predefined Folder Taxonomy is preserved inside `Synthesis`**: The structured folder system (`Work`, `Personal`, `Journal`, `Uncategorized`) lives directly within the **Synthesis** screen via a sleek **Folder Filter Dropdown** (e.g. `[ 📁 Filter: All Folders ▾ ]`) and card reassignment dropdowns. This eliminates heavy horizontal carousels while preserving strict Single-Folder Discipline and preventing uncontrolled, chaotic auto-tag explosion.
 - The 4 stages of thought maturation:
   1. **Capture**: Immediate, unfiltered voice captures. Speech-to-Text + grammar/filler cleanup only. Zero classification or color coding.
   2. **Synthesis**: Clustered and classified thoughts. Disjointed thoughts recorded in a single session or semantically related are synthesized into unified notes and assigned to one of the defined folders, with a compact folder filter dropdown.
@@ -299,7 +299,7 @@ The second screen in the application. Thoughts captured in close proximity or sh
 - **Compact Dual Dropdown Filter Bar**:
   - Located directly in the sub-header row, mirroring Capture's ergonomics:
     - **Triage Filter Dropdown**: `[ 👁️ All Triage ▾ ]` (`All`, `Unread`, `Read`). Filters new vs reviewed synthesized sessions.
-    - **Folder Filter Dropdown**: `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+    - **Folder Filter Dropdown**: `[ 📁 All Folders ▾ ]` (`All Folders`, `Work`, `Personal`, `Journal`, `Uncategorized`, plus folders the user added).
   - Strict **Single-Folder Discipline**: Synthesized notes are strictly assigned to one of the predefined folders. Unconstrained auto-tagging or arbitrary tag generation is prohibited to prevent tag explosion and naming chaos.
 - **Card State Color Accents (Pipeline Maturation Transparency)**:
   - Synthesis cluster cards reflect lifecycle state via border and background color accents:
@@ -319,7 +319,7 @@ The second screen in the application. Thoughts captured in close proximity or sh
   - **Semantic Vector Similarity**: On-device embedding / LLM similarity clustering disjointed fragments on the same topic.
 - **Clubbed Note Attributes**:
   - **Sequential Synthesis Identifier**: e.g., `#S-01`, `#S-02` (Synthesis Session #).
-  - **Card Folder Reassignment Dropdown**: Displays assigned folder badge (e.g. `[ 💡 Ideas ▾ ]`, `[ 💼 Work ▾ ]`). Tapping opens a 1-tap quick-picker to reassign the note among the defined folders.
+  - **Card Folder Reassignment Dropdown**: Displays assigned folder badge (e.g. `[ 💼 Work ▾ ]`, `[ 🏠 Personal ▾ ]`). Tapping opens a 1-tap quick-picker to reassign the note among the defined folders.
   - **AI Style Re-Writer (`[ ✨ Style ▾ ]`)**:
     - Embedded on each synthesized cluster card, as this is where final structured text is consolidated.
     - Tapping opens the Style Re-Writer modal offering preset context prompts applied on-device.
@@ -461,11 +461,11 @@ When the user taps `[ ✨ Style ▾ ]` on any synthesis card, a bottom modal app
 - **Production Target**: `lib/features/synthesis/presentation/synthesis_screen.dart`
 - **Key Parameters**:
   - `String activeFolderFilter`: Selected filter from dropdown (`all`, `work`, `ideas`, `todos`, `journal`, `uncategorized`).
-  - `List<String> availableFolders`: Defined folders list (`['All Folders', 'Work', 'Ideas', 'Todos', 'Journal']`).
+  - `List<String> availableFolders`: Defined folders list (`['All Folders', 'Work', 'Personal', 'Journal', 'Uncategorized']`).
   - `List<SynthesisClusterItem> clusters`:
     - `String clusterId`: Unique cluster ID.
     - `String clusterSequenceNumber`: e.g. `#S-01`, `#S-02`.
-    - `String folder`: Predefined folder (`Work`, `Ideas`, `Todos`, `Journal`, `Uncategorized`).
+    - `String folder`: Predefined folder (`Work`, `Personal`, `Journal`, `Uncategorized`).
     - `String appliedStyleId`: Currently selected style preset ID (default: `'concise'`).
     - `bool isReprocessing`: Toggles Yellow pending state accent when style is changed or cluster is modified.
     - `String synthesizedContent`: Unified synthesis text.

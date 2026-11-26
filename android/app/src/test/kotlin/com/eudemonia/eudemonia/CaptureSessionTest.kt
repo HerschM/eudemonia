@@ -40,6 +40,12 @@ class CaptureSessionTest {
         }
     }
 
+    private class FakeAudioFocus : CaptureAudioFocus {
+        val calls = mutableListOf<String>()
+        override fun acquire() { calls.add("acquire") }
+        override fun release() { calls.add("release") }
+    }
+
     private class FakeHaptics : CaptureHaptics {
         var starts = 0
         var stops = 0
@@ -57,6 +63,7 @@ class CaptureSessionTest {
     private lateinit var dir: File
     private lateinit var audio: FakeAudioCapture
     private lateinit var haptics: FakeHaptics
+    private lateinit var focus: FakeAudioFocus
     private lateinit var listener: RecordingListener
     private lateinit var session: CaptureSession
 
@@ -65,6 +72,7 @@ class CaptureSessionTest {
         dir = File(tmp.root, "capture_inbox")
         audio = FakeAudioCapture()
         haptics = FakeHaptics()
+        focus = FakeAudioFocus()
         listener = RecordingListener()
         session = CaptureSession(
             audio = audio,
@@ -72,6 +80,7 @@ class CaptureSessionTest {
             inbox = CaptureInbox(dir),
             clock = { now },
             mainPoster = Executor { it.run() },
+            audioFocus = focus,
         )
         session.addListener(listener)
     }
@@ -153,5 +162,27 @@ class CaptureSessionTest {
         session.start()
 
         assertTrue(listener.events.isEmpty())
+    }
+
+    @Test
+    fun audioFocusIsHeldExactlyWhileRecording() {
+        session.start()
+        assertEquals(listOf("acquire"), focus.calls)
+
+        session.start() // already recording: nothing more is requested
+        assertEquals(listOf("acquire"), focus.calls)
+
+        session.stop()
+        assertEquals(listOf("acquire", "release"), focus.calls)
+
+        session.stop() // idle: nothing to give back
+        assertEquals(listOf("acquire", "release"), focus.calls)
+    }
+
+    @Test
+    fun audioFocusIsGivenBackWhenTheRecorderCannotStart() {
+        audio.startSucceeds = false
+        session.start()
+        assertEquals(listOf("acquire", "release"), focus.calls)
     }
 }

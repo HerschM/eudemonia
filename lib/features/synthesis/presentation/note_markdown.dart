@@ -1,9 +1,10 @@
 /// Display-only parser for the light Markdown the language model writes into a synthesized
-/// note. The stored text is never changed (it is Markdown and is exported as such); this only
-/// decides how it is drawn.
+/// note. Parsing never changes the stored text (it is Markdown and is exported as such); it only
+/// decides how it is drawn. The one edit is [setTaskChecked], which ticks a task's box.
 library;
 
-enum NoteBlockKind { title, heading, bullet, paragraph }
+/// [task] is a Markdown task-list line, `- [ ] text` or `- [x] text`.
+enum NoteBlockKind { title, heading, bullet, task, paragraph }
 
 /// A run of text inside a block; [bold] comes from `**…**`.
 class NoteSpan {
@@ -27,7 +28,13 @@ class NoteBlock {
   final NoteBlockKind kind;
   final List<NoteSpan> spans;
 
-  const NoteBlock(this.kind, this.spans);
+  /// Whether a task's box is ticked; false for every other kind.
+  final bool checked;
+
+  /// A task's zero-based position among the note's tasks (see [setTaskChecked]); null otherwise.
+  final int? taskIndex;
+
+  const NoteBlock(this.kind, this.spans, {this.checked = false, this.taskIndex});
 
   /// The block's words with all Markdown markers removed.
   String get text => spans.map((s) => s.text).join();
@@ -39,6 +46,7 @@ class NoteBlock {
 final RegExp _boldOnlyLine = RegExp(r'^\*\*([^*]+)\*\*:?$');
 final RegExp _hashHeadingLine = RegExp(r'^#{1,6}\s+(.+)$');
 final RegExp _bulletLine = RegExp(r'^[-*•]\s+(.+)$');
+final RegExp _taskLine = RegExp(r'^[-*]\s+\[([ xX])\]\s+(\S.*)$');
 final RegExp _numberedLine = RegExp(r'^\d{1,3}[.)]\s+\S');
 final RegExp _boldRun = RegExp(r'\*\*(?=\S)(.+?)(?<=\S)\*\*');
 
@@ -74,14 +82,19 @@ List<NoteBlock> parseNoteMarkdown(String text) {
   final blocks = <NoteBlock>[];
   var sawHeading = false;
 
-  // The block currently being accumulated: its kind and the lines joined into it.
+  // The block currently being accumulated: its kind, the lines joined into it and, for a task,
+  // its box.
   NoteBlockKind? openKind;
   final openLines = <String>[];
+  var openChecked = false;
+  var tasks = 0;
 
   void flush() {
     final kind = openKind;
     if (kind == null) return;
-    blocks.add(NoteBlock(kind, _inlineSpans(openLines.join(' '))));
+    final isTask = kind == NoteBlockKind.task;
+    blocks.add(NoteBlock(kind, _inlineSpans(openLines.join(' ')),
+        checked: isTask && openChecked, taskIndex: isTask ? tasks++ : null));
     openKind = null;
     openLines.clear();
   }
@@ -101,6 +114,15 @@ List<NoteBlock> parseNoteMarkdown(String text) {
         [NoteSpan(heading)],
       ));
       sawHeading = true;
+      continue;
+    }
+
+    final task = _taskLine.firstMatch(line);
+    if (task != null) {
+      flush();
+      openKind = NoteBlockKind.task;
+      openChecked = task.group(1) != ' ';
+      openLines.add(task.group(2)!);
       continue;
     }
 
@@ -124,7 +146,32 @@ List<NoteBlock> parseNoteMarkdown(String text) {
   return blocks;
 }
 
-/// The note as one run of plain words (markers removed), for compact previews that truncate
-/// with an ellipsis.
+/// The note as one run of plain words (markers and task boxes removed), for compact previews
+/// that truncate with an ellipsis.
 String plainNotePreview(String text) =>
     parseNoteMarkdown(text).map((b) => b.text).join(' ');
+
+/// [noteText] with the box of task [taskIndex] (counted as [parseNoteMarkdown] counts tasks)
+/// set to `[x]` or `[ ]`. Only that one character changes; the text is returned unchanged when
+/// the index is out of range or the box is already in the wanted state (a `[X]` stays).
+String setTaskChecked(String noteText, int taskIndex, bool checked) {
+  if (taskIndex < 0) return noteText;
+  var index = 0;
+  var lineStart = 0;
+  for (final m in RegExp(r'\r\n|\r|\n|$').allMatches(noteText)) {
+    final line = noteText.substring(lineStart, m.start);
+    final trimmed = line.trim();
+    // A heading is never a task line, so the order matches the parser's.
+    if (_headingText(trimmed) == null && _taskLine.hasMatch(trimmed)) {
+      if (index == taskIndex) {
+        final box = lineStart + line.indexOf('[') + 1;
+        if ((noteText[box] != ' ') == checked) return noteText;
+        return '${noteText.substring(0, box)}${checked ? 'x' : ' '}${noteText.substring(box + 1)}';
+      }
+      index++;
+    }
+    if (m.end == noteText.length) break;
+    lineStart = m.end;
+  }
+  return noteText;
+}

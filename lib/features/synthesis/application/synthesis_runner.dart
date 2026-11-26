@@ -12,14 +12,24 @@ import 'package:eudemonia/features/capture/capture_controller.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
+import 'package:eudemonia/features/synthesis/application/session_actions.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_engine.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 
 /// [noModel]: no language model is downloaded and chosen, so nothing was started.
 enum SynthesisRunResult { completed, nothingToDo, busy, preempted, failed, noModel }
+
+/// Reports how the rewrite of a flagged session ended: [failure] is null when its note was
+/// written in [styleId], otherwise why it was not (the note was kept and the flag cleared).
+typedef RewriteFinished = void Function(String clusterId, String styleId, String? failure);
+
+/// The failure reported when the model gave no valid note.
+const String noValidReply = 'no valid reply';
 
 /// Automatic runs give up on a thought after this many runs failed to file or write it.
 const int maxAutomaticSynthesisAttempts = 3;
@@ -32,9 +42,12 @@ bool isSynthesisCandidate(Note note, {required bool manual, int maxAttempts = ma
     _thoughtText(note).trim().isNotEmpty &&
     (manual || note.synthesisAttempts < maxAttempts);
 
-/// Runs one synthesis pass: organise new thoughts, write each touched session and commit it,
-/// then rewrite sessions flagged for reprocessing. Capture always has priority: a run never
-/// starts while capture is active and ends as soon as the speech model is needed.
+/// Runs one synthesis pass: organise new thoughts into the user's folders, write each touched
+/// session and commit it (a new one in its folder's default style), then rewrite sessions flagged
+/// for reprocessing (a rewrite without a valid reply keeps the note and clears the flag). A note
+/// edited by hand is never rewritten: its new thoughts are appended to it, and a flag on it is
+/// cleared. Capture always has priority: a run never starts while capture is active and ends as
+/// soon as the speech model is needed.
 ///
 /// Every thought of a run is counted as one attempt when the run starts, so a run that dies
 /// mid-way (process killed) still counts; a thought that gets synthesized has its count reset,
@@ -53,10 +66,14 @@ class SynthesisRunner {
   final bool Function() _isCaptureActive;
   final Future<String?> Function() _modelsDir;
   final SynthesisModelProfile? Function() _profile;
-  final List<FolderDefinition> folders;
+  final Future<List<FolderDefinition>> Function() _folders;
   final AppLogger? _logger;
   final CpuWakeLock? _wakeLock;
   final void Function(bool running)? _onRunningChanged;
+
+  /// Told every time a session's note is written in its style (also when new thoughts join it)
+  /// and every time a flagged session's rewrite fails, so a restyle can be confirmed or undone.
+  final RewriteFinished? _onRewriteFinished;
   final int maxAutomaticAttempts;
 
   bool _running = false;
@@ -73,14 +90,17 @@ class SynthesisRunner {
     required this._isCaptureActive,
     required this._modelsDir,
     required this._profile,
-    this.folders = defaultFolders,
+    this._folders = _defaultFolderList,
     this._logger,
     this._wakeLock,
     this._onRunningChanged,
+    this._onRewriteFinished,
     this.maxAutomaticAttempts = maxAutomaticSynthesisAttempts,
   });
 
   bool get isRunning => _running;
+
+  static Future<List<FolderDefinition>> _defaultFolderList() async => defaultFolders;
 
   /// Never throws. [manual] runs also retry thoughts that failed [maxAutomaticAttempts] times.
   Future<SynthesisRunResult> run({required bool manual}) async {
@@ -102,6 +122,10 @@ class SynthesisRunner {
     // Checked before anything is evicted, loaded or counted as an attempt (FR16.5).
     if (profile == null) return SynthesisRunResult.noModel;
     await _sessions.hydrated;
+    // Also resolved once: folders edited mid-run apply from the next run.
+    final folders = await _folders();
+    // Before deciding there is work: a flag on a note edited by hand never needs the model.
+    _clearHandEditedFlags();
     final candidates = (await _notes.getAllNotes())
         .where((n) => isSynthesisCandidate(n, manual: manual, maxAttempts: maxAutomaticAttempts))
         .toList();
@@ -117,14 +141,17 @@ class SynthesisRunner {
 
     _onRunningChanged?.call(true);
     final watch = Stopwatch()..start();
-    _logger?.info('[Synthesis] Run started (${manual ? 'manual' : 'automatic'}): ${candidates.length} thought(s) waiting.');
+    final flagged = [for (final s in _readSessions()) if (s.isReprocessing) s];
+    _logger?.info('[Synthesis] Run started (${manual ? 'manual' : 'automatic'}): model ${profile.modelFileName}, '
+        '${candidates.length} thought(s) waiting, ${flagged.length} session(s) to rewrite'
+        '${flagged.isEmpty ? '' : ' (styles ${flagged.map((s) => '${s.sequenceNumber} ${s.appliedStyleId}').join(', ')})'}.');
     // Thoughts a model answer could not file or write; they keep the attempt counted at the start.
     final failedIds = <int>{};
     var result = SynthesisRunResult.completed;
     try {
       await _wakeLock?.hold(wakeLockWindow);
       await _countAttempts(candidates);
-      await _work(candidates, failedIds, profile);
+      await _work(candidates, failedIds, profile, folders);
     } catch (e, stack) {
       if (_preempted || e is LlmCancelledException) {
         _logger?.info('[Synthesis] Run preempted by capture; uncommitted work is redone next run.');
@@ -156,7 +183,12 @@ class SynthesisRunner {
     if (_preempted) throw const LlmCancelledException();
   }
 
-  Future<void> _work(List<Note> candidates, Set<int> failedIds, SynthesisModelProfile profile) async {
+  Future<void> _work(
+    List<Note> candidates,
+    Set<int> failedIds,
+    SynthesisModelProfile profile,
+    List<FolderDefinition> folders,
+  ) async {
     final dir = await _modelsDir();
     if (dir == null) throw Exception('Could not resolve models directory path.');
     await _wakeLock?.hold(wakeLockWindow);
@@ -186,16 +218,25 @@ class SynthesisRunner {
           _logger?.warning('[Synthesis] Rejected $kind reply for thought ids $ids: $reason'),
     );
 
-    final rewritten = <String>{};
+    // The style and thoughts each session's note was last written from in this run. The user may
+    // delete or edit a thought, or choose another style, while a note is being written; such a
+    // note is not committed as final.
+    final writtenFrom = <String, String>{};
     if (candidates.isNotEmpty) {
-      final byId = {for (final n in candidates) n.id: n};
       final now = DateTime.now();
       final thoughts = [
         for (final n in candidates) SynthesisThought(id: n.id, text: _thoughtText(n), time: n.createdAt ?? now),
       ];
+      final organisedFrom = {for (final s in _readSessions()) s.clusterId: _thoughtKey(s)};
       final outcome = await engine.organise(thoughts, [
         for (final s in _readSessions())
-          ExistingSession(id: s.clusterId, folder: s.folder, note: s.synthesizedContent, thoughts: _thoughtsOf(s)),
+          ExistingSession(
+            id: s.clusterId,
+            folder: s.folder,
+            note: s.synthesizedContent,
+            thoughts: _thoughtsOf(s),
+            styleId: s.appliedStyleId,
+          ),
       ]);
       failedIds.addAll(outcome.failedThoughtIds);
       _logger?.info('[Synthesis] Organised into ${outcome.plans.length} session(s)'
@@ -211,17 +252,51 @@ class SynthesisRunner {
               '${plan.newThoughts.map((t) => t.id).toList()}.');
           continue;
         }
-        final added = [for (final t in plan.newThoughts) byId[t.id]!];
-        final origins = [for (final n in added) SynthesisOriginNote.fromNote(n)];
         final existingId = plan.existingSessionId;
+        final existing = existingId == null ? null : _sessionById(existingId);
         // The user may have deleted the session during the run; its thoughts then stay in Capture.
-        if (existingId != null && !_readSessions().any((s) => s.clusterId == existingId)) continue;
+        if (existingId != null && existing == null) continue;
+        // Read again: a thought deleted meanwhile must not be saved back, an edit must not be undone,
+        // and a style chosen meanwhile must still be applied.
+        var stale = existing != null &&
+            (_thoughtKey(existing) != organisedFrom[existingId] || existing.appliedStyleId != plan.styleId);
+        final added = <Note>[];
+        var newThoughtsChanged = false;
+        for (final t in plan.newThoughts) {
+          final current = await _notes.getNoteById(t.id);
+          if (current == null || _thoughtText(current) != t.text) newThoughtsChanged = true;
+          if (current != null) added.add(current);
+        }
+        stale = stale || newThoughtsChanged;
+        if (added.isEmpty) continue;
+        // A note edited by hand is never overwritten and cannot be rewritten: when it was edited
+        // while this note was written, or a thought appended to it changed meanwhile, nothing is
+        // committed and its new thoughts stay in Capture for the next run.
+        if (existing != null &&
+            existing.isHandEdited &&
+            (plan.styleId != manualStyleId || existing.synthesizedContent != plan.currentNote || newThoughtsChanged)) {
+          _logger?.info('[Synthesis] Session ${existing.sequenceNumber} was edited by hand while its note was '
+              'written; its new thoughts are filed next run.');
+          continue;
+        }
+        final origins = [for (final n in added) SynthesisOriginNote.fromNote(n)];
+        final String sessionId;
         if (existingId == null) {
-          _sessions.createSession(folder: plan.folder, note: note, origins: origins);
+          sessionId = _sessions
+              .createSession(folder: plan.folder, note: note, origins: origins, styleId: plan.styleId)
+              .clusterId;
         } else {
           _sessions.updateSession(existingId, note: note, addedOrigins: origins);
-          rewritten.add(existingId);
+          sessionId = existingId;
         }
+        // Written from thoughts that changed meanwhile: rewritten from the current ones below. A note
+        // still edited by hand is not rewritten; only its earlier thoughts can have changed.
+        if (stale && !_sessionById(sessionId)!.isHandEdited) {
+          _sessions.markForRewrite(sessionId);
+        } else {
+          writtenFrom[sessionId] = _writtenKey(plan.styleId, _sessionById(sessionId)!);
+        }
+        _onRewriteFinished?.call(sessionId, plan.styleId, null);
         for (final n in added) {
           n.state = ThoughtState.synthesized;
           n.synthesisAttempts = 0;
@@ -230,24 +305,68 @@ class SynthesisRunner {
       }
     }
 
-    for (final s in _readSessions().where((s) => s.isReprocessing && !rewritten.contains(s.clusterId)).toList()) {
-      if (s.originNotes.isEmpty) {
-        _sessions.removeEmptySession(s.clusterId);
-        continue;
+    // Flagged sessions are rewritten from their thoughts in their style, also those flagged while
+    // this run was working. Every pass only takes sessions whose thoughts or style changed since
+    // they were last written, so the loop ends once the user stops changing them.
+    while (true) {
+      _clearHandEditedFlags();
+      final due = [
+        for (final s in _readSessions())
+          if (s.isReprocessing && writtenFrom[s.clusterId] != _writtenKey(s.appliedStyleId, s)) s,
+      ];
+      if (due.isEmpty) break;
+      for (final s in due) {
+        final key = writtenFrom[s.clusterId] = _writtenKey(s.appliedStyleId, s);
+        if (s.originNotes.isEmpty) {
+          _sessions.removeEmptySession(s.clusterId);
+          continue;
+        }
+        _checkPreempted();
+        final all = _thoughtsOf(s);
+        final plan = SessionPlan(
+          existingSessionId: s.clusterId,
+          folder: s.folder,
+          currentNote: null,
+          thoughts: all,
+          newThoughts: all,
+          styleId: s.appliedStyleId,
+        );
+        _logger?.info('[Synthesis] Rewriting session ${s.sequenceNumber} in the ${s.appliedStyleId} style.');
+        final note = await engine.write(plan);
+        _checkPreempted();
+        final current = _sessionById(s.clusterId);
+        // Deleted, or its thoughts or style changed while the note was written: the next pass handles it.
+        if (current == null || _writtenKey(current.appliedStyleId, current) != key) continue;
+        if (note != null) {
+          _sessions.updateSession(s.clusterId, note: note);
+          _onRewriteFinished?.call(s.clusterId, s.appliedStyleId, null);
+        } else {
+          // No fallback text: the note stays as it was, and the session is not retried forever.
+          _sessions.clearReprocessing(s.clusterId);
+          _logger?.warning('[Synthesis] No valid rewrite for session ${s.sequenceNumber} in the '
+              '${s.appliedStyleId} style; its note is kept.');
+          _onRewriteFinished?.call(s.clusterId, s.appliedStyleId, engine.unwritableReason(plan) ?? noValidReply);
+        }
       }
-      _checkPreempted();
-      final all = _thoughtsOf(s);
-      final note = await engine.write(SessionPlan(
-        existingSessionId: s.clusterId,
-        folder: s.folder,
-        currentNote: null,
-        thoughts: all,
-        newThoughts: all,
-      ));
-      _checkPreempted();
-      if (note != null) _sessions.updateSession(s.clusterId, note: note);
     }
   }
+
+  SynthesisCluster? _sessionById(String id) => _readSessions().where((s) => s.clusterId == id).firstOrNull;
+
+  /// A note edited by hand is never rewritten automatically: a flag on it (a merge, an ejected
+  /// thought) is cleared and its note kept. One without thoughts is still flagged, to be removed.
+  void _clearHandEditedFlags() {
+    for (final s in _readSessions()) {
+      if (s.isReprocessing && s.isHandEdited && s.originNotes.isNotEmpty) _sessions.clearReprocessing(s.clusterId);
+    }
+  }
+
+  /// The thoughts of a session (ids and texts in order), to see whether they changed.
+  static String _thoughtKey(SynthesisCluster s) =>
+      [for (final o in s.originNotes) '${o.id}\u0000${o.cleanedText}'].join('\u0001');
+
+  /// What a note written in [styleId] from the thoughts of [s] was written from.
+  static String _writtenKey(String styleId, SynthesisCluster s) => '$styleId\u0002${_thoughtKey(s)}';
 
   static String _seconds(int ms) => (ms / 1000).toStringAsFixed(1);
 
@@ -298,7 +417,7 @@ class SynthesisRunningNotifier extends Notifier<bool> {
 
 final synthesisRunningProvider = NotifierProvider<SynthesisRunningNotifier, bool>(SynthesisRunningNotifier.new);
 
-final synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
+final Provider<SynthesisRunner> synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
   return SynthesisRunner(
     notes: ref.watch(notesRepositoryProvider),
     sessions: ref.watch(synthesisRepositoryProvider.notifier),
@@ -307,11 +426,17 @@ final synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
     lifecycle: ref.watch(modelLifecycleManagerProvider),
     arbiter: ref.watch(modelResidencyArbiterProvider),
     profile: () => ref.read(activeSynthesisProfileProvider),
+    folders: () async {
+      await ref.read(foldersProvider.notifier).loaded;
+      return ref.read(foldersProvider);
+    },
     isCaptureActive: () => ref.read(captureControllerProvider) || ref.read(pendingQueueCountProvider) > 0,
     // Same directory the speech model is loaded from.
     modelsDir: () async => (await getExternalStorageDirectory())?.path,
     logger: ref.watch(appLoggerProvider),
     wakeLock: ref.watch(synthesisWakeLockProvider),
     onRunningChanged: (running) => ref.read(synthesisRunningProvider.notifier).setRunning(running),
+    // Read when a rewrite ends, so the runner does not build the actions up front.
+    onRewriteFinished: (id, style, failure) => ref.read(sessionActionsProvider).rewriteFinished(id, style, failure),
   );
 });

@@ -6,8 +6,11 @@ import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/presentation/notes_view_prefs.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
+
+import 'notes_view_test_support.dart';
 
 SynthesisCluster _cluster({
   required String id,
@@ -44,6 +47,8 @@ Future<void> _pump(WidgetTester tester, List<SynthesisCluster> clusters, {NotesR
     ProviderScope(
       overrides: [
         if (notes != null) notesRepositoryProvider.overrideWithValue(notes),
+        // The footer is part of an opened note.
+        notesViewPrefsStoreProvider.overrideWithValue(InMemoryNotesViewPrefsStore(openReadPrefs)),
         synthesisRepositoryProvider.overrideWith(() => SynthesisRepository(clusters)),
       ],
       child: const MaterialApp(home: Scaffold(body: SynthesisScreen())),
@@ -53,7 +58,7 @@ Future<void> _pump(WidgetTester tester, List<SynthesisCluster> clusters, {NotesR
 }
 
 void main() {
-  group('Synthesis card footer', () {
+  group('Synthesis note footer', () {
     testWidgets('shows the date day first, like the Capture cards', (tester) async {
       // 26 November, 14:37: month/day order would read 11/26.
       await _pump(tester, [
@@ -77,15 +82,15 @@ void main() {
       expect(find.text('25/11  09:05 AM • ⏱️ 12m session'), findsOneWidget);
     });
 
-    testWidgets('pill says Raw Note for one and Raw Notes for several', (tester) async {
+    testWidgets('the link says thought for one and thoughts for several', (tester) async {
       await _pump(tester, [
         _cluster(id: '#S-01', start: DateTime(2026, 11, 26, 14, 37), duration: const Duration(minutes: 5), origins: 1),
         _cluster(id: '#S-02', start: DateTime(2026, 11, 25, 9, 5), duration: const Duration(minutes: 5), origins: 3),
       ]);
 
-      expect(find.text('1 Raw Note'), findsOneWidget);
-      expect(find.text('3 Raw Notes'), findsOneWidget);
-      expect(find.text('1 Raw Notes'), findsNothing);
+      expect(find.text('From 1 thought'), findsOneWidget);
+      expect(find.text('From 3 thoughts'), findsOneWidget);
+      expect(find.text('From 1 thoughts'), findsNothing);
     });
   });
 

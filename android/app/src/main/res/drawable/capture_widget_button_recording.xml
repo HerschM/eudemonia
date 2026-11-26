@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round capture button: a soft translucent ring behind a 44dp gradient circle (50dp in total). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/capture_widget_button_recording_glow" />
+        </shape>
+    </item>
+    <item
+        android:bottom="3dp"
+        android:left="3dp"
+        android:right="3dp"
+        android:top="3dp">
+        <shape android:shape="oval">
+            <gradient
+                android:angle="315"
+                android:endColor="@color/capture_widget_button_recording_end"
+                android:startColor="@color/capture_widget_button_recording_start"
+                android:type="linear" />
+        </shape>
+    </item>
+</layer-list>

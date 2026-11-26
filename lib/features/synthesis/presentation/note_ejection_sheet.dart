@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
 
@@ -56,6 +57,12 @@ class NoteEjectionModal extends StatefulWidget {
 
 class _NoteEjectionModalState extends State<NoteEjectionModal> {
   bool _showingTargetPicker = false;
+
+  /// `#S-02`, or `#S-02 · 23/11` when [target] is from another day than the session the note leaves.
+  String _targetLabel(SynthesisCluster target) {
+    final from = widget.currentCluster?.sessionStart;
+    return from == null ? target.sequenceNumber : sessionReferenceLabel(target, relativeTo: from);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,12 +123,14 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                       constraints: const BoxConstraints(),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Select Target Clubbed Note',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                    const Expanded(
+                      child: Text(
+                        'Select Target Clubbed Note',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                   ],
@@ -152,7 +161,7 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                       return Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          key: Key('target_cluster_${target.sequenceNumber}'),
+                          key: Key('target_cluster_${target.clusterId}'),
                           borderRadius: BorderRadius.circular(AppColors.buttonRadius),
                           onTap: () {
                             Navigator.pop(context);
@@ -174,7 +183,8 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    target.sequenceNumber,
+                                    // Two sessions of different days can both be #S-01: name the day.
+                                    _targetLabel(target),
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,

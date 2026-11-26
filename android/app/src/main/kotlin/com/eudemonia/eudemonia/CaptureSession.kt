@@ -17,6 +17,7 @@ class CaptureSession(
     private val inbox: CaptureInbox,
     private val clock: () -> Long,
     private val mainPoster: Executor,
+    private val audioFocus: CaptureAudioFocus = CaptureAudioFocus.NONE,
 ) {
     private val lock = Any()
     private val listeners = CopyOnWriteArrayList<CaptureListener>()
@@ -39,7 +40,10 @@ class CaptureSession(
         if (state.isRecording) return state
         val startedAtMs = clock()
         val target = inbox.newPartFile(startedAtMs)
+        // Other apps' playback is asked to pause first, so it is not recorded with the voice.
+        audioFocus.acquire()
         if (!audio.start(target)) {
+            audioFocus.release()
             inbox.discard(target)
             return state
         }
@@ -61,6 +65,7 @@ class CaptureSession(
         val startedAtMs = current.startedAtMs
         if (!current.isRecording || target == null || startedAtMs == null) return null
         val durationMs = audio.stop()
+        audioFocus.release()
         val committed = inbox.commit(target)
         part = null
         state = CaptureState.IDLE

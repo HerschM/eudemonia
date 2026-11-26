@@ -1,64 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 
+/// One row of the style picker, made from a [NoteStyleSpec]; the style's prompt stays in the domain.
 class StylePreset {
   final String id;
   final String name;
   final IconData icon;
-  final String prompt;
-  final String outputFormat;
+  final String description;
 
   const StylePreset({
     required this.id,
     required this.name,
     required this.icon,
-    required this.prompt,
-    required this.outputFormat,
+    required this.description,
   });
 
-  static const List<StylePreset> defaultPresets = [
-    StylePreset(
-      id: 'concise',
-      name: 'Concise & Direct',
-      icon: Icons.bolt,
-      prompt: 'Distill this thought into a punchy, 1-2 sentence core insight without fluff.',
-      outputFormat: '1-2 punchy sentences',
-    ),
-    StylePreset(
-      id: 'bullets',
-      name: 'Bullet Points',
-      icon: Icons.format_list_bulleted,
-      prompt: 'Convert this thought into a structured, clear bulleted list highlighting key ideas.',
-      outputFormat: 'Structured markdown bullets',
-    ),
-    StylePreset(
-      id: 'professional',
-      name: 'Professional',
-      icon: Icons.business_center,
-      prompt: 'Rewrite this thought in polished, professional business language suitable for work.',
-      outputFormat: 'Formal prose',
-    ),
-    StylePreset(
-      id: 'journal',
-      name: 'Journal / Reflective',
-      icon: Icons.spa,
-      prompt: 'Rewrite with introspective, thoughtful prose preserving personal sentiment and nuances.',
-      outputFormat: 'Reflective narrative',
-    ),
-    StylePreset(
-      id: 'actionable',
-      name: 'Actionable / Next Steps',
-      icon: Icons.track_changes,
-      prompt: 'Extract the concrete actionable intent and format as immediate clear next steps.',
-      outputFormat: 'Concrete action steps',
-    ),
-    StylePreset(
-      id: 'casual',
-      name: 'Casual / Conversational',
-      icon: Icons.chat_bubble_outline,
-      prompt: 'Rewrite as a friendly, natural speaking-style personal note.',
-      outputFormat: 'Conversational reflection',
-    ),
+  static const Map<String, IconData> _icons = {
+    'organised': Icons.view_agenda_outlined,
+    'concise': Icons.bolt,
+    'bullets': Icons.format_list_bulleted,
+    'professional': Icons.business_center,
+    'journal': Icons.spa,
+    'actionable': Icons.checklist,
+    'casual': Icons.chat_bubble_outline,
+  };
+
+  /// Every style in picker order.
+  static final List<StylePreset> defaultPresets = [
+    for (final s in noteStyles)
+      StylePreset(id: s.id, name: s.label, icon: _icons[s.id] ?? Icons.auto_awesome, description: s.description),
   ];
 }
 
@@ -70,14 +41,14 @@ class StyleRewriterModal extends StatelessWidget {
   const StyleRewriterModal({
     super.key,
     required this.sequenceLabel,
-    this.selectedPresetId = 'concise',
+    this.selectedPresetId = defaultNoteStyleId,
     this.onSelectPreset,
   });
 
   static Future<void> show(
     BuildContext context, {
     required String sequenceLabel,
-    String selectedPresetId = 'concise',
+    String selectedPresetId = defaultNoteStyleId,
     ValueChanged<StylePreset>? onSelectPreset,
   }) {
     return showModalBottomSheet(
@@ -121,15 +92,18 @@ class StyleRewriterModal extends StatelessWidget {
               children: [
                 const Icon(Icons.auto_awesome, color: AppColors.accentAI, size: 20),
                 const SizedBox(width: 8),
-                const Text(
-                  'AI Style Re-Writer',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                const Expanded(
+                  child: Text(
+                    'AI Style Re-Writer',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -205,14 +179,17 @@ class StyleRewriterModal extends StatelessWidget {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
-                                        preset.name,
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                          color: AppColors.textPrimary,
+                                      Flexible(
+                                        child: Text(
+                                          preset.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: isSelected
+                                                ? FontWeight.bold
+                                                : FontWeight.w600,
+                                            color: AppColors.textPrimary,
+                                          ),
                                         ),
                                       ),
                                       if (isSelected) ...[
@@ -240,7 +217,7 @@ class StyleRewriterModal extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    preset.prompt,
+                                    preset.description,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: AppColors.textSecondary

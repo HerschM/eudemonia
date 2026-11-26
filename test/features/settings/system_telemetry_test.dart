@@ -7,8 +7,10 @@ import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
+import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
 
 import 'fake_permission_gateway.dart';
+import 'settings_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -107,11 +109,14 @@ void main() {
           overrides: [
             runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
             notesRepositoryProvider.overrideWithValue(NotesRepository()),
+            folderStoreProvider.overrideWithValue(InMemoryFolderStore()),
           ],
           child: const MaterialApp(home: SettingsScreen()),
         ),
       );
       await tester.pumpAndSettle();
+      // The memory section starts collapsed; its readings are only taken once it is open.
+      await expandSection(tester, 'settings_memory_header');
       await tester.scrollUntilVisible(
         find.byKey(const Key('evict_models_button')),
         200,

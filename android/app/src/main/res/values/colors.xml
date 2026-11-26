@@ -1,13 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Mirrors the in-app floating capture capsule (lib/features/theme/app_colors.dart). -->
-    <color name="capture_widget_surface">#FF1F1F27</color>
-    <color name="capture_widget_surface_recording">#FF0F291E</color>
-    <!-- AppColors.accentCapture, and the same at 45% alpha for the idle border. -->
+    <!-- Widget card surface: a diagonal gradient between AppColors.surfaceElevated and surface
+         (lib/features/theme/app_colors.dart). The widget is always dark, like the in-app capsule. -->
+    <color name="capture_widget_surface">#FF202026</color>
+    <color name="capture_widget_surface_end">#FF16161A</color>
+    <!-- Recording: the same card with a warm tint (AppColors.stateFailedBg family). -->
+    <color name="capture_widget_surface_recording">#FF2A1719</color>
+    <color name="capture_widget_surface_recording_end">#FF1A1012</color>
+    <!-- AppColors.accentCapture, and the same at 45% alpha. -->
     <color name="capture_accent">#FF10B981</color>
     <color name="capture_accent_soft">#7310B981</color>
-    <!-- AppColors.textPrimary. -->
+    <!-- Hairline border: capture emerald fading into the AI violet (AppColors.accentAI), low alpha. -->
+    <color name="capture_widget_border_start">#7310B981</color>
+    <color name="capture_widget_border_end">#668B5CF6</color>
+    <!-- Recording border: coral into rose. -->
+    <color name="capture_widget_border_recording_start">#99FF8A65</color>
+    <color name="capture_widget_border_recording_end">#80E5484D</color>
+    <!-- Round button gradients and the soft ring behind them. -->
+    <color name="capture_widget_button_start">#FF10B981</color>
+    <color name="capture_widget_button_end">#FF047857</color>
+    <color name="capture_widget_button_glow">#3310B981</color>
+    <color name="capture_widget_button_recording_start">#FFFF8A65</color>
+    <color name="capture_widget_button_recording_end">#FFE5484D</color>
+    <color name="capture_widget_button_recording_glow">#33FF8A65</color>
+    <!-- Glyph on the round button. -->
+    <color name="capture_widget_glyph">#FFFFFFFF</color>
+    <!-- AppColors.textPrimary and textSecondary. -->
     <color name="capture_text_primary">#FFF9FAFB</color>
+    <color name="capture_text_secondary">#FF9CA3AF</color>
+    <!-- Running timer while recording: coral light enough to read on the dark card. -->
+    <color name="capture_widget_text_recording">#FFFFB4A2</color>
     <!-- Text on the accent colour (notification Record button). -->
     <color name="capture_on_accent">#FF04261A</color>
 </resources>

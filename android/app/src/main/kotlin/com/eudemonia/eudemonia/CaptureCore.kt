@@ -66,6 +66,7 @@ class CaptureCore private constructor(
                 inbox = inbox,
                 clock = System::currentTimeMillis,
                 mainPoster = mainPoster,
+                audioFocus = SystemCaptureAudioFocus(appContext),
             )
             val worker = Executors.newSingleThreadExecutor { runnable ->
                 Thread(runnable, "EudemoniaCaptureCore")

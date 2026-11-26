@@ -43,11 +43,12 @@ void main() {
 
   group('MainNavigationShell 2-Stage UX & Pipeline HUD Tests', () {
     testWidgets(
-      'Capture badge ignores thoughts already consumed by a synthesis session',
+      'Capture badge counts every thought not yet seen, also one already consumed by a synthesis session',
       (WidgetTester tester) async {
         final notesRepo = NotesRepository();
         await notesRepo.saveNote(Note(correctedText: 'Fresh', state: ThoughtState.processed));
         await notesRepo.saveNote(Note(correctedText: 'Clubbed', state: ThoughtState.synthesized));
+        await notesRepo.saveNote(Note(correctedText: 'Clubbed and seen', state: ThoughtState.synthesized, isRead: true));
 
         await tester.pumpWidget(
           ProviderScope(
@@ -58,7 +59,8 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
 
-        expect(find.text('Capture (1)'), findsOneWidget);
+        // FR9.10: unread follows "not yet seen" only; a synthesized thought is no exception.
+        expect(find.text('Capture (2)'), findsOneWidget);
       },
     );
 
@@ -173,15 +175,15 @@ void main() {
         // Initially on Capture; zero-suppressed labels carry no count
         expect(find.text('Capture'), findsOneWidget);
         expect(find.text('Synthesis'), findsOneWidget);
-        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
+        expect(find.byKey(const Key('synthesis_mode_toggle')), findsNothing);
 
         await tester.tap(find.text('Synthesis'));
         await tester.pumpAndSettle();
-        expect(find.text('SYNTHESIS SESSIONS'), findsOneWidget);
+        expect(find.byKey(const Key('synthesis_mode_toggle')), findsOneWidget);
 
         await tester.tap(find.text('Capture'));
         await tester.pumpAndSettle();
-        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
+        expect(find.byKey(const Key('synthesis_mode_toggle')), findsNothing);
       },
     );
 
@@ -256,7 +258,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Settings screen opened
-        expect(find.text('Settings & Diagnostics'), findsOneWidget);
+        expect(find.text('Settings'), findsOneWidget);
         expect(find.byType(SettingsScreen), findsOneWidget);
       },
     );

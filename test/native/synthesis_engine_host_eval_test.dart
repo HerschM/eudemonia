@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:eudemonia/features/ai_processing/llama_isolate_engine.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_engine.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +20,9 @@ import 'package:flutter_test/flutter_test.dart';
 // thoughts.json: [{"id": 30, "text": "...", "time": "2026-11-21 11:46:17.719170"}, ...]. The
 // thoughts and the result contain a user's own words: keep both out of git.
 // Optional: EUDEMONIA_EVAL_WRITE_LIMIT (words per write turn, default 500),
-// EUDEMONIA_EVAL_FORMAT (chatmlNoThink | chatml | llama3, default chatmlNoThink).
+// EUDEMONIA_EVAL_FORMAT (chatmlNoThink | chatml | llama3, default chatmlNoThink),
+// EUDEMONIA_EVAL_STYLE (a note style id, default organised): every session is written in it, as
+// a restyle rewrites it.
 final Map<String, String> _env = Platform.environment;
 final String? _library = _env['EUDEMONIA_LLAMA_LIB'];
 final String? _model = _env['EUDEMONIA_LLAMA_MODEL'];
@@ -52,6 +55,9 @@ void main() {
       maxOutputRatio: 1.3,
     );
 
+    final style = _env['EUDEMONIA_EVAL_STYLE'] ?? defaultNoteStyleId;
+    if (!isKnownNoteStyle(style)) throw ArgumentError.value(style, 'EUDEMONIA_EVAL_STYLE', 'unknown note style');
+
     final engine = LlamaIsolateEngine(const LLMConfig(kvCacheMaxSize: 4096), null, _library!);
     await engine.load(_model!);
     final rejections = <Map<String, Object?>>[];
@@ -79,7 +85,14 @@ void main() {
       final sessions = <Map<String, Object?>>[];
       var unwritten = 0;
       for (final plan in organised.plans) {
-        final note = await synthesis.write(plan);
+        final note = await synthesis.write(SessionPlan(
+          existingSessionId: plan.existingSessionId,
+          folder: plan.folder,
+          currentNote: plan.currentNote,
+          thoughts: plan.thoughts,
+          newThoughts: plan.newThoughts,
+          styleId: style,
+        ));
         if (note == null) unwritten += plan.thoughts.length;
         sessions.add({
           'folder': plan.folder,
@@ -92,6 +105,7 @@ void main() {
 
       final summary = {
         'model': profile.modelFileName,
+        'style': style,
         'thoughts': thoughts.length,
         'sessions': organised.plans.length,
         'unfiledThoughts': organised.failedThoughtIds.length,

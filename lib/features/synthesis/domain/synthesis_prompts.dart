@@ -3,6 +3,7 @@
 library;
 
 import 'folder_definition.dart';
+import 'note_style.dart';
 import 'synthesis_model_profile.dart';
 
 /// A note already in progress, shown to the model so new thoughts can continue it.
@@ -79,47 +80,18 @@ const String _writeSystem =
 String buildWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
-/// Writes the thoughts as a titled note of bullets under topic headings ([NoteStyle.structured]).
-/// Needs a model larger than Qwen2.5-1.5B to keep the facts (TASK-070). The worked example and the
-/// rule that every thought must appear were added after Qwen3-4B wrote telegraphic notes that
-/// dropped details (lab comparison 2026-11-22); without the example the format is unstable.
-String buildStructuredWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
-    _wrap(format, _structuredSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
+/// Writes the thoughts as a note in [style] (see [noteStyles]): its system text, then the
+/// numbered thoughts and the style's request.
+String buildStyleWritePrompt(List<String> thoughts, NoteStyleSpec style, {ChatFormat format = ChatFormat.chatml}) =>
+    _wrap(format, style.systemPrompt, 'Thoughts:\n${_numbered(thoughts)}\n\n${style.request}');
 
-const String _structuredSystem =
-    'You turn spoken thoughts into one organised written note. The thoughts were dictated by one person, in order, and transcribed by speech recognition.\n'
-    '\n'
-    'Write the note like this:\n'
-    '- First line: a title of at most six words.\n'
-    '- Then bullet points, each starting with "- ". When there is more than one topic, put a short heading above each group.\n'
-    '- Each bullet is one short, complete sentence in the first person, as the speaker.\n'
-    '\n'
-    'Rules:\n'
-    '- Keep every fact: names, numbers, dates, times, places, items in lists, reasons, decisions, plans, purchases, feelings.\n'
-    '- Keep what has already happened, what is planned and what is only wished as the speaker said it.\n'
-    '- Leave out filler, repetition, false starts and remarks about the recording itself.\n'
-    '- When the speaker corrects themselves, keep only the corrected version.\n'
-    '- Every numbered thought must appear in the note. Go through them in order and leave none out, including what the speaker says at the very end.\n'
-    '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
-    '- Output only the note.\n'
-    '\n'
-    'Example:\n'
-    'Thoughts:\n'
-    '1. Remind me to email Daniel the contract before Friday.\n'
-    '2. Okay so, um, I went to see the flat on Park Street yesterday and honestly I liked it a lot, it has two bedrooms and the rent is eighteen hundred a month, which is, like, two hundred more than what we pay now. The landlord said we need to decide by the tenth. I already sent him our documents this morning. Sam still wants to see it, so we will go together on Sunday. I am a bit worried about the noise from the main road though. So yeah, that is where things are.\n'
-    'Note:\n'
-    '**Contract and Park Street Flat**\n'
-    '\n'
-    '**Tasks**\n'
-    '- I need to email Daniel the contract before Friday.\n'
-    '\n'
-    '**Flat**\n'
-    '- I saw the flat on Park Street yesterday and liked it a lot.\n'
-    '- It has two bedrooms and the rent is 1,800 a month, 200 more than we pay now.\n'
-    '- The landlord needs our decision by the 10th.\n'
-    '- I already sent him our documents this morning.\n'
-    '- Sam and I will see it together on Sunday.\n'
-    '- I am a bit worried about the noise from the main road.';
+/// Writes the thoughts as a titled note of bullets under topic headings ([NoteStyle.structured]),
+/// the organised style. Needs a model larger than Qwen2.5-1.5B to keep the facts (TASK-070). The
+/// worked example and the rule that every thought must appear were added after Qwen3-4B wrote
+/// telegraphic notes that dropped details (lab comparison 2026-11-22); without the example the
+/// format is unstable.
+String buildStructuredWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
+    buildStyleWritePrompt(thoughts, noteStyleById(defaultNoteStyleId), format: format);
 
 /// Output token budget for a structured write turn. Measured with Qwen3-4B: a complete note takes
 /// 1.2-2.1 tokens per spoken word (headings and full sentences).

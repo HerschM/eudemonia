@@ -1,256 +1,173 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/model_credits.dart';
-import 'package:eudemonia/features/settings/settings_screen.dart';
-import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
+import 'package:eudemonia/features/theme/widgets/thinking_indicator.dart';
 
-import 'fake_permission_gateway.dart';
+import 'settings_test_harness.dart';
 
 void main() {
-  const channel = MethodChannel('com.eudemonia/hardware_buttons');
+  setUp(mockHardwareChannel);
 
-  setUp(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall call) async {
-      switch (call.method) {
-        case 'isForegroundServiceRunning':
-          return true;
-        default:
-          return null;
+  group('Production SettingsScreen', () {
+    testWidgets('sections run in priority order on a 360dp phone with no overflow', (tester) async {
+      await pumpSettingsScreen(tester, height: 4000);
+
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Settings & Diagnostics'), findsNothing);
+      expect(find.byKey(const Key('settings_back_button')), findsOneWidget);
+
+      double top(Finder finder) {
+        expect(finder, findsOneWidget);
+        return tester.getTopLeft(finder).dy;
+      }
+
+      final order = [
+        top(find.text('FOLDERS')),
+        top(find.text('AUTOMATIC SYNTHESIS')),
+        top(find.text('ON-DEVICE MODELS')),
+        top(find.text('CAPTURE')),
+        top(find.text('PHONE MEMORY AND TEMPERATURE')),
+        top(find.text('PERMISSIONS')),
+        top(find.byKey(const Key('settings_licences_link'))),
+      ];
+      expect(order, orderedEquals([...order]..sort()));
+      expect(order.toSet().length, order.length);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Automatic Synthesis keeps its controls and wording', (tester) async {
+      final notes = NotesRepository();
+      await notes.saveNote(Note(
+        rawText: 'Buffered note',
+        correctedText: 'Buffered note',
+        state: ThoughtState.processed,
+      ));
+      await pumpSettingsScreen(tester, height: 3000, notes: notes);
+
+      for (final text in const [
+        'AUTOMATIC SYNTHESIS',
+        'Synthesis turns waiting thoughts into notes by itself. Choose when it starts.',
+        'Start after this many thoughts',
+        'Synthesis starts once this many thoughts are waiting.',
+        'Or after a quiet period',
+        'Synthesis also starts when no new thought has arrived for this long.',
+        '1 thought ready for Synthesis',
+        'Synthesize Now',
+      ]) {
+        expect(find.text(text), findsOneWidget, reason: text);
+      }
+      expect(find.textContaining('Trigger After'), findsNothing);
+      expect(find.byKey(const Key('synthesis_note_threshold_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('synthesis_inactivity_minutes_dropdown')), findsOneWidget);
+      final button = tester.widget<ElevatedButton>(find.byKey(const Key('synthesize_buffer_now_button')));
+      expect(button.onPressed, isNotNull);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Synthesize Now shows Synthesizing… and is disabled while a run is going', (tester) async {
+      final notes = NotesRepository();
+      await notes.saveNote(Note(
+        rawText: 'Buffered note',
+        correctedText: 'Buffered note',
+        state: ThoughtState.processed,
+      ));
+      final container = await pumpSettingsScreen(tester, height: 3000, notes: notes);
+      final buttonFinder = find.byKey(const Key('synthesize_buffer_now_button'));
+      expect(tester.widget<ElevatedButton>(buttonFinder).onPressed, isNotNull);
+
+      container.read(synthesisRunningProvider.notifier).setRunning(true);
+      await tester.pump();
+
+      expect(tester.widget<ElevatedButton>(buttonFinder).onPressed, isNull);
+      expect(find.descendant(of: buttonFinder, matching: find.text('Synthesizing…')), findsOneWidget);
+      expect(find.descendant(of: buttonFinder, matching: find.byType(ThinkingIndicator)), findsOneWidget);
+      expect(find.text('Synthesize Now'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      container.read(synthesisRunningProvider.notifier).setRunning(false);
+      await tester.pump();
+      expect(find.text('Synthesize Now'), findsOneWidget);
+      expect(tester.widget<ElevatedButton>(buttonFinder).onPressed, isNotNull);
+      await unmountScreen(tester);
+    });
+
+    testWidgets('controls that did nothing and the diagnostic logging section are gone', (tester) async {
+      await pumpSettingsScreen(tester, height: 4000);
+      await expandSection(tester, 'settings_memory_header');
+      await expandSection(tester, 'settings_permissions_header');
+
+      expect(find.text('CALENDAR SYNCHRONIZATION'), findsNothing);
+      expect(find.textContaining('Calendar'), findsNothing);
+      expect(find.text('AUDIO CAPTURE STORAGE'), findsNothing);
+      expect(find.textContaining('Keep Raw Audio'), findsNothing);
+      expect(find.textContaining('Next refresh'), findsNothing);
+
+      expect(find.textContaining('DIAGNOSTIC LOGGING'), findsNothing);
+      expect(find.byKey(const Key('view_system_logs_button')), findsNothing);
+      expect(find.byKey(const Key('copy_log_dump_button')), findsNothing);
+      expect(find.byKey(const Key('clear_logs_button')), findsNothing);
+      expect(find.text('View System Logs'), findsNothing);
+      expect(find.text('ABOUT'), findsNothing);
+      expect(find.text('Licences and credits'), findsNothing);
+    });
+
+    testWidgets('Free model memory now shows a confirmation SnackBar without the word evicted', (tester) async {
+      await pumpSettingsScreen(tester, height: 3000);
+      await expandSection(tester, 'settings_memory_header');
+
+      final button = find.byKey(const Key('evict_models_button'));
+      expect(find.descendant(of: button, matching: find.text('Free model memory now')), findsOneWidget);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(find.text('AI model memory freed.'), findsOneWidget);
+      expect(find.textContaining('evicted'), findsNothing);
+      // No fabricated memory figures.
+      expect(find.textContaining('1.58 GB'), findsNothing);
+      await unmountScreen(tester);
+    });
+
+    testWidgets('Capture section has the home-screen widget row and the background switch', (tester) async {
+      await pumpSettingsScreen(tester, height: 3000);
+
+      expect(find.text('CAPTURE'), findsOneWidget);
+      expect(find.text('Add capture widget to home screen'), findsOneWidget);
+      expect(find.text('Keep capture ready in the background'), findsOneWidget);
+      expect(
+        find.text(
+            'Keeps the Record button on your lock screen and finishes transcription and notes while the app is closed.'),
+        findsOneWidget,
+      );
+      expect(find.text('Keep App Alive in Background'), findsNothing);
+      expect(find.textContaining('foreground service'), findsNothing);
+      // The switch is visible without opening Permissions (the NOTES section has a switch of its own).
+      expect(find.widgetWithText(SwitchListTile, 'Keep capture ready in the background'), findsOneWidget);
+    });
+
+    testWidgets('Open-source licences link opens the licence page with the model credits', (tester) async {
+      registerModelCredits();
+      await pumpSettingsScreen(tester, height: 3000);
+
+      final link = find.byKey(const Key('settings_licences_link'));
+      expect(find.text('Open-source licences'), findsOneWidget);
+      // A small link, not a card row.
+      expect(find.descendant(of: find.byType(ListTile), matching: find.text('Open-source licences')), findsNothing);
+      final text = tester.widget<Text>(find.text('Open-source licences'));
+      expect(text.style!.fontSize, inInclusiveRange(12, 13));
+
+      await tester.ensureVisible(link);
+      await tester.tap(link);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LicensePage), findsOneWidget);
+      expect(find.text('Eudemonia'), findsWidgets);
+      for (final credit in modelCredits) {
+        expect(find.textContaining(credit.package), findsWidgets);
       }
     });
-  });
-
-  tearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
-  });
-
-  group('Production SettingsScreen New Sections & Controls Tests', () {
-    testWidgets(
-      'renders Automatic Synthesis thresholds, folders, RAM telemetry, logs and About on 360dp narrow viewport',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(360, 1000);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-
-        final mockNotesRepo = NotesRepository();
-        await mockNotesRepo.saveNote(Note(
-          rawText: 'Buffered note',
-          correctedText: 'Buffered note',
-          state: ThoughtState.processed,
-        ));
-
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
-              notesRepositoryProvider.overrideWithValue(mockNotesRepo),
-            ],
-            child: const MaterialApp(
-              home: SettingsScreen(),
-            ),
-          ),
-        );
-
-        await tester.pumpAndSettle();
-
-        // 1. Settings & Diagnostics title and back button
-        expect(find.text('Settings & Diagnostics'), findsOneWidget);
-        expect(find.byKey(const Key('settings_back_button')), findsOneWidget);
-
-        // 2. Automatic Synthesis section, in plain words
-        final synthHeader = find.text('AUTOMATIC SYNTHESIS');
-        await tester.scrollUntilVisible(synthHeader, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(synthHeader, findsOneWidget);
-        for (final text in const [
-          'Synthesis turns waiting thoughts into notes by itself. Choose when it starts.',
-          'Start after this many thoughts',
-          'Synthesis starts once this many thoughts are waiting.',
-          'Or after a quiet period',
-          'Synthesis also starts when no new thought has arrived for this long.',
-        ]) {
-          await tester.scrollUntilVisible(find.text(text), 100,
-              scrollable: find.byType(Scrollable).first);
-          expect(find.text(text), findsOneWidget);
-        }
-        expect(find.textContaining('Trigger After'), findsNothing);
-        expect(find.text('AUTOMATIC SYNTHESIS TRIGGER & BATCHING'), findsNothing);
-
-        final noteThreshold =
-            find.byKey(const Key('synthesis_note_threshold_dropdown'));
-        await tester.scrollUntilVisible(noteThreshold, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(noteThreshold, findsOneWidget);
-
-        final inactivityMinutes =
-            find.byKey(const Key('synthesis_inactivity_minutes_dropdown'));
-        await tester.scrollUntilVisible(inactivityMinutes, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(inactivityMinutes, findsOneWidget);
-
-        final synthBufferBtn =
-            find.byKey(const Key('synthesize_buffer_now_button'));
-        await tester.scrollUntilVisible(synthBufferBtn, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(synthBufferBtn, findsOneWidget);
-        expect(find.text('1 thought ready for Synthesis'), findsOneWidget);
-
-        // 3. Folders: a read-only list of the real default folders, nothing editable
-        final folderHeader = find.text('FOLDERS');
-        await tester.scrollUntilVisible(folderHeader, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(folderHeader, findsOneWidget);
-        final folderList = find.byKey(const Key('settings_folder_list'));
-        for (final folder in defaultFolders) {
-          expect(find.descendant(of: folderList, matching: find.text(folder.name)), findsOneWidget);
-        }
-        expect(find.byKey(const Key('add_custom_folder_button')), findsNothing);
-        expect(find.text('Ideas'), findsNothing);
-        expect(find.text('Todos'), findsNothing);
-
-        // 4. Controls that did nothing are gone
-        expect(find.text('CALENDAR SYNCHRONIZATION'), findsNothing);
-        expect(find.textContaining('Calendar'), findsNothing);
-        expect(find.text('AUDIO CAPTURE STORAGE'), findsNothing);
-        expect(find.textContaining('Keep Raw Audio'), findsNothing);
-        expect(find.textContaining('Next refresh'), findsNothing);
-
-        // 5. On-Device AI Memory & Thermal Gating
-        final memHeader = find.text('ON-DEVICE AI MEMORY & THERMAL GATING');
-        await tester.scrollUntilVisible(memHeader, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(memHeader, findsOneWidget);
-        expect(find.text('Thermal Headroom'), findsOneWidget);
-
-        final evictBtn = find.byKey(const Key('evict_models_button'));
-        await tester.scrollUntilVisible(evictBtn, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(evictBtn, findsOneWidget);
-
-        // 6. Diagnostic Logging (2MB Rotating)
-        final logHeader = find.text('DIAGNOSTIC LOGGING (2MB ROTATING)');
-        await tester.scrollUntilVisible(logHeader, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(logHeader, findsOneWidget);
-
-        final viewLogsBtn = find.byKey(const Key('view_system_logs_button'));
-        await tester.scrollUntilVisible(viewLogsBtn, 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(viewLogsBtn, findsOneWidget);
-        expect(find.byKey(const Key('copy_log_dump_button')), findsOneWidget);
-        expect(find.byKey(const Key('clear_logs_button')), findsOneWidget);
-
-        // 7. About
-        await tester.scrollUntilVisible(find.text('ABOUT'), 100,
-            scrollable: find.byType(Scrollable).first);
-        expect(find.text('ABOUT'), findsOneWidget);
-        expect(find.text('Licences and credits'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      },
-    );
-
-    testWidgets(
-      'Tapping Evict Models button displays confirmation SnackBar',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(360, 1000);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
-            ],
-            child: const MaterialApp(
-              home: SettingsScreen(),
-            ),
-          ),
-        );
-
-        await tester.pumpAndSettle();
-
-        final evictBtn = find.byKey(const Key('evict_models_button'));
-        await tester.scrollUntilVisible(evictBtn, 100,
-            scrollable: find.byType(Scrollable).first);
-        await tester.ensureVisible(evictBtn);
-        await tester.pumpAndSettle();
-        await tester.tap(evictBtn);
-        await tester.pumpAndSettle();
-
-        expect(find.text('AI models evicted from memory.'), findsOneWidget);
-        // No fabricated memory figures.
-        expect(find.textContaining('1.58 GB'), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'background capture row uses plain wording',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(360, 1000);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
-            ],
-            child: const MaterialApp(home: SettingsScreen()),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.text('Keep capture ready in the background'), findsOneWidget);
-        expect(
-          find.text(
-              'Keeps the Record button on your lock screen and finishes transcription and notes while the app is closed.'),
-          findsOneWidget,
-        );
-        expect(find.text('Keep App Alive in Background'), findsNothing);
-        expect(find.textContaining('foreground service'), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'Licences and credits row opens the licence page with the model credits',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(360, 1000);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        registerModelCredits();
-
-        await tester.pumpWidget(
-          ProviderScope(
-            overrides: [
-              runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
-            ],
-            child: const MaterialApp(home: SettingsScreen()),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        final row = find.byKey(const Key('settings_licences_row'));
-        await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
-        await tester.tap(row);
-        await tester.pumpAndSettle();
-
-        expect(find.byType(LicensePage), findsOneWidget);
-        expect(find.text('Eudemonia'), findsWidgets);
-        for (final credit in modelCredits) {
-          expect(find.textContaining(credit.package), findsWidgets);
-        }
-      },
-    );
   });
 }

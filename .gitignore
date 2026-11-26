@@ -46,7 +46,9 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
-models/
+# Downloaded model files at the repository root only. Anchored: an unanchored "models/" also
+# ignored the source folders lib/features/models/ and test/features/models/.
+/models/
 # Real voice recordings used for on-device evaluation are personal data: never commit them.
 integration_test/voice_samples/real/*
 !integration_test/voice_samples/real/.gitkeep

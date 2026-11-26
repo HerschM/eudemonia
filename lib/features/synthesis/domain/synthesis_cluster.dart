@@ -1,4 +1,5 @@
 import 'package:eudemonia/features/notes/data/note_model.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 
 /// Lightweight representation of an origin raw note within a synthesis cluster.
 class SynthesisOriginNote {
@@ -33,7 +34,7 @@ class SynthesisOriginNote {
 /// Clustered and synthesized thought session according to UX.md Section 6.
 class SynthesisCluster {
   final String clusterId;
-  final String sequenceNumber; // e.g. "#S-01"
+  final String sequenceNumber; // e.g. "#S-01", numbered per day of [sessionDay]
   final String folder; // Predefined folder e.g. "Ideas", "Work", "Todos", "Journal", "Uncategorized"
   final String synthesizedContent;
   final DateTime sessionStart;
@@ -42,7 +43,7 @@ class SynthesisCluster {
   final List<SynthesisOriginNote> originNotes;
   final bool isExpanded;
   final bool isReprocessing; // True when marked yellow for re-synthesis
-  final String appliedStyleId; // e.g. "concise", "bullets", "professional", etc.
+  final String appliedStyleId; // The style its note is written in, an id of [noteStyles] or [manualStyleId].
   final bool isUnread; // Toggles electric blue unread indicator dot
   final bool isActionExtracted; // True when action extraction pass completed (Green)
 
@@ -57,10 +58,17 @@ class SynthesisCluster {
     required this.originNotes,
     this.isExpanded = false,
     this.isReprocessing = false,
-    this.appliedStyleId = 'concise',
+    this.appliedStyleId = defaultNoteStyleId,
     this.isUnread = false,
     this.isActionExtracted = true,
   });
+
+  /// The calendar day the session's `#S-NN` number belongs to: the day of [sessionStart].
+  /// The number is assigned once; if [sessionStart] later moves to another day the label is kept.
+  DateTime get sessionDay => DateTime(sessionStart.year, sessionStart.month, sessionStart.day);
+
+  /// The user edited the note by hand ([manualStyleId]): it is never rewritten automatically.
+  bool get isHandEdited => appliedStyleId == manualStyleId;
 
   SynthesisCluster copyWith({
     String? clusterId,

@@ -118,6 +118,18 @@ class NativeCaptureChannel {
     }
   }
 
+  /// Offers to add the `Record thought` tile to Quick Settings; `false` when the system cannot ask
+  /// (before Android 13).
+  Future<bool> requestAddQuickSettingsTile() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestAddQuickSettingsTile') ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   Future<NativeCaptureState> _stateCall(String method) async {
     try {
       return NativeCaptureState.fromMap(await _channel.invokeMethod<Object?>(method));

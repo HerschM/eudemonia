@@ -153,6 +153,14 @@ void main() {
       expect(settings.evictionCountdownSeconds, equals(104));
     });
 
+    test('MockData provides Settings folders with descriptions, Uncategorized last', () {
+      final folders = MockData.settingsConfig.folders;
+      expect(folders.map((f) => f.name), ['Work', 'Personal', 'Journal', 'Uncategorized']);
+      expect(folders.every((f) => f.description.isNotEmpty), isTrue);
+      expect(MockData.settingsConfig.isMicrophoneGranted, isTrue);
+      expect(MockData.settingsConfig.areNotificationsEnabled, isFalse);
+    });
+
     test('MockSynthesisCluster tracks unread indicator and action extraction completion', () {
       final clusters = MockData.synthesisClusters;
       expect(clusters.length, greaterThanOrEqualTo(2));

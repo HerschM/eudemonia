@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/core/formatting/thought_timestamp.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
+import 'package:eudemonia/features/theme/widgets/unread_dot.dart';
 import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 import '../data/note_model.dart';
 
@@ -20,6 +21,9 @@ class ThoughtCard extends StatefulWidget {
   /// Identifier of the synthesis session that consumed this thought (e.g. `#S-02`).
   final String? synthesizedSessionLabel;
 
+  /// Opens the session that consumed this thought; makes the Synthesized badge a button.
+  final VoidCallback? onOpenSession;
+
   const ThoughtCard({
     super.key,
     required this.note,
@@ -34,6 +38,7 @@ class ThoughtCard extends StatefulWidget {
     this.isSelected = false,
     this.isSelectionMode = false,
     this.synthesizedSessionLabel,
+    this.onOpenSession,
   });
 
   @override
@@ -192,19 +197,13 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
                         size: 24,
                       ),
 
-                    // 3. Unread Indicator Dot
-                    if (!note.isRead && note.state == ThoughtState.processed) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        key: const Key('unread_dot'),
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF3B82F6),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
+                    // 3. Unread Indicator Dot: every thought not yet seen, in any state; it dissolves
+                    // when the thought is read and keeps its place so the header does not shift.
+                    UnreadDot(
+                      unread: !note.isRead,
+                      dotKey: const Key('unread_dot'),
+                      margin: const EdgeInsets.only(left: 8),
+                    ),
 
                     const Spacer(),
 
@@ -315,11 +314,25 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         );
       case ThoughtState.synthesized:
         final session = widget.synthesizedSessionLabel;
-        return _buildStateBadge(
+        final onOpen = widget.onOpenSession;
+        final badge = _buildStateBadge(
           session != null ? '🧩 Synthesized in $session' : '🧩 Synthesized',
           const Color(0xFF10B981),
           const Color(0xFF047857),
-          key: const Key('synthesized_badge'),
+          trailing: onOpen == null
+              ? null
+              : const Icon(Icons.chevron_right, size: 14, color: Color(0xFF047857)),
+        );
+        if (onOpen == null) return KeyedSubtree(key: const Key('synthesized_badge'), child: badge);
+        // The session number opens that note in the Synthesis tab.
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const Key('synthesized_badge'),
+            borderRadius: BorderRadius.circular(20),
+            onTap: onOpen,
+            child: badge,
+          ),
         );
       case ThoughtState.processed:
         if (_isEditing) return const SizedBox.shrink();
@@ -343,18 +356,20 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     }
   }
 
-  Widget _buildStateBadge(String label, Color tint, Color textColor, {Key? key}) {
+  Widget _buildStateBadge(String label, Color tint, Color textColor, {Widget? trailing}) {
+    final text = Text(
+      label,
+      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColor),
+    );
     return Container(
-      key: key,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: tint.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textColor),
-      ),
+      child: trailing == null
+          ? text
+          : Row(mainAxisSize: MainAxisSize.min, children: [Flexible(child: text), trailing]),
     );
   }
 

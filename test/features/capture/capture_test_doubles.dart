@@ -97,6 +97,15 @@ class FakeNativeCaptureChannel implements NativeCaptureChannel {
     pinCalls++;
     return pinSucceeds;
   }
+
+  int tileCalls = 0;
+  bool tileOffered = true;
+
+  @override
+  Future<bool> requestAddQuickSettingsTile() async {
+    tileCalls++;
+    return tileOffered;
+  }
 }
 
 /// Records what the controller hands to the ingestor.

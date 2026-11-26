@@ -233,6 +233,133 @@ void main() {
     });
   });
 
+  group('task lists', () {
+    const steps = '**Next steps**\n\n- [ ] Email Daniel the contract before Friday.\n'
+        '* [x] Send the documents.\n- [X] Book the viewing\n  for Sunday.\n- [ ] Decide by the 10th.';
+
+    test('task lines are task blocks with their state and their index among the tasks', () {
+      final blocks = parseNoteMarkdown(steps);
+      expect(blocks.map((b) => b.kind).toList(), [
+        NoteBlockKind.title,
+        NoteBlockKind.task,
+        NoteBlockKind.task,
+        NoteBlockKind.task,
+        NoteBlockKind.task,
+      ]);
+      final tasks = blocks.skip(1).toList();
+      expect(tasks.map((b) => b.text).toList(), [
+        'Email Daniel the contract before Friday.',
+        'Send the documents.',
+        'Book the viewing for Sunday.',
+        'Decide by the 10th.',
+      ]);
+      expect(tasks.map((b) => b.checked).toList(), [false, true, true, false]);
+      expect(tasks.map((b) => b.taskIndex).toList(), [0, 1, 2, 3]);
+      expect(blocks.first.checked, isFalse);
+      expect(blocks.first.taskIndex, isNull);
+    });
+
+    test('a bullet, a bracket inside a bullet and a box without text are not tasks', () {
+      final blocks = parseNoteMarkdown('- plain\n- see [x] here\n- [ ]\n-[ ] tight');
+      expect(blocks.map((b) => b.kind).toSet(), isNot(contains(NoteBlockKind.task)));
+    });
+
+    test('plainNotePreview shows task text without the box', () {
+      expect(plainNotePreview('**Plan**\n- [ ] Call Ana.\n- [x] Buy milk.'), 'Plan Call Ana. Buy milk.');
+    });
+
+    test('never drops a word from a note with tasks', () {
+      List<String> withoutMarkers(String input) => _words(input
+          .split('\n')
+          .map((l) => l.trim().replaceFirst(RegExp(r'^[-*]\s+\[[ xX]\]\s+'), '').replaceFirst(RegExp(r'^[-*•]\s+'), '')
+              .replaceAll('*', ''))
+          .join(' '));
+      for (final input in [steps, '- [ ] a **b** c\n  d\n- [x] e\n\nf g', '**T**\n\nNo next steps were mentioned.']) {
+        expect(_blockWords(parseNoteMarkdown(input)), withoutMarkers(input), reason: input);
+      }
+    });
+
+    group('setTaskChecked', () {
+      test('ticks or unticks the first, a middle and the last task and changes nothing else', () {
+        final first = setTaskChecked(steps, 0, true);
+        expect(first, steps.replaceFirst('- [ ] Email', '- [x] Email'));
+        final middle = setTaskChecked(steps, 1, false);
+        expect(middle, steps.replaceFirst('* [x] Send', '* [ ] Send'));
+        final last = setTaskChecked(steps, 3, true);
+        expect(last, steps.replaceFirst('- [ ] Decide', '- [x] Decide'));
+        for (final changed in [first, middle, last]) {
+          expect(changed.length, steps.length);
+          var differences = 0;
+          for (var i = 0; i < steps.length; i++) {
+            if (steps[i] != changed[i]) differences++;
+          }
+          expect(differences, 1);
+        }
+        expect(parseNoteMarkdown(last).last.checked, isTrue);
+      });
+
+      test('a task already in the wanted state, an out-of-range index or a note without tasks is unchanged', () {
+        expect(setTaskChecked(steps, 2, true), steps, reason: 'a capital X stays');
+        expect(setTaskChecked(steps, 0, false), steps);
+        expect(setTaskChecked(steps, 4, true), steps);
+        expect(setTaskChecked(steps, -1, true), steps);
+        expect(setTaskChecked(_example, 0, true), _example);
+      });
+
+      test('keeps Windows line ends and indentation', () {
+        const text = '**T**\r\n  - [ ] one\r\n- [ ] two\r\n';
+        expect(setTaskChecked(text, 1, true), '**T**\r\n  - [ ] one\r\n- [x] two\r\n');
+        expect(setTaskChecked(text, 0, true), '**T**\r\n  - [x] one\r\n- [ ] two\r\n');
+      });
+    });
+
+    group('view', () {
+      Future<void> pump(WidgetTester tester, String text, {void Function(int, bool)? onTaskToggled}) =>
+          tester.pumpWidget(MaterialApp(
+            home: Scaffold(
+              body: SizedBox(width: 360, child: NoteMarkdownView(text: text, onTaskToggled: onTaskToggled)),
+            ),
+          ));
+
+      testWidgets('tasks render as checkbox rows without the Markdown box; done ones are struck through',
+          (tester) async {
+        await pump(tester, steps);
+        expect(tester.takeException(), isNull);
+        expect(find.textContaining('['), findsNothing);
+        expect(find.byType(Checkbox), findsNothing, reason: 'custom-drawn, not the Material checkbox');
+        expect(find.byKey(const Key('note_task_box_0')), findsOneWidget);
+        expect(find.byKey(const Key('note_task_box_3')), findsOneWidget);
+        expect(_styleOf(tester, 'Send the documents.')?.decoration, TextDecoration.lineThrough);
+        expect(_styleOf(tester, 'Decide by the 10th.')?.decoration, isNot(TextDecoration.lineThrough));
+        expect(_styleOf(tester, 'Send the documents.')?.color, isNot(NoteMarkdownView.defaultStyle.color));
+      });
+
+      testWidgets('tapping a task reports its index and the new state; each row is at least 44 dp tall',
+          (tester) async {
+        final taps = <String>[];
+        await pump(tester, steps, onTaskToggled: (i, checked) => taps.add('$i $checked'));
+
+        await tester.tap(find.text('Decide by the 10th.'));
+        await tester.tap(find.text('Send the documents.'));
+        await tester.tap(find.byKey(const Key('note_task_box_0')));
+
+        expect(taps, ['3 true', '1 false', '0 true']);
+        expect(tester.getSize(find.byKey(const Key('note_task_3'))).height, greaterThanOrEqualTo(44));
+      });
+
+      testWidgets('without a callback the boxes are shown but cannot be tapped', (tester) async {
+        await pump(tester, steps);
+        expect(find.byKey(const Key('note_task_box_0')), findsOneWidget);
+        expect(
+          find.descendant(of: find.byKey(const Key('note_task_0')), matching: find.byType(GestureDetector)),
+          findsNothing,
+        );
+        await tester.tap(find.text('Decide by the 10th.'), warnIfMissed: false);
+        expect(tester.takeException(), isNull);
+      });
+    });
+  });
+
   test('numbered items stay on separate lines and keep their numbers', () {
     final blocks = parseNoteMarkdown('Steps:\n1. Call the bank.\n2. Send the form.');
     expect(blocks.map((b) => b.kind), everyElement(NoteBlockKind.paragraph));

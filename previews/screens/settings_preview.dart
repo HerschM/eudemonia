@@ -14,12 +14,16 @@ class SettingsPreview extends StatefulWidget {
 
 class _SettingsPreviewState extends State<SettingsPreview> {
   late MockSettingsConfig _config;
+  late List<MockSettingsFolder> _folders;
   int _unprocessedBufferCount = 2;
+  bool _memoryOpen = false;
+  bool _permissionsOpen = false;
 
   @override
   void initState() {
     super.initState();
     _config = widget.initialConfig ?? MockData.settingsConfig;
+    _folders = List.of(_config.folders);
   }
 
   void _triggerSynthesisNow() {
@@ -46,12 +50,12 @@ class _SettingsPreviewState extends State<SettingsPreview> {
     );
   }
 
-  void _evictModelsNow() {
+  void _freeModelMemoryNow() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: PreviewTheme.surfaceElevated,
         content: const Text(
-          'AI models evicted. Memory reclaimed: ~1.58 GB RAM. Baseline: <60 MB.',
+          'AI model memory freed.',
           style: TextStyle(color: PreviewTheme.accentCapture),
         ),
         duration: const Duration(seconds: 2),
@@ -73,7 +77,7 @@ class _SettingsPreviewState extends State<SettingsPreview> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Settings & Diagnostics',
+          'Settings',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -84,49 +88,65 @@ class _SettingsPreviewState extends State<SettingsPreview> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         children: [
-          // Section 1: Capture permissions
-          _buildSectionHeader('CAPTURE PERMISSIONS'),
+          // 1. Folders synthesis files notes under: tap one to edit it
+          _buildSectionHeader('FOLDERS'),
           _buildCard(
+            padding: EdgeInsets.zero,
             children: [
-              _buildSwitchRow(
-                title: 'Keep capture ready in the background',
-                subtitle: 'Keeps the Record button on your lock screen and finishes transcription and notes while the app is closed.',
-                value: _config.isForegroundKeepAlive,
-                onChanged: (val) =>
-                    setState(() => _config = _config.copyWith(isForegroundKeepAlive: val)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                child: Text(
+                  'Synthesis files each note in one of these folders. The description tells it what belongs there.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: PreviewTheme.textSecondary.withValues(alpha: 0.85),
+                  ),
+                ),
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // On-device models: opens the model setup preview (FR16)
-          _buildSectionHeader('ON-DEVICE MODELS'),
-          _buildCard(
-            children: [
+              Column(
+                key: const Key('settings_folder_list'),
+                children: [
+                  for (final folder in _folders) _buildFolderRow(folder),
+                ],
+              ),
+              const Divider(height: 1, color: PreviewTheme.borderSubtle),
               InkWell(
-                key: const Key('settings_models_row'),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ModelSetupPreview()),
-                ),
-                child: const Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Speech model · Not downloaded',
+                key: const Key('settings_add_folder_row'),
+                onTap: _folders.length >= 12 ? null : () => _editFolder(null),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.add,
+                          size: 20,
+                          color: _folders.length >= 12 ? PreviewTheme.textTertiary : PreviewTheme.accentAction),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Add folder',
                         style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: _folders.length >= 12 ? PreviewTheme.textTertiary : PreviewTheme.accentAction,
+                        ),
                       ),
-                    ),
-                    Icon(Icons.chevron_right, size: 20, color: PreviewTheme.textTertiary),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              if (_folders.length >= 12)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 0, 14, 14),
+                  child: Text(
+                    'You can have up to 12 folders.',
+                    style: TextStyle(fontSize: 12, color: PreviewTheme.textSecondary),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 20),
 
-          // Section 2: Automatic Synthesis Trigger & Batching Safeguards
+          // 2. Automatic Synthesis Trigger & Batching Safeguards
           _buildSectionHeader('AUTOMATIC SYNTHESIS'),
           _buildCard(
             children: [
@@ -324,48 +344,79 @@ class _SettingsPreviewState extends State<SettingsPreview> {
             ],
           ),
           const SizedBox(height: 20),
-
-          // Folders synthesis files notes under (read-only)
-          _buildSectionHeader('FOLDERS'),
+          // 3. On-device models: opens the model setup preview (FR16)
+          _buildSectionHeader('ON-DEVICE MODELS'),
           _buildCard(
             children: [
-              Text(
-                'Synthesis files each note in one of these folders.',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: PreviewTheme.textSecondary.withValues(alpha: 0.85),
+              InkWell(
+                key: const Key('settings_models_row'),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ModelSetupPreview()),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                key: const Key('settings_folder_list'),
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final name in const ['Work', 'Personal', 'Journal', 'Uncategorized'])
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.surfaceElevated,
-                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                        border: Border.all(color: PreviewTheme.borderSubtle),
-                      ),
+                child: const Row(
+                  children: [
+                    Expanded(
                       child: Text(
-                        name,
-                        style: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary),
+                        'Speech model · Not downloaded',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary),
                       ),
                     ),
-                ],
+                    Icon(Icons.chevron_right, size: 20, color: PreviewTheme.textTertiary),
+                  ],
+                ),
               ),
             ],
           ),
           const SizedBox(height: 20),
 
-          // Section 5: Device Thermal & RAM Telemetry
-          _buildSectionHeader('ON-DEVICE AI MEMORY & THERMAL GATING'),
+          // 4. Capture: the widget and the background switch
+          _buildSectionHeader('CAPTURE'),
           _buildCard(
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.widgets_outlined, color: PreviewTheme.accentCapture),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Add capture widget to home screen',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'One tap on the home screen starts a capture.',
+                          style: TextStyle(fontSize: 12, color: PreviewTheme.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24, color: PreviewTheme.borderSubtle),
+              _buildSwitchRow(
+                title: 'Keep capture ready in the background',
+                subtitle:
+                    'Keeps the Record button on your lock screen and finishes transcription and notes while the app is closed.',
+                value: _config.isForegroundKeepAlive,
+                onChanged: (val) =>
+                    setState(() => _config = _config.copyWith(isForegroundKeepAlive: val)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // 5. Phone memory and temperature (collapsed)
+          _buildCollapsible(
+            headerKey: const Key('settings_memory_header'),
+            title: 'PHONE MEMORY AND TEMPERATURE',
+            open: _memoryOpen,
+            onToggle: () => setState(() => _memoryOpen = !_memoryOpen),
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -404,7 +455,7 @@ class _SettingsPreviewState extends State<SettingsPreview> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'On-Device AI Model Footprint',
+                          'App Memory In Use',
                           style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -412,7 +463,7 @@ class _SettingsPreviewState extends State<SettingsPreview> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Inactivity eviction timer: 01:44 (to <60MB)',
+                          'AI models loaded • inactivity eviction timer active',
                           style: TextStyle(fontSize: 12, color: PreviewTheme.textSecondary),
                         ),
                       ],
@@ -430,64 +481,63 @@ class _SettingsPreviewState extends State<SettingsPreview> {
                 ],
               ),
               const SizedBox(height: 12),
-              OutlinedButton(
-                key: const Key('evict_models_btn'),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: PreviewTheme.borderSubtle),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: _evictModelsNow,
-                child: const Center(
-                  child: Text(
-                    'Evict Models Now (<60 MB)',
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  key: const Key('evict_models_btn'),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: PreviewTheme.borderSubtle),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _freeModelMemoryNow,
+                  child: const Text(
+                    'Free model memory now',
                     style: TextStyle(color: PreviewTheme.textSecondary, fontSize: 12),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
 
-          // Section 6: Diagnostic Logging
-          _buildSectionHeader('DIAGNOSTIC LOGGING (2MB ROTATING)'),
-          _buildCard(
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildLogButton('View Live Logs', Icons.visibility_outlined, () {}),
-                  _buildLogButton('Copy Dump', Icons.copy_outlined, () {}),
-                  _buildLogButton('Clear Logs', Icons.delete_outline, () {}),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // About
-          _buildSectionHeader('ABOUT'),
-          _buildCard(
-            children: [
-              InkWell(
-                key: const Key('settings_licences_row'),
-                onTap: () => showLicensePage(context: context, applicationName: 'Eudemonia'),
-                child: const Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Licences and credits',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary),
-                      ),
+          // 6. Permissions (collapsed; amber badge when one is missing)
+          _buildCollapsible(
+            headerKey: const Key('settings_permissions_header'),
+            title: 'PERMISSIONS',
+            open: _permissionsOpen,
+            onToggle: () => setState(() => _permissionsOpen = !_permissionsOpen),
+            badge: (!_config.isMicrophoneGranted || !_config.areNotificationsEnabled)
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade300,
+                      borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
                     ),
-                    Icon(Icons.chevron_right, size: 20, color: PreviewTheme.textTertiary),
-                  ],
-                ),
-              ),
+                    child: const Text(
+                      'Needs attention',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                    ),
+                  )
+                : null,
+            children: [
+              _buildPermissionRow('Microphone', _config.isMicrophoneGranted),
+              const Divider(height: 16, color: PreviewTheme.borderSubtle),
+              _buildPermissionRow(
+                  'Notifications (lock-screen Record button)', _config.areNotificationsEnabled),
             ],
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 12),
+
+          // 7. Licences: a small link, not a card
+          Center(
+            child: TextButton(
+              key: const Key('settings_licences_link'),
+              style: TextButton.styleFrom(foregroundColor: PreviewTheme.textSecondary),
+              onPressed: () => showLicensePage(context: context, applicationName: 'Eudemonia'),
+              child: const Text('Open-source licences', style: TextStyle(fontSize: 12.5)),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -508,9 +558,9 @@ class _SettingsPreviewState extends State<SettingsPreview> {
     );
   }
 
-  Widget _buildCard({required List<Widget> children}) {
+  Widget _buildCard({required List<Widget> children, EdgeInsetsGeometry padding = const EdgeInsets.all(16.0)}) {
     return Container(
-      padding: const EdgeInsets.all(16.0),
+      padding: padding,
       decoration: BoxDecoration(
         color: PreviewTheme.surface,
         borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
@@ -561,16 +611,216 @@ class _SettingsPreviewState extends State<SettingsPreview> {
     );
   }
 
-  Widget _buildLogButton(String label, IconData icon, VoidCallback onTap) {
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: PreviewTheme.borderSubtle),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+  Widget _buildFolderRow(MockSettingsFolder folder) {
+    final protected = folder.name == 'Uncategorized';
+    return Column(
+      children: [
+        const Divider(height: 1, color: PreviewTheme.borderSubtle),
+        InkWell(
+          key: Key('settings_folder_row_${folder.name}'),
+          onTap: () => _editFolder(folder),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        folder.name,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700, color: PreviewTheme.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        folder.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12, height: 1.35, color: PreviewTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(protected ? Icons.lock_outline : Icons.edit_outlined,
+                      size: 18, color: PreviewTheme.textTertiary),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Opens the folder editor sheet; [folder] null adds one. Uncategorized is read-only.
+  void _editFolder(MockSettingsFolder? folder) {
+    final protected = folder?.name == 'Uncategorized';
+    final name = TextEditingController(text: folder?.name ?? '');
+    final description = TextEditingController(text: folder?.description ?? '');
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: PreviewTheme.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(PreviewTheme.modalRadius)),
       ),
-      icon: Icon(icon, size: 14, color: PreviewTheme.textSecondary),
-      label: Text(label, style: const TextStyle(fontSize: 11, color: PreviewTheme.textSecondary)),
-      onPressed: onTap,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                folder == null ? 'New folder' : (protected ? folder.name : 'Edit folder'),
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700, color: PreviewTheme.textPrimary),
+              ),
+              const SizedBox(height: 12),
+              if (protected) ...[
+                Text(folder!.description,
+                    style: const TextStyle(fontSize: 14, color: PreviewTheme.textPrimary)),
+                const SizedBox(height: 12),
+                const Text(
+                  'Catches whatever fits no other folder. It cannot be changed.',
+                  style: TextStyle(fontSize: 12, color: PreviewTheme.textSecondary),
+                ),
+              ] else ...[
+                TextField(
+                  controller: name,
+                  maxLength: 24,
+                  style: const TextStyle(color: PreviewTheme.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: description,
+                  maxLength: 200,
+                  minLines: 3,
+                  maxLines: 6,
+                  style: const TextStyle(color: PreviewTheme.textPrimary),
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  key: const Key('folder_save_button'),
+                  style: ElevatedButton.styleFrom(backgroundColor: PreviewTheme.accentAction),
+                  onPressed: () {
+                    final next = MockSettingsFolder(
+                        name: name.text.trim(), description: description.text.trim());
+                    if (next.name.isEmpty) return;
+                    setState(() {
+                      if (folder == null) {
+                        _folders.insert(_folders.length - 1, next);
+                      } else {
+                        _folders[_folders.indexOf(folder)] = next;
+                      }
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Save', style: TextStyle(color: Colors.white)),
+                ),
+                if (folder != null)
+                  TextButton(
+                    key: const Key('folder_delete_button'),
+                    onPressed: () {
+                      setState(() => _folders.remove(folder));
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Delete folder', style: TextStyle(color: PreviewTheme.accentError)),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsible({
+    required Key headerKey,
+    required String title,
+    required bool open,
+    required VoidCallback onToggle,
+    required List<Widget> children,
+    Widget? badge,
+  }) {
+    return Material(
+      color: PreviewTheme.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
+        side: const BorderSide(color: PreviewTheme.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: headerKey,
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.9,
+                        color: PreviewTheme.textSecondary.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ),
+                  if (badge != null) ...[badge, const SizedBox(width: 8)],
+                  Icon(open ? Icons.expand_less : Icons.expand_more,
+                      size: 22, color: PreviewTheme.textTertiary),
+                ],
+              ),
+            ),
+          ),
+          if (open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Column(children: children),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionRow(String title, bool granted) {
+    return Row(
+      children: [
+        Icon(granted ? Icons.check_circle : Icons.error_outline,
+            color: granted ? Colors.green : Colors.amber.shade700),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(title,
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: PreviewTheme.textPrimary)),
+        ),
+        Chip(
+          label: Text(
+            granted ? 'Enabled' : 'Disabled',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: granted ? Colors.green.shade900 : Colors.black87,
+            ),
+          ),
+          backgroundColor: granted ? Colors.green.shade100 : Colors.amber.shade300,
+        ),
+      ],
     );
   }
 }

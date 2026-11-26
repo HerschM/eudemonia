@@ -7,10 +7,13 @@ import 'features/capture/capture_inbox_ingestor.dart';
 import 'features/capture/capture_resume_scanner.dart';
 import 'features/home/main_navigation_shell.dart';
 import 'features/models/application/model_library_controller.dart';
+import 'features/notes/application/read_state_migration.dart';
+import 'features/notes/data/notes_repository.dart';
 import 'features/settings/model_credits.dart';
 import 'features/synthesis/application/synthesis_trigger_controller.dart';
 import 'features/theme/app_theme.dart';
 import 'core/database/app_database.dart';
+import 'core/logger/app_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +45,14 @@ void main() async {
   unawaited(captureSync.then((_) => container.read(audioQueueServiceProvider).resumePendingWork()));
 
   // Automatic synthesis (FR11.8): thoughts left from the previous session may already meet a trigger.
-  unawaited(container.read(synthesisTriggerControllerProvider).start());
+  // It starts after the one-time read-state migration, so a thought it synthesizes is never taken
+  // for an old one; the migration never blocks startup and never throws.
+  unawaited(
+    migrateReadFollowsViewing(
+      container.read(notesRepositoryProvider),
+      logger: container.read(appLoggerProvider),
+    ).then((_) => container.read(synthesisTriggerControllerProvider).start()),
+  );
 
   runApp(
     UncontrolledProviderScope(

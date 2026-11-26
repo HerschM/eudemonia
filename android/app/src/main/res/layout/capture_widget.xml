@@ -1,43 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Capture widget pill. RemoteViews-only views; the root id lets launchers clip it on Android 12+. -->
+<!-- Capture widget, full size: round button on the left, title and subtitle on the right.
+     RemoteViews-only views; the root id lets launchers clip the card to the system corner radius on
+     Android 12+. The whole card is one tap target. See capture_widget_compact.xml for narrow sizes. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@android:id/background"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/capture_widget_bg_idle"
     android:clickable="true"
+    android:contentDescription="@string/capture_widget_content_description"
     android:focusable="true"
-    android:gravity="center"
+    android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:paddingStart="16dp"
+    android:paddingStart="7dp"
     android:paddingEnd="16dp">
 
-    <ImageView
-        android:id="@+id/capture_widget_icon"
-        android:layout_width="22dp"
-        android:layout_height="22dp"
-        android:contentDescription="@null"
-        android:src="@drawable/ic_widget_mic" />
+    <FrameLayout
+        android:id="@+id/capture_widget_button"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:background="@drawable/capture_widget_button_idle">
 
-    <Chronometer
-        android:id="@+id/capture_widget_chronometer"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:textColor="@color/capture_accent"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        <ImageView
+            android:id="@+id/capture_widget_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_widget_mic" />
+    </FrameLayout>
 
-    <TextView
-        android:id="@+id/capture_widget_label"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="@string/capture_widget_record"
-        android:textColor="@color/capture_text_primary"
-        android:textSize="14sp"
-        android:textStyle="bold" />
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/capture_widget_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="@string/capture_widget_title"
+            android:textColor="@color/capture_text_primary"
+            android:textSize="15sp" />
+
+        <Chronometer
+            android:id="@+id/capture_widget_chronometer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:textColor="@color/capture_widget_text_recording"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/capture_widget_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/capture_widget_subtitle"
+            android:textColor="@color/capture_text_secondary"
+            android:textSize="12sp" />
+    </LinearLayout>
 </LinearLayout>

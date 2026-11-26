@@ -1,904 +1,274 @@
-import 'package:flutter/material.dart';
-import '../mock_data.dart';
-import '../preview_theme.dart';
-import 'note_ejection_preview.dart';
-import 'note_merge_preview.dart';
-import 'style_rewriter_preview.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:eudemonia/features/synthesis/domain/note_style.dart';
+import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
+import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_ejection_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_merge_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_text_editor_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/rewrite_confirmation.dart';
+import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_filtering.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_view.dart';
+import '../preview_theme.dart';
+import '../synthesis_preview_data.dart';
+
+/// The Synthesis tab driven by mock scenarios. It renders the production [SynthesisView] with
+/// its production sheets; the callbacks only change the mock notes held here.
 class SynthesisScreenPreview extends StatefulWidget {
-  const SynthesisScreenPreview({super.key});
+  final int initialScenario;
+
+  const SynthesisScreenPreview({super.key, this.initialScenario = 0});
 
   @override
   State<SynthesisScreenPreview> createState() => _SynthesisScreenPreviewState();
 }
 
-class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
-  late List<MockSynthesisCluster> _clusters;
-  String _activeFolderFilter = 'All Folders';
-  final List<String> _folders = const ['All Folders', 'Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized'];
-  String _readFilter = 'All';
-  int _pendingRawNotesToCluster = 2;
+class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> with AutomaticKeepAliveClientMixin {
+  late final List<SynthesisPreviewScenario> _scenarios = SynthesisPreviewData.scenarios;
+  late int _index = widget.initialScenario;
+
+  late List<SynthesisCluster> _notes;
+  final Map<String, bool> _open = {};
+  late bool _readMode;
+  late bool _panelOpen;
+  late int _pendingThoughts;
+  String? _folder;
+  SynthesisTriage _triage = SynthesisTriage.all;
+
+  /// A synthesis run is going: Synthesize Now shows the AI thinking, unclickable (FR11.16).
+  bool _synthesizing = false;
+  Timer? _runTimer;
+
+  /// The shell swipes between tabs; this one keeps its state while away.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _clusters = List.from(MockData.synthesisClusters);
+    _load(_index);
   }
 
-  void _markClusterAsRead(String clusterId) {
-    setState(() {
-      final index = _clusters.indexWhere((c) => c.clusterId == clusterId);
-      if (index != -1 && _clusters[index].isUnread) {
-        _clusters[index] = _clusters[index].copyWith(isUnread: false);
-      }
+  @override
+  void dispose() {
+    _runTimer?.cancel();
+    super.dispose();
+  }
+
+  void _load(int index) {
+    _index = index;
+    final scenario = _scenarios[index];
+    _notes = List.of(scenario.notes);
+    _open
+      ..clear()
+      ..addEntries([for (final id in scenario.openIds) MapEntry(id, true)]);
+    _readMode = scenario.readMode;
+    _panelOpen = scenario.panelOpen;
+    _pendingThoughts = scenario.pendingThoughts;
+    _folder = null;
+    _triage = SynthesisTriage.all;
+  }
+
+  /// Plays a short fake run: busy at once, done after a moment.
+  void _startFakeRun() {
+    setState(() => _synthesizing = true);
+    _runTimer?.cancel();
+    _runTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!mounted) return;
+      setState(() {
+        _synthesizing = false;
+        _pendingThoughts = 0;
+      });
     });
   }
 
-  void _toggleExpand(String clusterId) {
-    _markClusterAsRead(clusterId);
-    setState(() {
-      final index = _clusters.indexWhere((c) => c.clusterId == clusterId);
-      if (index != -1) {
-        _clusters[index] = _clusters[index].copyWith(
-          isExpanded: !_clusters[index].isExpanded,
-        );
-      }
-    });
+  void _say(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: PreviewTheme.surfaceElevated,
+        content: Text(message, style: const TextStyle(color: PreviewTheme.textPrimary)),
+      ),
+    );
   }
 
-  void _reassignFolder(MockSynthesisCluster cluster, String newFolder) {
-    setState(() {
-      final index = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
-      if (index != -1) {
-        _clusters[index] = _clusters[index].copyWith(folder: newFolder);
-      }
-    });
+  void _change(String id, SynthesisCluster Function(SynthesisCluster) change) {
+    setState(() => _notes = [for (final n in _notes) n.clusterId == id ? change(n) : n]);
   }
 
-  void _openEjectionModal(MockSynthesisCluster cluster, MockCaptureNote rawNote) {
+  Future<void> _chooseStyle(SynthesisCluster note) async {
+    if (note.isHandEdited && !await confirmRewriteOfHandEditedNote(context)) return;
+    if (!mounted) return;
+    StyleRewriterModal.show(
+      context,
+      sequenceLabel: note.sequenceNumber,
+      selectedPresetId: note.appliedStyleId,
+      onSelectPreset: (preset) {
+        _change(note.clusterId, (n) => n.copyWith(appliedStyleId: preset.id, isReprocessing: true));
+        _say('Applying style "${preset.name}" to ${note.sequenceNumber}...');
+      },
+    );
+  }
+
+  void _editText(SynthesisCluster note) {
+    NoteTextEditorSheet.show(
+      context,
+      sequenceLabel: note.sequenceNumber,
+      initialText: note.synthesizedContent,
+      onSave: (text) async {
+        if (text.trim().isEmpty) return false;
+        _change(note.clusterId, (n) => n.copyWith(synthesizedContent: text, appliedStyleId: manualStyleId));
+        return true;
+      },
+    );
+  }
+
+  void _merge(SynthesisCluster note) {
+    NoteMergeModal.show(
+      context,
+      sourceCluster: note,
+      availableClusters: _notes,
+      onMergeToTargetCluster: (target) {
+        setState(() {
+          _notes = [
+            for (final n in _notes)
+              if (n.clusterId == target.clusterId)
+                n.copyWith(originNotes: [...n.originNotes, ...note.originNotes], isReprocessing: true)
+              else if (n.clusterId != note.clusterId)
+                n,
+          ];
+        });
+        _say('Merged [${note.sequenceNumber}] into ${sessionReferenceLabel(target, relativeTo: note.sessionStart)}');
+      },
+    );
+  }
+
+  List<SynthesisOriginNote> _without(SynthesisCluster note, SynthesisOriginNote thought) =>
+      [for (final o in note.originNotes) if (o.id != thought.id) o];
+
+  void _moveOut(SynthesisCluster note, SynthesisOriginNote thought) {
     NoteEjectionModal.show(
       context,
-      rawNote: rawNote,
-      currentCluster: cluster,
-      availableClusters: _clusters,
-      onMoveToTargetCluster: (targetCluster) {
+      rawNote: thought,
+      currentCluster: note,
+      availableClusters: _notes,
+      onMoveToTargetCluster: (target) {
         setState(() {
-          // 1. Remove from source cluster and mark source cluster as re-processing (turns yellow)
-          final sourceIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
-          if (sourceIndex != -1) {
-            final updatedNotes = List<MockCaptureNote>.from(_clusters[sourceIndex].originNotes)
-              ..removeWhere((n) => n.id == rawNote.id);
-            _clusters[sourceIndex] = _clusters[sourceIndex].copyWith(
-              originNotes: updatedNotes,
-              isReprocessing: true,
-            );
-          }
-
-          // 2. Add to target cluster and mark target cluster as re-processing (turns yellow)
-          final targetIndex = _clusters.indexWhere((c) => c.clusterId == targetCluster.clusterId);
-          if (targetIndex != -1) {
-            final updatedNotes = List<MockCaptureNote>.from(_clusters[targetIndex].originNotes)
-              ..add(rawNote);
-            _clusters[targetIndex] = _clusters[targetIndex].copyWith(
-              originNotes: updatedNotes,
-              isReprocessing: true,
-            );
-          }
+          _notes = [
+            for (final n in _notes)
+              if (n.clusterId == note.clusterId)
+                n.copyWith(originNotes: _without(n, thought), isReprocessing: true)
+              else if (n.clusterId == target.clusterId)
+                n.copyWith(originNotes: [...n.originNotes, thought], isReprocessing: true)
+              else
+                n,
+          ];
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Moved [${rawNote.formattedSequence}] to ${targetCluster.sequenceNumber}',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-          ),
-        );
-      },
-      onMoveToCluster: () {
-        setState(() {
-          final sourceIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
-          if (sourceIndex != -1) {
-            final updatedNotes = List<MockCaptureNote>.from(_clusters[sourceIndex].originNotes)
-              ..removeWhere((n) => n.id == rawNote.id);
-            _clusters[sourceIndex] = _clusters[sourceIndex].copyWith(
-              originNotes: updatedNotes,
-              isReprocessing: true,
-            );
-          }
-          final otherIndex = _clusters.indexWhere((c) => c.clusterId != cluster.clusterId);
-          if (otherIndex != -1) {
-            final updatedNotes = List<MockCaptureNote>.from(_clusters[otherIndex].originNotes)
-              ..add(rawNote);
-            _clusters[otherIndex] = _clusters[otherIndex].copyWith(
-              originNotes: updatedNotes,
-              isReprocessing: true,
-            );
-          }
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Moved [${rawNote.formattedSequence}] to other clubbed session',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-          ),
-        );
+        _say('Moved [${thought.formattedSequence}] to ${sessionReferenceLabel(target, relativeTo: note.sessionStart)}');
       },
       onMakeIndependent: () {
         setState(() {
-          // Remove from origin cluster and mark as re-processing
-          final updatedOriginNotes = List<MockCaptureNote>.from(cluster.originNotes)
-            ..removeWhere((n) => n.id == rawNote.id);
-
-          final clusterIndex = _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
-          if (clusterIndex != -1) {
-            _clusters[clusterIndex] = _clusters[clusterIndex].copyWith(
-              originNotes: updatedOriginNotes,
-              isReprocessing: true,
-            );
-          }
-
-          // Create new independent cluster
-          final newCluster = MockSynthesisCluster(
-            clusterId: 'cluster_independent_${rawNote.id}',
-            sequenceNumber: '#S-0${_clusters.length + 1}',
-            folder: cluster.folder,
-            synthesizedContent: rawNote.cleanedText,
-            sessionStart: rawNote.timestamp,
-            sessionEnd: rawNote.timestamp.add(const Duration(minutes: 5)),
+          final independent = SynthesisCluster(
+            clusterId: 'independent_${thought.id}',
+            sequenceNumber: formatSessionLabel(nextSessionNumber(_notes, thought.timestamp)),
+            folder: note.folder,
+            synthesizedContent: thought.cleanedText,
+            sessionStart: thought.timestamp,
+            sessionEnd: thought.timestamp.add(const Duration(minutes: 5)),
             sessionDuration: const Duration(minutes: 5),
-            originNotes: [rawNote],
-            isReprocessing: false,
+            originNotes: [thought],
+            isUnread: true,
           );
-          _clusters.insert(0, newCluster);
+          _notes = [
+            independent,
+            for (final n in _notes)
+              if (n.clusterId == note.clusterId) n.copyWith(originNotes: _without(n, thought), isReprocessing: true) else n,
+          ];
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Promoted [${rawNote.formattedSequence}] to independent synthesized note.',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _openStyleRewriter(MockSynthesisCluster cluster) {
-    StyleRewriterModal.show(
-      context,
-      sequenceLabel: cluster.sequenceNumber,
-      selectedPresetId: cluster.appliedStyleId,
-      onSelectPreset: (preset) {
-        setState(() {
-          final index =
-              _clusters.indexWhere((c) => c.clusterId == cluster.clusterId);
-          if (index != -1) {
-            _clusters[index] = _clusters[index].copyWith(
-              appliedStyleId: preset.id,
-              isReprocessing: true, // Turns yellow!
-            );
-          }
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Applying style "${preset.name}" to ${cluster.sequenceNumber}...',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
-    );
-  }
-
-  void _openMergeModal(MockSynthesisCluster cluster) {
-    NoteMergeModal.show(
-      context,
-      sourceCluster: cluster,
-      availableClusters: _clusters,
-      onMergeToTargetCluster: (targetCluster) {
-        setState(() {
-          final targetIndex = _clusters
-              .indexWhere((c) => c.clusterId == targetCluster.clusterId);
-          if (targetIndex != -1) {
-            final combinedNotes = List<MockCaptureNote>.from(
-                _clusters[targetIndex].originNotes)
-              ..addAll(cluster.originNotes);
-
-            _clusters[targetIndex] = _clusters[targetIndex].copyWith(
-              originNotes: combinedNotes,
-              isReprocessing: true, // Turns yellow!
-            );
-          }
-
-          // Remove source cluster from list
-          _clusters.removeWhere((c) => c.clusterId == cluster.clusterId);
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: PreviewTheme.surfaceElevated,
-            content: Text(
-              'Merged [${cluster.sequenceNumber}] into ${targetCluster.sequenceNumber}',
-              style: const TextStyle(color: PreviewTheme.textPrimary),
-            ),
-          ),
-        );
+        _say('Promoted [${thought.formattedSequence}] to independent synthesized note.');
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final folderFiltered = _activeFolderFilter == 'All Folders'
-        ? _clusters
-        : _clusters.where((c) => c.folder.toLowerCase() == _activeFolderFilter.toLowerCase()).toList();
-
-    final filteredClusters = folderFiltered.where((c) {
-      if (_readFilter == 'Unread') return c.isUnread;
-      if (_readFilter == 'Read') return !c.isUnread;
-      return true;
-    }).toList();
-
-    return Container(
-      color: PreviewTheme.background,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-        children: [
-          // Sub-Header Row: Section Title + Compact Triage & Folder Filter Dropdowns
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Text(
-                  'SYNTHESIS SESSIONS',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                    color: PreviewTheme.textSecondary.withValues(alpha: 0.7),
-                  ),
+    super.build(context);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          child: Wrap(
+            spacing: 6,
+            children: [
+              for (var i = 0; i < _scenarios.length; i++)
+                ChoiceChip(
+                  key: Key('synthesis_scenario_$i'),
+                  label: Text(_scenarios[i].label, style: const TextStyle(fontSize: 11)),
+                  selected: i == _index,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() => _load(i)),
                 ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    // Compact Triage Filter Dropdown (All, Unread, Read)
-                    Container(
-                      key: const Key('synthesis_triage_filter_dropdown'),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.surfaceElevated,
-                        borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
-                        border: Border.all(color: PreviewTheme.borderSubtle),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _readFilter,
-                          dropdownColor: PreviewTheme.surfaceElevated,
-                          isDense: true,
-                          icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.accentAction, size: 20),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: PreviewTheme.textPrimary,
-                          ),
-                          items: const ['All', 'Unread', 'Read'].map((triage) {
-                            return DropdownMenuItem<String>(
-                              value: triage,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    triage == 'Unread'
-                                        ? Icons.mark_email_unread_outlined
-                                        : (triage == 'Read' ? Icons.mark_email_read_outlined : Icons.remove_red_eye_outlined),
-                                    size: 14,
-                                    color: triage == _readFilter
-                                        ? PreviewTheme.accentAction
-                                        : PreviewTheme.textSecondary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(triage == 'All' ? 'All Triage' : triage),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (newVal) {
-                            if (newVal != null) {
-                              setState(() {
-                                _readFilter = newVal;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                    // Compact Folder Filter Dropdown
-                    Container(
-                      key: const Key('synthesis_folder_filter_dropdown'),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.surfaceElevated,
-                        borderRadius: BorderRadius.circular(PreviewTheme.buttonRadius),
-                        border: Border.all(color: PreviewTheme.borderSubtle),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _activeFolderFilter,
-                          dropdownColor: PreviewTheme.surfaceElevated,
-                          isDense: true,
-                          icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.accentAction, size: 20),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: PreviewTheme.textPrimary,
-                          ),
-                          items: _folders.map((folder) {
-                            return DropdownMenuItem<String>(
-                              value: folder,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.folder_outlined,
-                                    size: 14,
-                                    color: folder == _activeFolderFilter
-                                        ? PreviewTheme.accentAction
-                                        : PreviewTheme.textSecondary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(folder),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (newVal) {
-                            if (newVal != null) {
-                              setState(() {
-                                _activeFolderFilter = newVal;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            ],
           ),
-          // Pending Batch Synthesis Banner
-          if (_pendingRawNotesToCluster > 0) ...[
-            Container(
-              key: const Key('pending_synthesis_batch_banner'),
-              margin: const EdgeInsets.only(top: 4, bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: PreviewTheme.accentAI.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(PreviewTheme.cardRadius),
-                border: Border.all(color: PreviewTheme.accentAI.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.extension_outlined, size: 16, color: PreviewTheme.accentAI),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$_pendingRawNotesToCluster ${_pendingRawNotesToCluster == 1 ? 'thought' : 'thoughts'} ready for Synthesis',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: PreviewTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  InkWell(
-                    key: const Key('synthesize_now_banner_button'),
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: () {
-                      setState(() {
-                        _pendingRawNotesToCluster = 0;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          backgroundColor: PreviewTheme.surfaceElevated,
-                          content: Text(
-                            'Triggered on-demand synthesis clustering.',
-                            style: TextStyle(color: PreviewTheme.textPrimary),
-                          ),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.accentAction,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.bolt, size: 13, color: Colors.white),
-                          SizedBox(width: 4),
-                          Text(
-                            'Synthesize Now',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          // Clusters Feed
-          if (filteredClusters.isEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(32),
-              alignment: Alignment.center,
-              child: const Text(
-                'No sessions in this folder.',
-                style: TextStyle(color: PreviewTheme.textSecondary),
-              ),
-            ),
-          ] else ...[
-            ...filteredClusters.map((cluster) => _buildClusterCard(cluster)),
-          ],
-          const SizedBox(height: 24),
-        ],
-      ),
+        ),
+        Expanded(
+          child: SynthesisView(
+            notes: _notes,
+            folderNames: SynthesisPreviewData.folderNames,
+            folder: _folder,
+            triage: _triage,
+            readMode: _readMode,
+            panelOpen: _panelOpen,
+            isOpen: (id) => _open[id] ?? false,
+            hasWritingModel: true,
+            pendingThoughts: _pendingThoughts,
+            synthesisBusy: _synthesizing,
+            onFolderButton: () => setState(() => _panelOpen = !_panelOpen),
+            onDismissPanel: () => setState(() => _panelOpen = false),
+            onToggleAll: (ids, open) => setState(() {
+              for (final id in ids) {
+                _open[id] = open;
+              }
+            }),
+            onReadModeChanged: (readMode) => setState(() => _readMode = readMode),
+            onSelectAllNotes: () => setState(() {
+              _folder = null;
+              _panelOpen = false;
+            }),
+            onSelectFolder: (name) => setState(() {
+              _folder = name;
+              _panelOpen = false;
+            }),
+            onTriageChanged: (triage) => setState(() => _triage = triage),
+            onManageFolders: () {
+              setState(() => _panelOpen = false);
+              _say('Settings would open here.');
+            },
+            onChooseModel: () => _say('The model setup would open here.'),
+            onSynthesizeNow: () {
+              _startFakeRun();
+              _say('Triggered on-demand synthesis clustering.');
+            },
+            onToggleNote: (note) {
+              final wasOpen = _open[note.clusterId] ?? false;
+              setState(() => _open[note.clusterId] = !wasOpen);
+              if (!wasOpen) _change(note.clusterId, (n) => n.copyWith(isUnread: false));
+            },
+            onNoteRead: (id) => _change(id, (n) => n.copyWith(isUnread: false)),
+            onTaskToggled: (id, index, checked) =>
+                _change(id, (n) => n.copyWith(synthesizedContent: setTaskChecked(n.synthesizedContent, index, checked))),
+            onToggleThoughts: (id) => _change(id, (n) => n.copyWith(isExpanded: !n.isExpanded)),
+            onFolderChanged: (id, name) => _change(id, (n) => n.copyWith(folder: name)),
+            onStyle: _chooseStyle,
+            onEditText: _editText,
+            onMerge: _merge,
+            onDelete: (note) => setState(() => _notes = [for (final n in _notes) if (n.clusterId != note.clusterId) n]),
+            onMoveOut: _moveOut,
+          ),
+        ),
+      ],
     );
   }
-
-  Widget _buildClusterCard(MockSynthesisCluster cluster) {
-    final cleanSeq = cluster.sequenceNumber.replaceAll('#', '');
-    final isReprocessing = cluster.isReprocessing;
-
-    final Color cardBg;
-    final Color cardBorder;
-    if (isReprocessing) {
-      cardBg = PreviewTheme.stateEnqueuedBg;
-      cardBorder = PreviewTheme.stateEnqueuedBorder;
-    } else if (!cluster.isActionExtracted) {
-      cardBg = PreviewTheme.stateProcessedBg;
-      cardBorder = PreviewTheme.stateProcessedBorder;
-    } else {
-      cardBg = PreviewTheme.stateSynthesizedBg;
-      cardBorder = PreviewTheme.stateSynthesizedBorder;
-    }
-
-    return GestureDetector(
-      onTap: () => _markClusterAsRead(cluster.clusterId),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: PreviewTheme.cardDecoration(
-          bgColor: cardBg,
-          borderColor: cardBorder,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Row: Cluster Sequence # + Predefined Folder Badge Dropdown + Edit + Optional Re-processing badge
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (cluster.isUnread) ...[
-                        Container(
-                          key: Key('unread_dot_$cleanSeq'),
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: const BoxDecoration(
-                            color: PreviewTheme.accentAction,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ],
-                      // Cluster Sequence # (e.g. #S-02)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: PreviewTheme.accentAction.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                        ),
-                        child: Text(
-                          cluster.sequenceNumber,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: PreviewTheme.accentAction,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Predefined Folder Badge with 1-Tap Reassignment Dropdown
-                      Container(
-                        key: Key('folder_badge_$cleanSeq'),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: PreviewTheme.surfaceElevated,
-                          borderRadius: BorderRadius.circular(PreviewTheme.pillRadius),
-                          border: Border.all(color: PreviewTheme.borderSubtle),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: cluster.folder,
-                            dropdownColor: PreviewTheme.surfaceElevated,
-                            isDense: true,
-                            icon: const Icon(Icons.arrow_drop_down, color: PreviewTheme.textSecondary, size: 16),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: PreviewTheme.textPrimary,
-                            ),
-                            items: const ['Work', 'Ideas', 'Todos', 'Journal', 'Uncategorized'].map((folder) {
-                              return DropdownMenuItem<String>(
-                                value: folder,
-                                child: Text(folder),
-                              );
-                            }).toList(),
-                            onChanged: (newFolder) {
-                              if (newFolder != null) {
-                                _reassignFolder(cluster, newFolder);
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (isReprocessing) ...[
-                    Container(
-                      key: Key('reprocessing_badge_$cleanSeq'),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.accentWarning.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                        border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.35)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sync, size: 12, color: PreviewTheme.accentWarning),
-                          SizedBox(width: 4),
-                          Text(
-                            'Re-synthesizing...',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: PreviewTheme.accentWarning,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else if (!cluster.isActionExtracted) ...[
-                    Container(
-                      key: Key('awaiting_action_badge_$cleanSeq'),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.accentAction.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(PreviewTheme.badgeRadius),
-                        border: Border.all(color: PreviewTheme.accentAction.withValues(alpha: 0.3)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.hourglass_empty, size: 12, color: PreviewTheme.accentAction),
-                          SizedBox(width: 4),
-                          Text(
-                            'Extracting Actions...',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: PreviewTheme.accentAction,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      // AI Style Re-Writer Action
-                      InkWell(
-                        key: Key('style_button_$cleanSeq'),
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => _openStyleRewriter(cluster),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: PreviewTheme.accentAI.withValues(alpha: 0.12),
-                            borderRadius:
-                                BorderRadius.circular(PreviewTheme.badgeRadius),
-                            border: Border.all(
-                                color: PreviewTheme.accentAI
-                                    .withValues(alpha: 0.24)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.auto_awesome,
-                                  size: 13, color: PreviewTheme.accentAI),
-                              SizedBox(width: 4),
-                              Text(
-                                'Style ▾',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: PreviewTheme.accentAI,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        key: Key('merge_button_$cleanSeq'),
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () => _openMergeModal(cluster),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: PreviewTheme.surfaceElevated,
-                            borderRadius:
-                                BorderRadius.circular(PreviewTheme.badgeRadius),
-                            border: Border.all(color: PreviewTheme.borderSubtle),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.merge_type,
-                                  size: 13, color: PreviewTheme.textSecondary),
-                              SizedBox(width: 4),
-                              Text(
-                                'Merge',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: PreviewTheme.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        key: Key('edit_synthesis_$cleanSeq'),
-                        borderRadius: BorderRadius.circular(6),
-                        onTap: () {},
-                        child: const Padding(
-                          padding:
-                              EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.edit_outlined,
-                                  size: 14, color: PreviewTheme.textSecondary),
-                              SizedBox(width: 4),
-                              Text(
-                                'Edit',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: PreviewTheme.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // Consolidated Synthesis Narrative
-            Text(
-              cluster.synthesizedContent,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.45,
-                color: PreviewTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Divider(height: 1, color: PreviewTheme.borderSubtle),
-            const SizedBox(height: 10),
-            // Session Time Span & Duration Metadata
-            Row(
-              children: [
-                const Icon(Icons.calendar_today_outlined, size: 13, color: PreviewTheme.textSecondary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    cluster.sessionDuration.inMinutes < 1
-                        ? cluster.formattedTimeSpan
-                        : '${cluster.formattedTimeSpan} • ⏱️ ${cluster.sessionDuration.inMinutes}m session',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: PreviewTheme.textSecondary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            // Expandable Origin Raw Notes Pill
-            Material(
-              color: PreviewTheme.surfaceElevated,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-                side: const BorderSide(color: PreviewTheme.borderSubtle),
-              ),
-              child: InkWell(
-                key: Key('expand_origin_pill_$cleanSeq'),
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _toggleExpand(cluster.clusterId),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.extension_outlined, size: 14, color: PreviewTheme.accentAction),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '[ 🧩 ${cluster.originNotes.length} Raw ${cluster.originNotes.length == 1 ? 'Note' : 'Notes'} Included (Tap to ${cluster.isExpanded ? 'Collapse' : 'Expand'}) ]',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: PreviewTheme.accentAction,
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        cluster.isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        size: 16,
-                        color: PreviewTheme.accentAction,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Origin Notes Expanded Drawer
-            if (cluster.isExpanded) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: PreviewTheme.background.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: PreviewTheme.borderSubtle),
-                ),
-                child: Column(
-                  children: cluster.originNotes.map((rawNote) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: PreviewTheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: PreviewTheme.borderSubtle),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                '• [${rawNote.formattedSequence}]',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: PreviewTheme.textSecondary,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  rawNote.cleanedText,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: PreviewTheme.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.play_circle_outline, size: 16, color: PreviewTheme.accentCapture),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    rawNote.formattedAudioDuration,
-                                    style: const TextStyle(fontSize: 11, color: PreviewTheme.textSecondary),
-                                  ),
-                                ],
-                              ),
-                              if (cluster.originNotes.length > 1) ...[
-                                InkWell(
-                                  key: Key('move_out_button_${rawNote.id}'),
-                                  borderRadius: BorderRadius.circular(6),
-                                  onTap: () => _openEjectionModal(cluster, rawNote),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: PreviewTheme.accentWarning.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: PreviewTheme.accentWarning.withValues(alpha: 0.3)),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.open_in_new, size: 12, color: PreviewTheme.accentWarning),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Move Out',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: PreviewTheme.accentWarning,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
-}
 }

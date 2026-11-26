@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:eudemonia/features/theme/widgets/unread_dot.dart';
 import '../mock_data.dart';
 import '../preview_theme.dart';
 
@@ -13,8 +14,13 @@ class CaptureScreenPreview extends StatefulWidget {
 }
 
 class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late List<MockCaptureNote> _notes;
+
+  /// The shell swipes between tabs; this one keeps its state while away.
+  @override
+  bool get wantKeepAlive => true;
+
   String? _currentlyPlayingId;
 
   // Filter 1: Read / Unread Dropdown
@@ -204,6 +210,7 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final filtered = _filteredNotes;
 
     return Container(
@@ -644,18 +651,12 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
                     ),
                     const SizedBox(width: 10),
 
-                    // 3. Unread Indicator Dot
-                    if (note.isUnread) ...[
-                      Container(
-                        key: Key('unread_dot_${note.id}'),
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: PreviewTheme.unreadDot,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
+                    // 3. Unread Indicator Dot: dissolves when the thought is read; its slot stays
+                    UnreadDot(
+                      unread: note.isUnread,
+                      color: PreviewTheme.unreadDot,
+                      dotKey: Key('unread_dot_${note.id}'),
+                    ),
 
                     const Spacer(),
 
@@ -710,7 +711,18 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
                   ),
                   const SizedBox(height: 8),
                 ] else if (note.status == MockNoteStatus.synthesized) ...[
-                  Container(
+                  // The session number opens that note in the Synthesis tab (FR9.9).
+                  GestureDetector(
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: PreviewTheme.surfaceElevated,
+                        content: Text(
+                          'Opens ${note.clusterSequence ?? 'the session note'} in Synthesis.',
+                          style: const TextStyle(color: PreviewTheme.textPrimary),
+                        ),
+                      ),
+                    ),
+                    child: Container(
                     key: Key('status_badge_${note.id}'),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -737,8 +749,10 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
                                 color: PreviewTheme.accentCapture),
                           ),
                         ),
+                        const Icon(Icons.chevron_right, size: 14, color: PreviewTheme.accentCapture),
                       ],
                     ),
+                  ),
                   ),
                   const SizedBox(height: 8),
                 ] else if (note.status == MockNoteStatus.failed) ...[

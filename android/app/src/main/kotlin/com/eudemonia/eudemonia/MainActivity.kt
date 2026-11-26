@@ -208,7 +208,26 @@ class MainActivity: FlutterActivity() {
                 result.success(committed.map(CaptureChannelCodec::encodeCommitted))
             }
             "requestPinWidget" -> result.success(requestPinCaptureWidget())
+            "requestAddQuickSettingsTile" -> result.success(requestAddCaptureTile())
             else -> result.notImplemented()
+        }
+    }
+
+    /** Offers to add the "Record thought" tile to Quick Settings (Android 13+); false when the system cannot ask. */
+    private fun requestAddCaptureTile(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return try {
+            val statusBar = getSystemService(android.app.StatusBarManager::class.java) ?: return false
+            statusBar.requestAddTileService(
+                ComponentName(this, CaptureTileService::class.java),
+                getString(R.string.capture_tile_label),
+                android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_capture),
+                mainExecutor
+            ) { }
+            true
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Unable to offer the Quick Settings tile: ${e.message}")
+            false
         }
     }
 

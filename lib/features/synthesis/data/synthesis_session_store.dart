@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar_community/isar.dart';
 import 'package:eudemonia/core/database/app_database.dart';
+import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'synthesis_session_record.dart';
 
@@ -13,13 +14,16 @@ class SynthesisSessionStore {
 
   SynthesisSessionStore({this._isar});
 
-  /// All stored sessions, newest session identifier first.
+  /// All stored sessions, newest day first and, within a day, highest `#S-NN` first.
   Future<List<SynthesisCluster>> loadAll() async {
     final isar = _isar;
     final clusters = isar != null
         ? (await isar.synthesisSessionRecords.where().findAll()).map((r) => r.toCluster()).toList()
         : _inMemory.values.map((r) => r.toCluster()).toList();
-    clusters.sort((a, b) => sequenceIndexOf(b).compareTo(sequenceIndexOf(a)));
+    clusters.sort((a, b) {
+      final byDay = b.sessionDay.compareTo(a.sessionDay);
+      return byDay != 0 ? byDay : sequenceIndexOf(b).compareTo(sequenceIndexOf(a));
+    });
     return clusters;
   }
 
@@ -52,8 +56,7 @@ class SynthesisSessionStore {
   }
 
   /// Numeric part of a `#S-NN` identifier, or 0 when it cannot be parsed.
-  static int sequenceIndexOf(SynthesisCluster cluster) =>
-      int.tryParse(cluster.sequenceNumber.replaceFirst('#S-', '')) ?? 0;
+  static int sequenceIndexOf(SynthesisCluster cluster) => sessionLabelNumber(cluster.sequenceNumber);
 }
 
 final synthesisSessionStoreProvider = Provider<SynthesisSessionStore>((ref) {

@@ -7,10 +7,13 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 
 /** Re-renders every capture widget instance whenever the capture state changes. */
 class CaptureWidgetUpdater(private val context: Context) : CaptureListener {
@@ -41,15 +44,48 @@ class CaptureWidgetUpdater(private val context: Context) : CaptureListener {
                 nowWallMs = System.currentTimeMillis(),
                 nowElapsedMs = SystemClock.elapsedRealtime(),
             )
-            manager.updateAppWidget(ids, buildViews(context, render))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+: the launcher picks the layout that fits each instance's size.
+                manager.updateAppWidget(ids, responsiveViews(context, render))
+            } else {
+                for (id in ids) {
+                    val widthDp = manager.getAppWidgetOptions(id)
+                        ?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+                    manager.updateAppWidget(id, buildViews(context, render, CaptureWidgetRenderState.layoutSizeFor(widthDp)))
+                }
+            }
         }
 
-        private fun buildViews(context: Context, render: CaptureWidgetRenderState): RemoteViews {
-            val views = RemoteViews(context.packageName, R.layout.capture_widget)
+        @RequiresApi(Build.VERSION_CODES.S)
+        private fun responsiveViews(context: Context, render: CaptureWidgetRenderState): RemoteViews =
+            RemoteViews(
+                mapOf(
+                    SizeF(CaptureWidgetRenderState.COMPACT_MIN_WIDTH_DP.toFloat(), 56f) to
+                        buildViews(context, render, CaptureWidgetRenderState.LayoutSize.COMPACT),
+                    SizeF(CaptureWidgetRenderState.FULL_MIN_WIDTH_DP.toFloat(), 56f) to
+                        buildViews(context, render, CaptureWidgetRenderState.LayoutSize.FULL),
+                )
+            )
+
+        private fun buildViews(
+            context: Context,
+            render: CaptureWidgetRenderState,
+            size: CaptureWidgetRenderState.LayoutSize,
+        ): RemoteViews {
+            val full = size == CaptureWidgetRenderState.LayoutSize.FULL
+            val views = RemoteViews(
+                context.packageName,
+                if (full) R.layout.capture_widget else R.layout.capture_widget_compact,
+            )
             views.setInt(
                 android.R.id.background,
                 "setBackgroundResource",
                 if (render.isRecording) R.drawable.capture_widget_bg_recording else R.drawable.capture_widget_bg_idle
+            )
+            views.setInt(
+                R.id.capture_widget_button,
+                "setBackgroundResource",
+                if (render.isRecording) R.drawable.capture_widget_button_recording else R.drawable.capture_widget_button_idle
             )
             views.setImageViewResource(
                 R.id.capture_widget_icon,
@@ -58,15 +94,20 @@ class CaptureWidgetUpdater(private val context: Context) : CaptureListener {
                     CaptureWidgetRenderState.Icon.STOP -> R.drawable.ic_widget_stop
                 }
             )
-            views.setTextViewText(R.id.capture_widget_label, render.label)
+            views.setContentDescription(android.R.id.background, render.contentDescription)
+            views.setTextViewText(R.id.capture_widget_label, if (full) render.title else render.compactLabel)
+            if (full) views.setTextViewText(R.id.capture_widget_subtitle, render.subtitle)
 
             val base = render.chronometerBase
             if (base != null) {
-                views.setChronometer(R.id.capture_widget_chronometer, base, null, true)
+                // The compact layout has room for the bare timer only.
+                views.setChronometer(R.id.capture_widget_chronometer, base, if (full) render.chronometerFormat else null, true)
                 views.setViewVisibility(R.id.capture_widget_chronometer, View.VISIBLE)
+                views.setViewVisibility(R.id.capture_widget_label, View.GONE)
             } else {
                 views.setChronometer(R.id.capture_widget_chronometer, SystemClock.elapsedRealtime(), null, false)
                 views.setViewVisibility(R.id.capture_widget_chronometer, View.GONE)
+                views.setViewVisibility(R.id.capture_widget_label, View.VISIBLE)
             }
 
             views.setOnClickPendingIntent(android.R.id.background, clickIntent(context, render.clickTarget))
@@ -92,5 +133,9 @@ class CaptureWidgetUpdater(private val context: Context) : CaptureListener {
             }
     }
 
-    override fun onStateChanged(state: CaptureState) = renderAll(context, state)
+    override fun onStateChanged(state: CaptureState) {
+        renderAll(context, state)
+        // The Quick Settings tile mirrors the same state; it is redrawn the next time it is shown.
+        CaptureTileService.requestRefresh(context)
+    }
 }

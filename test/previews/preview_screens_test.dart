@@ -137,189 +137,228 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets(
-        'SynthesisScreenPreview renders compact folder filter, triage filter, tri-color cards, batch banner, style re-writer, single note lock, and ejection',
-        (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: SynthesisScreenPreview(),
+    group('SynthesisScreenPreview (production SynthesisView on mock scenarios) on 360dp', () {
+      Future<void> pumpPreview(WidgetTester tester, {int scenario = 0}) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: SynthesisScreenPreview(initialScenario: scenario)),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
+      }
 
-      // Verify compact folder and triage filter dropdowns are present
-      expect(find.byKey(const Key('synthesis_folder_filter_dropdown')),
-          findsOneWidget);
-      expect(find.byKey(const Key('synthesis_triage_filter_dropdown')),
-          findsOneWidget);
+      Finder card(String id) => find.byKey(Key('synthesis_cluster_card_$id'));
 
-      // Verify pending batch synthesis banner is visible
-      expect(find.byKey(const Key('pending_synthesis_batch_banner')),
-          findsOneWidget);
-      expect(find.text('2 thoughts ready for Synthesis'),
-          findsOneWidget);
+      /// The list builds rows as they scroll in: brings [finder] into view.
+      Future<void> reveal(WidgetTester tester, Finder finder) async {
+        await tester.scrollUntilVisible(finder, 200, scrollable: find.byType(Scrollable).first);
+        await tester.pumpAndSettle();
+      }
 
-      // Verify synthesized notes
-      expect(find.text('#S-02'), findsOneWidget);
-      expect(find.text('#S-01'), findsOneWidget);
+      testWidgets('many notes: collapsed rows by day with the bar, the banner and no overflow', (tester) async {
+        await pumpPreview(tester);
 
-      // Verify tri-color cards & unread dot on #S-02
-      expect(find.byKey(const Key('unread_dot_S-02')), findsOneWidget);
-      expect(find.byKey(const Key('awaiting_action_badge_S-01')), findsOneWidget);
+        // The bar replaces the header and the two dropdown filters.
+        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
+        expect(find.byKey(const Key('synthesis_folder_button')), findsOneWidget);
+        expect(find.text('All notes'), findsOneWidget);
+        expect(find.byKey(const Key('synthesis_mode_toggle')), findsOneWidget);
+        expect(find.byKey(const Key('synthesis_expand_all_toggle')), findsOneWidget);
 
-      // Tap #S-02 to mark as read
-      await tester.tap(find.text('#S-02'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('unread_dot_S-02')), findsNothing);
+        // Verify pending batch synthesis banner is visible
+        expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsOneWidget);
+        expect(find.text('2 thoughts ready for Synthesis'), findsOneWidget);
 
-      // Test Triage Dropdown Filter (All, Unread, Read)
-      await tester.tap(find.byKey(const Key('synthesis_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Read').last);
-      await tester.pumpAndSettle();
-      expect(find.text('#S-01'), findsOneWidget);
-      expect(find.text('#S-02'), findsOneWidget); // marked read above
+        // One row per note: number, title, folder under the title, unread dot; nothing is open.
+        expect(find.textContaining('TODAY —'), findsOneWidget);
+        expect(card('n24'), findsOneWidget);
+        expect(find.text('#S-06'), findsOneWidget);
+        expect(find.text('Roadmap review'), findsOneWidget);
+        expect(find.byKey(const Key('unread_dot_n24')), findsOneWidget);
+        expect(find.byKey(const Key('expand_raw_notes_n24')), findsNothing);
+        expect(find.byKey(const Key('style_button_n24')), findsNothing);
+        // A note waiting for its rewrite shows the thinking indicator in place of its time.
+        expect(find.text('Rewriting…'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
 
-      await tester.tap(find.byKey(const Key('synthesis_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('All Triage').last);
-      await tester.pumpAndSettle();
+      testWidgets('tapping a row opens the note and reads it; tapping again closes it', (tester) async {
+        await pumpPreview(tester);
 
-      // Tap Synthesize Now button on the batch banner
-      final bannerBtn = find.byKey(const Key('synthesize_now_banner_button'));
-      expect(bannerBtn, findsOneWidget);
-      await tester.tap(bannerBtn);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsNothing);
-      expect(find.text('Triggered on-demand synthesis clustering.'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('note_row_n24')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('unread_dot_n24')), findsNothing, reason: 'opening reads the note');
+        expect(find.text('From 3 thoughts'), findsOneWidget);
+        expect(find.text('Decide the order of the next three releases.'), findsOneWidget);
 
-      // Verify predefined folder badge with reassignment
-      expect(find.byKey(const Key('folder_badge_S-02')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('note_row_n24')));
+        await tester.pumpAndSettle();
+        expect(find.text('From 3 thoughts'), findsNothing);
+      });
 
-      // Verify AI Style Re-Writer button exists on Synthesis note #S-02
-      final styleButtonS02 = find.byKey(const Key('style_button_S-02'));
-      expect(styleButtonS02, findsOneWidget);
+      testWidgets('Synthesize Now shows the run, then the banner goes', (tester) async {
+        await pumpPreview(tester);
 
-      // Tap Style Re-Writer button on #S-02
-      await tester.tap(styleButtonS02);
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('synthesize_now_banner_button')));
+        await tester.pump();
+        expect(find.text('Synthesizing…'), findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 2600));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsNothing);
+        expect(find.text('Triggered on-demand synthesis clustering.'), findsOneWidget);
+      });
 
-      // Verify Style modal opened
-      expect(find.text('AI Style Re-Writer'), findsOneWidget);
-      expect(find.text('Concise & Direct'), findsOneWidget);
+      testWidgets('Read mode: the note and its thoughts, none of the edit controls', (tester) async {
+        await pumpPreview(tester, scenario: 1);
 
-      // Verify currently active preset has checkmark (tick mark)
-      expect(find.byIcon(Icons.check), findsOneWidget);
-      expect(find.text('Active'), findsOneWidget);
+        expect(find.text('Weekend errands'), findsWidgets);
+        expect(find.byKey(const Key('expand_raw_notes_n24')), findsOneWidget);
+        for (final id in ['n24', 'n23', 'n21']) {
+          expect(find.byKey(Key('cluster_folder_dropdown_$id')), findsNothing);
+          expect(find.byKey(Key('style_button_$id')), findsNothing);
+          expect(find.byKey(Key('edit_text_button_$id')), findsNothing);
+          expect(find.byKey(Key('merge_button_$id')), findsNothing);
+          expect(find.byKey(Key('delete_cluster_$id')), findsNothing);
+        }
+        await tester.tap(find.byKey(const Key('expand_raw_notes_n24')));
+        await tester.pumpAndSettle();
+        expect(find.text('ORIGIN RAW NOTES (3)'), findsOneWidget);
+        expect(find.text('Move Out'), findsNothing, reason: 'thoughts are only listed in Read mode');
 
-      // Select a different style preset (e.g. Bullet Points)
-      await tester.tap(find.text('Bullet Points'));
-      await tester.pumpAndSettle();
+        // A checklist ticks in Read mode.
+        await reveal(tester, find.byKey(const Key('note_task_0')));
+        await tester.tap(find.byKey(const Key('note_task_0')));
+        await tester.pumpAndSettle();
+        expect(tester.widget<Semantics>(find.byKey(const Key('note_task_0'))).properties.checked, isTrue);
+      });
 
-      // Verify #S-02 is now marked as re-processing and turns Yellow!
-      expect(find.byKey(const Key('reprocessing_badge_S-02')), findsOneWidget);
-      expect(find.text('Re-synthesizing...'), findsOneWidget);
+      testWidgets('Edit mode: the action row, the style sheet, a hand-edited note and its confirmation', (tester) async {
+        await pumpPreview(tester, scenario: 2);
 
-      // Expand origin raw notes pill on #S-02 (3 notes -> Move Out must be visible)
-      final expandPillFinder = find.byKey(const Key('expand_origin_pill_S-02'));
-      expect(expandPillFinder, findsOneWidget);
-      await tester.tap(expandPillFinder);
-      await tester.pumpAndSettle();
+        // Style: the production sheet; the choice shows the rewrite and a message.
+        await tester.ensureVisible(find.byKey(const Key('style_button_n24')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('style_button_n24')));
+        await tester.pumpAndSettle();
+        expect(find.text('AI Style Re-Writer'), findsOneWidget);
+        expect(find.text('Active'), findsOneWidget);
+        await tester.tap(find.text('Key points'));
+        await tester.pumpAndSettle();
+        expect(find.text('Applying style "Key points" to #S-06...'), findsOneWidget);
+        expect(find.text('Rewriting…'), findsWidgets);
+        ScaffoldMessenger.of(tester.element(find.byType(SynthesisScreenPreview))).hideCurrentSnackBar();
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('move_out_button_raw_1')), findsOneWidget);
+        // The hand-edited note says so and shows it on its Style control.
+        await reveal(tester, find.byKey(const Key('hand_edited_notice_n20')));
+        expect(find.byKey(const Key('hand_edited_notice_n20')), findsOneWidget);
+        expect(find.descendant(of: find.byKey(const Key('style_button_n20')), matching: find.text('Edited by hand')),
+            findsOneWidget);
+        expect(find.byKey(const Key('hand_edited_notice_n24')), findsNothing);
 
-      // Collapse #S-02 so #S-01 doesn't scroll below the fold
-      await tester.tap(expandPillFinder);
-      await tester.pumpAndSettle();
+        // A hand-edited note asks first; Cancel leaves it alone.
+        await reveal(tester, find.byKey(const Key('style_button_n20')));
+        await tester.tap(find.byKey(const Key('style_button_n20')));
+        await tester.pumpAndSettle();
+        expect(find.text('Rewriting in a style replaces your own edits to this note.'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('rewrite_cancel_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('AI Style Re-Writer'), findsNothing);
+        await tester.tap(find.byKey(const Key('style_button_n20')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('rewrite_confirm_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('AI Style Re-Writer'), findsOneWidget);
+      });
 
-      // Expand origin raw notes pill on #S-01 (1 note -> Single Note Guard: Move Out must be HIDDEN)
-      final expandPillS01Finder =
-          find.byKey(const Key('expand_origin_pill_S-01'));
-      expect(expandPillS01Finder, findsOneWidget);
-      await tester.ensureVisible(expandPillS01Finder);
-      await tester.pumpAndSettle();
-      await tester.tap(expandPillS01Finder);
-      await tester.pumpAndSettle();
+      testWidgets('Edit text: an empty text is refused, a text is saved and marks the note edited by hand', (tester) async {
+        await pumpPreview(tester, scenario: 2);
 
-      expect(find.byKey(const Key('move_out_button_raw_yesterday_1')),
-          findsNothing);
+        await tester.tap(find.byKey(const Key('edit_text_button_n24')));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const Key('note_text_field')), '   ');
+        await tester.tap(find.byKey(const Key('note_text_save_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('A note cannot be empty.'), findsOneWidget);
 
-      // Collapse #S-01 and re-expand #S-02 to perform Move Out
-      await tester.ensureVisible(expandPillS01Finder);
-      await tester.tap(expandPillS01Finder);
-      await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(const Key('note_text_field')), '**My own title**\n\nMy own words.');
+        await tester.tap(find.byKey(const Key('note_text_save_button')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('note_text_field')), findsNothing);
+        expect(find.text('My own words.'), findsOneWidget);
+        expect(find.byKey(const Key('hand_edited_notice_n24')), findsOneWidget);
+      });
 
-      await tester.ensureVisible(expandPillFinder);
-      await tester.tap(expandPillFinder);
-      await tester.pumpAndSettle();
+      testWidgets('single-thought guard, ejection and merge use the production sheets', (tester) async {
+        await pumpPreview(tester, scenario: 2);
 
-      // Tap Move Out on raw_1 from #S-02 to open ejection modal
-      final moveOutRaw1Finder = find.byKey(const Key('move_out_button_raw_1'));
-      await tester.ensureVisible(moveOutRaw1Finder);
-      await tester.tap(moveOutRaw1Finder);
-      await tester.pumpAndSettle();
+        // A note of three thoughts offers Move Out; open n22 (one thought) and see none.
+        await tester.tap(find.byKey(const Key('expand_raw_notes_n24')));
+        await tester.pumpAndSettle();
+        await reveal(tester, find.text('Move Out').first);
+        expect(find.text('Move Out'), findsNWidgets(3));
+        await tester.tap(find.text('Move Out').first);
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Reassign Raw Note'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('ejection_make_independent_note_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('Promoted [#01] to independent synthesized note.'), findsOneWidget);
+        ScaffoldMessenger.of(tester.element(find.byType(SynthesisScreenPreview))).hideCurrentSnackBar();
+        await tester.pumpAndSettle();
 
-      expect(find.text('Reassign Raw Note [#01]'), findsOneWidget);
-      expect(find.byKey(const Key('move_to_another_clubbed_note_btn')),
-          findsOneWidget);
+        // Merge n24 into n23.
+        await tester.ensureVisible(find.byKey(const Key('merge_button_n24')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('merge_button_n24')));
+        await tester.pumpAndSettle();
+        expect(find.text('Merge Session #S-06'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('merge_target_n23')));
+        await tester.pumpAndSettle();
+        expect(find.text('Merged [#S-06] into #S-05'), findsOneWidget);
+        expect(card('n24'), findsNothing, reason: 'consolidated into #S-05 and removed');
+        expect(find.text('#S-06'), findsNothing);
+      });
 
-      // Verify note ejection modal copy is clean without instructional filler text
-      expect(find.textContaining('both will turn yellow for re-synthesis'),
-          findsNothing);
+      testWidgets('folder panel scenario: panel open with counts, Manage folders, selection filters', (tester) async {
+        await pumpPreview(tester, scenario: 3);
 
-      // Tap Move to another clubbed note -> reveals target cluster selector
-      await tester.tap(find.byKey(const Key('move_to_another_clubbed_note_btn')));
-      await tester.pumpAndSettle();
+        expect(find.byKey(const Key('folder_panel')), findsOneWidget);
+        expect(find.byKey(const Key('folder_panel_all_notes_count')), findsOneWidget);
+        expect(find.byKey(const Key('folder_panel_row_Work_count')), findsOneWidget);
+        expect(find.byKey(const Key('manage_folders_link')), findsOneWidget);
 
-      expect(find.text('SELECT TARGET CLUBBED NOTE'), findsOneWidget);
-      expect(
-          find.textContaining('Moving will mark both source and target'),
-          findsNothing);
-      expect(find.byKey(const Key('select_target_cluster_cluster_1')),
-          findsOneWidget);
+        await tester.tap(find.byKey(const Key('folder_panel_row_Journal')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('folder_panel')), findsNothing);
+        expect(find.descendant(of: find.byKey(const Key('synthesis_folder_button')), matching: find.text('Journal')),
+            findsOneWidget);
+        expect(card('n22'), findsOneWidget);
+        expect(card('n24'), findsNothing);
 
-      // Select cluster_1 as target
-      await tester.tap(find.byKey(const Key('select_target_cluster_cluster_1')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('synthesis_folder_button')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('manage_folders_link')));
+        await tester.pumpAndSettle();
+        expect(find.text('Settings would open here.'), findsOneWidget);
+      });
 
-      // Verify both source (#S-02) and target (#S-01) now display the yellow re-synthesizing badge!
-      expect(find.byKey(const Key('reprocessing_badge_S-02')), findsOneWidget);
-      expect(find.byKey(const Key('reprocessing_badge_S-01')), findsOneWidget);
-
-      // Verify clean SnackBar copy
-      expect(find.text('Moved [#01] to #S-01'), findsOneWidget);
-
-      // Dismiss SnackBar to clear overlay
-      ScaffoldMessenger.of(tester.element(find.byType(SynthesisScreenPreview)))
-          .hideCurrentSnackBar();
-      await tester.pumpAndSettle();
-
-      // Test Explicit Note Merging: Tap Merge button on #S-02
-      final mergeBtnS02 = find.byKey(const Key('merge_button_S-02'));
-      await tester.scrollUntilVisible(mergeBtnS02, -200);
-      await tester.pumpAndSettle();
-      expect(mergeBtnS02, findsOneWidget);
-      await tester.tap(mergeBtnS02);
-      await tester.pumpAndSettle();
-
-      // Verify NoteMergeModal opened
-      expect(find.text('Merge Session #S-02'), findsOneWidget);
-      expect(find.text('SELECT TARGET SESSION'), findsOneWidget);
-      expect(find.byKey(const Key('select_target_merge_cluster_1')),
-          findsOneWidget);
-
-      // Tap select target cluster_1 (#S-01)
-      await tester.tap(find.byKey(const Key('select_target_merge_cluster_1')));
-      await tester.pumpAndSettle();
-
-      // Verify SnackBar and State Consolidation
-      expect(find.text('Merged [#S-02] into #S-01'), findsOneWidget);
-      expect(find.text('#S-02'), findsNothing,
-          reason: '#S-02 should be consolidated into #S-01 and removed');
-      expect(find.text('#S-01'), findsOneWidget);
-      expect(find.byKey(const Key('reprocessing_badge_S-01')), findsOneWidget);
+      testWidgets('every scenario renders with zero overflows and the chips switch scenario', (tester) async {
+        for (var i = 0; i < 4; i++) {
+          await pumpPreview(tester, scenario: i);
+          expect(tester.takeException(), isNull, reason: 'scenario $i');
+        }
+        await pumpPreview(tester);
+        await tester.tap(find.byKey(const Key('synthesis_scenario_3')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('folder_panel')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('synthesis_scenario_0')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('folder_panel')), findsNothing);
+      });
     });
 
     testWidgets(
@@ -425,35 +464,49 @@ void main() {
       // Status is updated to 1 in pipeline (capture note transcribing remains)
       expect(find.textContaining('1 in Pipeline'), findsOneWidget);
 
-      // Tap Settings gear button to open Settings & Diagnostics preview screen
+      // Tap Settings gear button to open the Settings preview screen
       final settingsGear = find.byKey(const Key('settings_gear_button'));
       expect(settingsGear, findsOneWidget);
       await tester.tap(settingsGear);
       await tester.pumpAndSettle();
 
-      expect(find.text('Settings & Diagnostics'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Settings & Diagnostics'), findsNothing);
       expect(find.text('Accessibility Interceptor'), findsNothing);
-      expect(find.text('CAPTURE PERMISSIONS'), findsOneWidget);
       expect(find.textContaining('Battery'), findsNothing);
       expect(find.byKey(const Key('synthesis_note_threshold_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('synthesis_inactivity_minutes_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('trigger_synthesis_now_btn')), findsOneWidget);
 
-      // Folders are a read-only list; calendar and raw-audio controls are gone.
+      // Folders come first, each with its description; calendar and raw-audio controls are gone.
       final folderHeaderFinder = find.text('FOLDERS');
-      await tester.scrollUntilVisible(folderHeaderFinder, 300);
-      await tester.pumpAndSettle();
       expect(folderHeaderFinder, findsOneWidget);
       expect(find.byKey(const Key('settings_folder_list')), findsOneWidget);
+      expect(find.text('Journal'), findsOneWidget);
+      expect(find.textContaining('how the speaker feels'), findsOneWidget);
       expect(find.byKey(const Key('add_custom_folder_button')), findsNothing);
       expect(find.text('CALENDAR SYNCHRONIZATION'), findsNothing);
       expect(find.text('AUDIO CAPTURE STORAGE'), findsNothing);
+      expect(find.textContaining('DIAGNOSTIC LOGGING'), findsNothing);
 
+      // Phone memory and permissions are collapsed until opened.
+      await tester.scrollUntilVisible(find.byKey(const Key('settings_memory_header')), 300);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('evict_models_btn')), findsNothing);
+      expect(find.text('PERMISSIONS'), findsOneWidget);
+      expect(find.text('Needs attention'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_memory_header')));
+      await tester.pumpAndSettle();
       final evictBtnFinder = find.byKey(const Key('evict_models_btn'));
       await tester.scrollUntilVisible(evictBtnFinder, 300);
       await tester.pumpAndSettle();
       expect(evictBtnFinder, findsOneWidget);
+      expect(find.text('Free model memory now'), findsOneWidget);
       expect(find.text('1.58 GB'), findsOneWidget);
+
+      // The licences link sits at the very end.
+      await tester.scrollUntilVisible(find.byKey(const Key('settings_licences_link')), 300);
+      expect(find.text('Open-source licences'), findsOneWidget);
 
       // Tap back button from Settings
       await tester.scrollUntilVisible(find.byKey(const Key('settings_back_button')), -300);
