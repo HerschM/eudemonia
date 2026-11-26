@@ -1,187 +1,235 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
-import 'package:eudemonia/features/ai_processing/batch_pipeline_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
-import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/capture/capture_controller.dart';
+import 'package:eudemonia/features/capture/capture_inbox_ingestor.dart';
+import 'package:eudemonia/features/capture/native_capture_channel.dart';
 
-class RecordingModelLifecycleManager extends ModelLifecycleManager {
-  int warmupCalls = 0;
-
-  RecordingModelLifecycleManager() : super(STTService());
-
-  @override
-  void warmupOnRecordingStart() => warmupCalls++;
-}
-
-class FakeBatchPipelineService implements BatchPipelineService {
-  bool startSucceeds = true;
-  bool isCapturing = false;
-  int startCalls = 0;
-  int stopCalls = 0;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-
-  @override
-  Future<bool> startRecording() async {
-    startCalls++;
-    if (isCapturing) throw StateError('startRecording called while already capturing');
-    isCapturing = startSucceeds;
-    return startSucceeds;
-  }
-
-  @override
-  Future<AudioQueueItem?> stopRecordingAndProcess() async {
-    stopCalls++;
-    if (!isCapturing) throw StateError('stopRecordingAndProcess called without an active capture');
-    isCapturing = false;
-    return AudioQueueItem(
-      id: 'captured-$stopCalls',
-      audioFilePath: '/captures/$stopCalls.wav',
-      recordedAt: DateTime.now(),
-      sequenceNumber: stopCalls,
-    );
-  }
-}
+import 'capture_test_doubles.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
-  const channel = MethodChannel('com.eudemonia/hardware_buttons');
-  late FakeBatchPipelineService pipeline;
+  late FakeNativeCaptureChannel channel;
+  late FakeCaptureInboxIngestor ingestor;
   late RecordingModelLifecycleManager lifecycle;
   late ProviderContainer container;
-  late List<bool> nativeRecordingStates;
 
-  Future<void> sendTrigger([Map<String, Object?> args = const {'isLocked': false}]) async {
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
-      channel.name,
-      const StandardMethodCodec().encodeMethodCall(MethodCall('onHardwareTrigger', args)),
-      (_) {},
-    );
+  const savedRecording = PendingCapture(path: '/inbox/rec.wav', startedAtMs: 1700000000000);
+
+  Future<CaptureController> boot() async {
+    final controller = container.read(captureControllerProvider.notifier);
+    container.read(captureControllerProvider);
+    await controller.startupSync;
+    return controller;
   }
 
-  /// Triggers closer than 500ms apart are debounced, so tests space them out.
-  Future<void> waitOutCooldown() =>
-      Future<void>.delayed(CaptureController.triggerCooldown + const Duration(milliseconds: 20));
-
   setUp(() {
-    pipeline = FakeBatchPipelineService();
+    channel = FakeNativeCaptureChannel();
+    ingestor = FakeCaptureInboxIngestor();
     lifecycle = RecordingModelLifecycleManager();
-    nativeRecordingStates = [];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method == 'setRecordingState') {
-        nativeRecordingStates.add((call.arguments as Map)['isRecording'] as bool);
-      }
-      return null;
-    });
     container = ProviderContainer(
       overrides: [
-        batchPipelineProvider.overrideWithValue(pipeline),
+        nativeCaptureChannelProvider.overrideWithValue(channel),
+        captureInboxIngestorProvider.overrideWithValue(ingestor),
         modelLifecycleManagerProvider.overrideWithValue(lifecycle),
       ],
     );
-    container.read(captureControllerProvider);
   });
 
-  tearDown(() {
-    container.dispose();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
+  tearDown(() => container.dispose());
+
+  group('state follows native events from any source', () {
+    test('a recording started from the notification or widget turns the state on with its start time',
+        () async {
+      await boot();
+
+      channel.emitState(const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000));
+
+      expect(container.read(captureControllerProvider), isTrue);
+      expect(container.read(captureControllerProvider.notifier).startedAt,
+          DateTime.fromMillisecondsSinceEpoch(1700000000000));
+    });
+
+    test('a stop from native turns it off and forgets the start time', () async {
+      final controller = await boot();
+      channel.emitState(const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000));
+
+      channel.emitState(NativeCaptureState.idle);
+
+      expect(container.read(captureControllerProvider), isFalse);
+      expect(controller.startedAt, isNull);
+    });
+
+    test('a saved recording reported by native is ingested', () async {
+      await boot();
+
+      channel.emitSaved(savedRecording);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(ingestor.ingested, [('/inbox/rec.wav', 1700000000000)]);
+    });
   });
 
-  test('hardware trigger starts recording and a second trigger stops and enqueues', () async {
-    await sendTrigger();
-    expect(container.read(captureControllerProvider), isTrue);
-    expect(pipeline.startCalls, 1);
+  group('model warm-up', () {
+    test('starting warms the speech model once even when the reply and the event both report it',
+        () async {
+      final controller = await boot();
 
-    await waitOutCooldown();
-    await sendTrigger();
-    expect(container.read(captureControllerProvider), isFalse);
-    expect(pipeline.stopCalls, 1);
+      await controller.handleTrigger();
+      channel.emitState(channel.state);
+
+      expect(lifecycle.warmupCalls, 1);
+    });
+
+    test('a start from another source warms the model; stopping does not warm again', () async {
+      await boot();
+
+      channel.emitState(const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000));
+      expect(lifecycle.warmupCalls, 1);
+
+      channel.emitState(NativeCaptureState.idle);
+      expect(lifecycle.warmupCalls, 1);
+
+      channel.emitState(const NativeCaptureState(isRecording: true, startedAtMs: 1700000009000));
+      expect(lifecycle.warmupCalls, 2, reason: 'each recording gets its own warm-up');
+    });
+
+    test('a recording that could not start does not load the speech model', () async {
+      channel.startSucceeds = false;
+      final controller = await boot();
+
+      await controller.handleTrigger();
+
+      expect(lifecycle.warmupCalls, 0);
+    });
   });
 
-  test('handleTrigger returns the queued capture only when it finishes a recording', () async {
-    final controller = container.read(captureControllerProvider.notifier);
+  group('handleTrigger (in-app capsule)', () {
+    test('start flips the state before native answers', () async {
+      final controller = await boot();
+      channel.startGate = Completer<void>();
 
-    expect(await controller.handleTrigger(), isNull);
-    await waitOutCooldown();
-    final captured = await controller.handleTrigger();
+      final pending = controller.handleTrigger();
+      await Future<void>.delayed(Duration.zero);
 
-    expect(captured?.sequenceNumber, 1);
+      expect(container.read(captureControllerProvider), isTrue);
+      expect(controller.startedAt, isNotNull);
+
+      channel.startGate!.complete();
+      await pending;
+      expect(container.read(captureControllerProvider), isTrue);
+    });
+
+    test('start failure reverts the state and the next trigger tries a fresh start', () async {
+      channel.startSucceeds = false;
+      final controller = await boot();
+
+      expect(await controller.handleTrigger(), isNull);
+      expect(container.read(captureControllerProvider), isFalse);
+      expect(controller.startedAt, isNull);
+
+      channel.startSucceeds = true;
+      await controller.handleTrigger();
+      expect(container.read(captureControllerProvider), isTrue);
+      expect(channel.stopCalls, 0);
+    });
+
+    test('stop returns the queue item of the recording native saved', () async {
+      channel.saveOnStop = savedRecording;
+      final controller = await boot();
+      await controller.handleTrigger();
+
+      final item = await controller.handleTrigger();
+
+      expect(container.read(captureControllerProvider), isFalse);
+      expect(channel.stopCalls, 1);
+      expect(item?.audioFilePath, '/inbox/rec.wav');
+      expect(item?.sequenceNumber, 1);
+      expect(ingestor.ingested, [('/inbox/rec.wav', 1700000000000)]);
+    });
+
+    testWidgets('stop gives up after 5 seconds without a saved recording and returns null', (tester) async {
+      final controller = await boot();
+      await controller.handleTrigger();
+
+      AudioResult? result;
+      unawaited(controller.handleTrigger().then((item) => result = AudioResult(item)));
+      await tester.pump(const Duration(seconds: 4));
+      expect(result, isNull, reason: 'still waiting inside the window');
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(result, isNotNull);
+      expect(result!.item, isNull);
+      expect(container.read(captureControllerProvider), isFalse);
+    });
+
+    test('a request that already matches the state is a no-op', () async {
+      final controller = await boot();
+
+      await controller.handleTrigger(desiredRecording: false);
+      expect(channel.startCalls, 0);
+      expect(channel.stopCalls, 0);
+
+      await controller.handleTrigger(desiredRecording: true);
+      await controller.handleTrigger(desiredRecording: true);
+      expect(channel.startCalls, 1);
+      expect(container.read(captureControllerProvider), isTrue);
+    });
+
+    test('a trigger while another is in flight is dropped', () async {
+      final controller = await boot();
+      channel.startGate = Completer<void>();
+
+      final first = controller.handleTrigger();
+      await Future<void>.delayed(Duration.zero);
+      final second = await controller.handleTrigger();
+
+      expect(second, isNull);
+      expect(channel.startCalls, 1);
+      expect(channel.stopCalls, 0);
+      channel.startGate!.complete();
+      await first;
+    });
+
+    test('the controller never talks to native before registering its listeners', () async {
+      // The fake throws if used before setListeners; reading the provider must register first.
+      await boot();
+      expect(channel.hasListeners, isTrue);
+    });
   });
 
-  test('starting a recording warms the speech model once; stopping does not', () async {
-    await sendTrigger();
-    expect(lifecycle.warmupCalls, 1);
+  group('startup', () {
+    test('syncs a recording already in progress and ingests what is waiting in the inbox', () async {
+      channel.state = const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000);
+      channel.pending = [savedRecording];
 
-    await waitOutCooldown();
-    await sendTrigger();
-    expect(container.read(captureControllerProvider), isFalse);
-    expect(lifecycle.warmupCalls, 1);
+      final controller = await boot();
+
+      expect(container.read(captureControllerProvider), isTrue);
+      expect(controller.startedAt, DateTime.fromMillisecondsSinceEpoch(1700000000000));
+      expect(lifecycle.warmupCalls, 1);
+      expect(ingestor.ingestPendingCalls, 1);
+    });
+
+    test('an idle native recorder leaves the state off', () async {
+      await boot();
+
+      expect(container.read(captureControllerProvider), isFalse);
+      expect(ingestor.ingestPendingCalls, 1);
+    });
+
+    test('disposing the container detaches the native listeners', () async {
+      await boot();
+      container.dispose();
+
+      expect(channel.hasListeners, isFalse);
+      container = ProviderContainer();
+    });
   });
+}
 
-  test('a recording that could not start does not load the speech model', () async {
-    pipeline.startSucceeds = false;
-    await sendTrigger();
-    expect(lifecycle.warmupCalls, 0);
-  });
-
-  test('recording state reverts when the microphone could not start', () async {
-    pipeline.startSucceeds = false;
-
-    await sendTrigger();
-
-    expect(container.read(captureControllerProvider), isFalse);
-
-    // The next trigger must attempt a fresh start, not "stop" a recording that never existed.
-    pipeline.startSucceeds = true;
-    await waitOutCooldown();
-    await sendTrigger();
-    expect(container.read(captureControllerProvider), isTrue);
-    expect(pipeline.stopCalls, 0);
-  });
-
-  test('native side is told the authoritative recording state after every trigger', () async {
-    await sendTrigger();
-    await waitOutCooldown();
-    await sendTrigger();
-
-    expect(nativeRecordingStates, [true, false]);
-  });
-
-  test('a failed start reports "not recording" to native so haptics and notification stay in sync', () async {
-    pipeline.startSucceeds = false;
-    await sendTrigger();
-    expect(nativeRecordingStates, [false]);
-  });
-
-  test('explicit stop action while idle is a no-op that never starts a recording', () async {
-    await sendTrigger({'isLocked': true, 'desiredRecording': false});
-
-    expect(container.read(captureControllerProvider), isFalse);
-    expect(pipeline.startCalls, 0);
-    expect(nativeRecordingStates, [false]);
-  });
-
-  test('explicit start action while already recording does not stop the capture', () async {
-    await sendTrigger({'isLocked': true, 'desiredRecording': true});
-    await sendTrigger({'isLocked': true, 'desiredRecording': true});
-
-    expect(container.read(captureControllerProvider), isTrue);
-    expect(pipeline.startCalls, 1);
-    expect(pipeline.stopCalls, 0);
-  });
-
-  test('a bounce within the 500ms cooldown is dropped', () async {
-    await sendTrigger();
-    await sendTrigger();
-
-    expect(container.read(captureControllerProvider), isTrue);
-    expect(pipeline.stopCalls, 0);
-  });
+/// Distinguishes "future not completed yet" from "completed with null".
+class AudioResult {
+  final Object? item;
+  AudioResult(this.item);
 }

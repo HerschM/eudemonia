@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 
@@ -10,6 +11,7 @@ import 'package:eudemonia/features/theme/app_colors.dart';
 Future<void> startManualSynthesis(BuildContext context) async {
   final container = ProviderScope.containerOf(context, listen: false);
   final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
   if (container.read(synthesisRunningProvider)) {
     _show(messenger, 'Synthesis is already running.');
     return;
@@ -26,6 +28,16 @@ Future<void> startManualSynthesis(BuildContext context) async {
   final early = await outcome.future;
   sub.close();
 
+  if (early == SynthesisRunResult.noModel) {
+    _show(
+      messenger,
+      'Choose a writing model first',
+      actionLabel: 'Choose',
+      onAction: () => openModelSetup(navigator),
+    );
+    return;
+  }
+
   _show(
     messenger,
     switch (early) {
@@ -34,16 +46,20 @@ Future<void> startManualSynthesis(BuildContext context) async {
       SynthesisRunResult.nothingToDo => 'Nothing to synthesize.',
       SynthesisRunResult.failed => 'Synthesis could not start.',
       SynthesisRunResult.completed || SynthesisRunResult.preempted => 'Synthesis finished.',
+      SynthesisRunResult.noModel => 'Choose a writing model first',
     },
   );
 }
 
-void _show(ScaffoldMessengerState messenger, String message) {
+void _show(ScaffoldMessengerState messenger, String message, {String? actionLabel, VoidCallback? onAction}) {
   messenger.showSnackBar(
     SnackBar(
       backgroundColor: AppColors.surfaceElevated,
       content: Text(message, style: const TextStyle(color: AppColors.textPrimary)),
-      duration: const Duration(seconds: 2),
+      duration: Duration(seconds: actionLabel == null ? 2 : 4),
+      action: actionLabel == null || onAction == null
+          ? null
+          : SnackBarAction(label: actionLabel, textColor: AppColors.accentAction, onPressed: onAction),
     ),
   );
 }

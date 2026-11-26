@@ -9,6 +9,7 @@ import 'package:eudemonia/features/ai_processing/llm_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/model_residency_arbiter.dart';
 import 'package:eudemonia/features/capture/capture_controller.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
@@ -17,7 +18,8 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_engine.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart';
 
-enum SynthesisRunResult { completed, nothingToDo, busy, preempted, failed }
+/// [noModel]: no language model is downloaded and chosen, so nothing was started.
+enum SynthesisRunResult { completed, nothingToDo, busy, preempted, failed, noModel }
 
 /// Automatic runs give up on a thought after this many runs failed to file or write it.
 const int maxAutomaticSynthesisAttempts = 3;
@@ -50,12 +52,11 @@ class SynthesisRunner {
   final ModelResidencyArbiter _arbiter;
   final bool Function() _isCaptureActive;
   final Future<String?> Function() _modelsDir;
-  final SynthesisModelProfile profile;
+  final SynthesisModelProfile? Function() _profile;
   final List<FolderDefinition> folders;
   final AppLogger? _logger;
   final CpuWakeLock? _wakeLock;
   final void Function(bool running)? _onRunningChanged;
-  final void Function()? _onNotesChanged;
   final int maxAutomaticAttempts;
 
   bool _running = false;
@@ -71,12 +72,11 @@ class SynthesisRunner {
     required this._arbiter,
     required this._isCaptureActive,
     required this._modelsDir,
-    this.profile = SynthesisModelProfile.current,
+    required this._profile,
     this.folders = defaultFolders,
     this._logger,
     this._wakeLock,
     this._onRunningChanged,
-    this._onNotesChanged,
     this.maxAutomaticAttempts = maxAutomaticSynthesisAttempts,
   });
 
@@ -97,6 +97,10 @@ class SynthesisRunner {
   }
 
   Future<SynthesisRunResult> _run(bool manual) async {
+    // Resolved once: a model chosen or deleted mid-run does not change the run in progress.
+    final profile = _profile();
+    // Checked before anything is evicted, loaded or counted as an attempt (FR16.5).
+    if (profile == null) return SynthesisRunResult.noModel;
     await _sessions.hydrated;
     final candidates = (await _notes.getAllNotes())
         .where((n) => isSynthesisCandidate(n, manual: manual, maxAttempts: maxAutomaticAttempts))
@@ -120,7 +124,7 @@ class SynthesisRunner {
     try {
       await _wakeLock?.hold(wakeLockWindow);
       await _countAttempts(candidates);
-      await _work(candidates, failedIds);
+      await _work(candidates, failedIds, profile);
     } catch (e, stack) {
       if (_preempted || e is LlmCancelledException) {
         _logger?.info('[Synthesis] Run preempted by capture; uncommitted work is redone next run.');
@@ -141,7 +145,6 @@ class SynthesisRunner {
         }
       }
       await _wakeLock?.release();
-      _onNotesChanged?.call();
       _onRunningChanged?.call(false);
     }
     _logger?.info('[Synthesis] Run ended: ${result.name} after ${watch.elapsed.inSeconds}s; '
@@ -153,7 +156,7 @@ class SynthesisRunner {
     if (_preempted) throw const LlmCancelledException();
   }
 
-  Future<void> _work(List<Note> candidates, Set<int> failedIds) async {
+  Future<void> _work(List<Note> candidates, Set<int> failedIds, SynthesisModelProfile profile) async {
     final dir = await _modelsDir();
     if (dir == null) throw Exception('Could not resolve models directory path.');
     await _wakeLock?.hold(wakeLockWindow);
@@ -303,15 +306,12 @@ final synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
     llm: ref.watch(llmServiceProvider),
     lifecycle: ref.watch(modelLifecycleManagerProvider),
     arbiter: ref.watch(modelResidencyArbiterProvider),
+    profile: () => ref.read(activeSynthesisProfileProvider),
     isCaptureActive: () => ref.read(captureControllerProvider) || ref.read(pendingQueueCountProvider) > 0,
     // Same directory the speech model is loaded from.
     modelsDir: () async => (await getExternalStorageDirectory())?.path,
     logger: ref.watch(appLoggerProvider),
     wakeLock: ref.watch(synthesisWakeLockProvider),
     onRunningChanged: (running) => ref.read(synthesisRunningProvider.notifier).setRunning(running),
-    onNotesChanged: () {
-      ref.invalidate(recentNotesProvider);
-      ref.invalidate(rawNotesReadyToClusterCountProvider);
-    },
   );
 });

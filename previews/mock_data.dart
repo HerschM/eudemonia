@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:eudemonia/features/models/domain/model_availability.dart';
+import 'package:eudemonia/features/models/domain/model_catalogue.dart';
 
 /// Helper to format date then time: "DD/MM  HH:MM AM/PM"
 String formatDateTimeCustom(DateTime dt) {
@@ -286,8 +288,6 @@ class MockPipelineStatus {
 
 /// Settings and batching configuration
 class MockSettingsConfig {
-  final bool isAccessibilityGranted;
-  final bool isBatteryExemptGranted;
   final bool isForegroundKeepAlive;
   final int synthesisNoteThreshold; // X captures (default 3)
   final int synthesisInactivityMinutes; // Y minutes quiet (default 15)
@@ -301,8 +301,6 @@ class MockSettingsConfig {
   final int evictionCountdownSeconds;
 
   const MockSettingsConfig({
-    this.isAccessibilityGranted = true,
-    this.isBatteryExemptGranted = true,
     this.isForegroundKeepAlive = true,
     this.synthesisNoteThreshold = 3,
     this.synthesisInactivityMinutes = 15,
@@ -313,12 +311,10 @@ class MockSettingsConfig {
     this.keepRawWav = true,
     this.thermalHeadroomPercent = 84,
     this.ramFootprint = '1.58 GB',
-    this.evictionCountdownSeconds = 164,
+    this.evictionCountdownSeconds = 104,
   });
 
   MockSettingsConfig copyWith({
-    bool? isAccessibilityGranted,
-    bool? isBatteryExemptGranted,
     bool? isForegroundKeepAlive,
     int? synthesisNoteThreshold,
     int? synthesisInactivityMinutes,
@@ -329,10 +325,6 @@ class MockSettingsConfig {
     bool? keepRawWav,
   }) {
     return MockSettingsConfig(
-      isAccessibilityGranted:
-          isAccessibilityGranted ?? this.isAccessibilityGranted,
-      isBatteryExemptGranted:
-          isBatteryExemptGranted ?? this.isBatteryExemptGranted,
       isForegroundKeepAlive:
           isForegroundKeepAlive ?? this.isForegroundKeepAlive,
       synthesisNoteThreshold:
@@ -390,6 +382,21 @@ class MockFolderManifesto {
 }
 
 /// Central MockData container with typed fixture datasets
+/// One state of the On-device models screen: the phone's memory and where each download stands.
+class MockModelScenario {
+  final String label;
+  final int totalRamMb;
+  final Map<String, ModelAvailability> availability;
+  final String? selectedLanguageModelId;
+
+  const MockModelScenario({
+    required this.label,
+    required this.totalRamMb,
+    this.availability = const {},
+    this.selectedLanguageModelId,
+  });
+}
+
 class MockData {
   static List<MockCaptureNote> get captureNotes => [
         MockCaptureNote(
@@ -419,7 +426,7 @@ class MockData {
           audioFilePath: '/audio/note_4.wav',
           audioDuration: const Duration(seconds: 8),
           cleanedText:
-              'Need to verify whether the accessibility key debouncer works properly when device is locked.',
+              'Need to verify whether the capture widget starts a recording properly when the device is locked.',
           isUnread: true,
           status: MockNoteStatus.processed,
         ),
@@ -444,7 +451,7 @@ class MockData {
           cleanedText: 'Audio recording failed: background noise only.',
           isUnread: false,
           status: MockNoteStatus.failed,
-          failureMessage: 'No speech detected in audio recording',
+          failureMessage: 'Speech recognition stopped unexpectedly',
         ),
         MockCaptureNote(
           id: 'note_1',
@@ -580,7 +587,7 @@ class MockData {
   static List<MockActionItem> get actionItems => [
         const MockActionItem(
           id: 'act_1',
-          description: 'Verify accessibility debouncer on locked phone',
+          description: 'Verify capture widget on locked phone',
           temporalAnchor: '05/11  02:00 PM',
           urgency: 'High',
           originSessionId: 'cluster_2',
@@ -610,7 +617,7 @@ class MockData {
   static List<MockCalendarTimeBlock> get calendarTimeBlocks => const [
         MockCalendarTimeBlock(
           id: 'block_1',
-          title: 'App Ideas: Accessibility Test',
+          title: 'App Ideas: Lock Screen Test',
           timeRange: '14:00 - 15:00',
           date: '05/11',
         ),
@@ -647,6 +654,44 @@ class MockData {
           ),
         ],
       );
+
+  /// The five states the model setup screen must handle (FR16).
+  static List<MockModelScenario> get modelScenarios {
+    final speech = ModelCatalogue.speech;
+    final big = ModelCatalogue.qwen3_4b;
+    ModelAvailability ready(ModelSpec m) =>
+        ModelAvailability(ModelAvailabilityKind.ready, downloadedBytes: m.totalBytes, totalBytes: m.totalBytes);
+    return [
+      const MockModelScenario(label: 'Nothing downloaded', totalRamMb: 7600),
+      MockModelScenario(
+        label: 'Speech downloading',
+        totalRamMb: 7600,
+        availability: {
+          speech.id: ModelAvailability(
+            ModelAvailabilityKind.downloading,
+            downloadedBytes: 312000000,
+            totalBytes: speech.totalBytes,
+          ),
+        },
+      ),
+      MockModelScenario(
+        label: '4B ready and in use',
+        totalRamMb: 7600,
+        availability: {speech.id: ready(speech), big.id: ready(big)},
+        selectedLanguageModelId: big.id,
+      ),
+      MockModelScenario(
+        label: 'Phone too small for 4B',
+        totalRamMb: 5600,
+        availability: {speech.id: ready(speech)},
+      ),
+      MockModelScenario(
+        label: 'No model fits',
+        totalRamMb: 3600,
+        availability: {speech.id: ready(speech)},
+      ),
+    ];
+  }
 
   static List<MockFolderManifesto> get folderManifestos => [
         const MockFolderManifesto(
@@ -699,7 +744,7 @@ class MockData {
           id: 'eudemonia',
           name: 'Eudemonia',
           description:
-              'Voice-first on-device capture app. Android native accessibility service, Qwen 2.5 LLM, Sherpa-ONNX STT.',
+              'Voice-first on-device capture app. Everything is processed on the phone.',
           icon: Icons.mic_none,
           noteCount: 6,
           autoGeneratedKeywords: [

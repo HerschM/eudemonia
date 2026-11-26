@@ -6,7 +6,7 @@ void main() {
     test('default configuration has expected values', () {
       const config = LLMConfig();
       expect(config.kvCacheMaxSize, equals(4096));
-      expect(config.modelInactivityTtl, equals(const Duration(minutes: 3)));
+      expect(config.modelInactivityTtl, equals(const Duration(minutes: 2)));
       expect(config.promptChunkTokens, equals(64));
       expect(config.reusePromptPrefix, isTrue);
     });
@@ -38,7 +38,7 @@ void main() {
       const config = LLMConfig();
       final str = config.toString();
       expect(str, contains('kvCacheMaxSize: 4096'));
-      expect(str, contains('modelInactivityTtl: 3m'));
+      expect(str, contains('modelInactivityTtl: 2m'));
     });
 
     test('copyWith updates promptChunkTokens and reusePromptPrefix, preserving others', () {

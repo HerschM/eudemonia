@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/capture/capture_controller.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_texts.dart';
 import 'package:eudemonia/features/notes/audio_playback_controller.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
@@ -10,6 +13,7 @@ import 'package:eudemonia/features/notes/presentation/thought_card.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 import 'floating_capture_capsule.dart';
 
 enum CaptureTriageFilter { all, unread, read }
@@ -97,7 +101,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
       CaptureStatusFilter.processing => n.state == ThoughtState.enqueued,
       CaptureStatusFilter.processed => n.state == ThoughtState.processed,
       CaptureStatusFilter.synthesized => n.state == ThoughtState.synthesized,
-      CaptureStatusFilter.failed => n.state == ThoughtState.failed,
+      CaptureStatusFilter.failed => n.state == ThoughtState.failed && !isSilentRecordingMessage(n.failureReason),
     };
     return matchesTriage && matchesStatus;
   }
@@ -121,6 +125,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
   @override
   Widget build(BuildContext context) {
     final isRecording = ref.watch(captureControllerProvider);
+    final startedAt = ref.read(captureControllerProvider.notifier).startedAt;
     final notesAsync = ref.watch(recentNotesProvider);
     final queueItems = ref.watch(queueItemsProvider);
 
@@ -132,7 +137,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
             notesAsync.when(
               skipLoadingOnReload: true,
               data: (persistedNotes) => _buildFeed(_unifiedThoughts(persistedNotes, queueItems)),
-              loading: () => const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: PulseDotsLoader()),
               error: (err, stack) => Center(
                 child: Text('Error: $err', style: const TextStyle(color: AppColors.textSecondary)),
               ),
@@ -144,6 +149,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
               child: Center(
                 child: FloatingCaptureCapsule(
                   isRecording: isRecording,
+                  startedAt: startedAt,
                   onTap: _onCapsuleTapped,
                 ),
               ),
@@ -189,6 +195,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildPermissionBanner(),
+        _buildSpeechModelBanner(),
         Wrap(
           spacing: 10,
           runSpacing: 8,
@@ -294,14 +301,29 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
     );
   }
 
-  /// Ambient warning shown until both background capture permissions are granted.
+  /// Ambient warning shown while capture is not ready: the microphone first, then the
+  /// notification permission that carries the lock-screen Record button.
   Widget _buildPermissionBanner() {
     final permAsync = ref.watch(backgroundPermissionStatusProvider);
     final permService = ref.watch(backgroundPermissionServiceProvider);
     return permAsync.maybeWhen(
       data: (status) {
-        if (status.areAllGranted) return const SizedBox.shrink();
+        final String message;
+        final String action;
+        final Future<void> Function() onAction;
+        if (!status.isMicrophoneGranted) {
+          message = 'Microphone access is needed to capture thoughts.';
+          action = 'Allow';
+          onAction = permService.requestMicrophone;
+        } else if (!status.areNotificationsEnabled) {
+          message = 'Notifications are off, so the Record button on your lock screen is hidden.';
+          action = 'Turn on';
+          onAction = permService.requestNotifications;
+        } else {
+          return const SizedBox.shrink();
+        }
         return Container(
+          key: const Key('capture_readiness_banner'),
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -315,7 +337,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Background capture permissions needed (Accessibility & Battery exemption).',
+                  message,
                   style: TextStyle(
                     color: Colors.amber.shade900,
                     fontWeight: FontWeight.w600,
@@ -328,19 +350,71 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   backgroundColor: Colors.amber.shade300,
                 ),
-                child: const Text('Enable', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                onPressed: () => permService.showSimultaneousPermissionModal(
-                  context,
-                  onPermissionsUpdated: () {
-                    ref.invalidate(backgroundPermissionStatusProvider);
-                  },
-                ),
+                child: Text(action, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                onPressed: () async {
+                  await onAction();
+                  ref.invalidate(backgroundPermissionStatusProvider);
+                },
               ),
             ],
           ),
         );
       },
       orElse: () => const SizedBox.shrink(),
+    );
+  }
+
+  /// Shown while the speech model is missing: recordings are kept and transcribed once it is
+  /// downloaded (FR16.2), and the banner is the way to start that download.
+  Widget _buildSpeechModelBanner() {
+    final availability = ref.watch(speechModelAvailabilityProvider);
+    if (availability.isReady) return const SizedBox.shrink();
+    final downloading = availability.kind == ModelAvailabilityKind.downloading;
+    final message = switch (availability.kind) {
+      ModelAvailabilityKind.downloading =>
+        'Downloading speech model… ${(availability.fraction * 100).floor()}%',
+      ModelAvailabilityKind.paused => describeModelReason(availability.reason, failed: false),
+      ModelAvailabilityKind.verifying => 'Checking speech model…',
+      _ => 'Speech model needed to turn recordings into text.',
+    };
+    return Container(
+      key: const Key('capture_speech_model_banner'),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.accentAI.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accentAI.withValues(alpha: 0.3)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => openModelSetup(Navigator.of(context)),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                const Icon(Icons.download_for_offline_outlined, color: AppColors.accentAI),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontSize: 12),
+                  ),
+                ),
+                if (!downloading) ...[
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Set up',
+                    key: Key('capture_speech_model_setup'),
+                    style: TextStyle(color: AppColors.accentAction, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -364,7 +438,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
       padding: const EdgeInsets.all(32),
       child: Text(
         hasNoThoughtsAtAll
-            ? 'No thoughts yet.\nPress both volume buttons to capture.'
+            ? 'No thoughts yet.\nTap the mic below, the Record button in your notifications, or the home-screen widget.'
             : 'No thoughts matching active filters',
         textAlign: TextAlign.center,
         style: const TextStyle(color: AppColors.textTertiary, fontSize: 13),
@@ -400,13 +474,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
       onEdit: (newText) async {
         if (!isPersisted) return;
         await ref.read(notesRepositoryProvider).updateNoteText(note.id, newText);
-        ref.invalidate(recentNotesProvider);
       },
       onDelete: () async {
         if (isPersisted) {
           await ref.read(notesRepositoryProvider).deleteNote(note.id);
-          ref.invalidate(recentNotesProvider);
-        } else if (hasAudio) {
+          } else if (hasAudio) {
           await ref.read(audioQueueServiceProvider).removeItemByAudioPath(audioPath);
         }
       },
@@ -414,7 +486,6 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen> with WidgetsBindi
       onTap: () async {
         if (note.isRead || !isPersisted) return;
         await ref.read(notesRepositoryProvider).markAsRead(note.id);
-        ref.invalidate(recentNotesProvider);
       },
     );
   }

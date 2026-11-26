@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/presentation/thought_card.dart';
 
@@ -77,7 +78,7 @@ void main() {
       );
 
       expect(find.text('Transcribing & organizing speech...'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(VoiceWaveIndicator), findsOneWidget);
     });
   });
 }

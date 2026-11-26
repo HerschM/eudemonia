@@ -9,111 +9,65 @@ import org.junit.Test
 class ForegroundServiceCoordinatorTest {
 
     private lateinit var coordinator: ForegroundServiceCoordinator
-    private var triggerCount = 0
-    private var lastLockedState = false
-    private var startNotificationCalled = false
-    private var stopNotificationCalled = false
-    private var startCaptureCalled = false
-    private var stopCaptureCalled = false
-    private var lastRecordedStateUpdate: Boolean? = null
+    private var startCount = 0
+    private var stopCount = 0
 
     @Before
     fun setUp() {
-        triggerCount = 0
-        lastLockedState = false
-        startNotificationCalled = false
-        stopNotificationCalled = false
-        startCaptureCalled = false
-        stopCaptureCalled = false
-        lastRecordedStateUpdate = null
-
+        startCount = 0
+        stopCount = 0
         coordinator = ForegroundServiceCoordinator(
-            onStartForeground = { startNotificationCalled = true },
-            onStopForeground = { stopNotificationCalled = true },
-            onTriggerDelivered = { isLocked ->
-                triggerCount++
-                lastLockedState = isLocked
-            },
-            onStartCaptureTriggered = { startCaptureCalled = true },
-            onStopCaptureTriggered = { stopCaptureCalled = true },
-            onRecordingStateUpdated = { isRecording -> lastRecordedStateUpdate = isRecording }
+            onStartForeground = { startCount++ },
+            onStopForeground = { stopCount++ }
         )
+    }
+
+    @Test
+    fun testActionConstants() {
+        assertEquals("com.eudemonia.eudemonia.START_FOREGROUND", ForegroundServiceCoordinator.ACTION_START)
+        assertEquals("com.eudemonia.eudemonia.STOP_FOREGROUND", ForegroundServiceCoordinator.ACTION_STOP)
+        assertEquals("com.eudemonia.eudemonia.ACTION_START_CAPTURE", ForegroundServiceCoordinator.ACTION_START_CAPTURE)
+        assertEquals("com.eudemonia.eudemonia.ACTION_STOP_CAPTURE", ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
     }
 
     @Test
     fun testInitialStateIsNotRunning() {
         assertFalse(coordinator.isRunning)
-        assertEquals(0, triggerCount)
     }
 
     @Test
     fun testStartServiceTransitionsStateToRunning() {
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
         assertTrue(coordinator.isRunning)
-        assertTrue(startNotificationCalled)
-        assertFalse(stopNotificationCalled)
+        assertEquals(1, startCount)
+        assertEquals(0, stopCount)
     }
 
     @Test
     fun testStopServiceTransitionsStateToStopped() {
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        assertTrue(coordinator.isRunning)
-
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP)
         assertFalse(coordinator.isRunning)
-        assertTrue(stopNotificationCalled)
+        assertEquals(1, stopCount)
     }
 
     @Test
-    fun testHardwareTriggerDeliveredSuccessfully() {
+    fun testRedundantStartAndStopCallsAreIdempotent() {
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        coordinator.onHardwareTriggerReceived(isLocked = true)
-
-        assertEquals(1, triggerCount)
-        assertTrue(lastLockedState)
-
-        coordinator.onHardwareTriggerReceived(isLocked = false)
-        assertEquals(2, triggerCount)
-        assertFalse(lastLockedState)
-    }
-
-    @Test
-    fun testRedundantStartCallsAreIdempotent() {
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
         assertTrue(coordinator.isRunning)
+        assertEquals(1, startCount)
 
-        // Second start call
-        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        assertTrue(coordinator.isRunning)
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP)
+        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP)
+        assertEquals(1, stopCount)
     }
 
     @Test
-    fun testStartCaptureCommandTransitionsRecordingStateAndTriggersCallback() {
-        assertFalse(coordinator.isRecording)
+    fun testCaptureActionsDoNotChangeRunningState() {
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
-        assertTrue(coordinator.isRecording)
-        assertTrue(startCaptureCalled)
-        assertFalse(stopCaptureCalled)
-    }
-
-    @Test
-    fun testStopCaptureCommandTransitionsRecordingStateAndTriggersCallback() {
-        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
-        assertTrue(coordinator.isRecording)
-
         coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
-        assertFalse(coordinator.isRecording)
-        assertTrue(stopCaptureCalled)
-    }
-
-    @Test
-    fun testUpdateRecordingStateCommandSyncsRecordingState() {
-        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE, true)
-        assertTrue(coordinator.isRecording)
-        assertEquals(true, lastRecordedStateUpdate)
-
-        coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE, false)
-        assertFalse(coordinator.isRecording)
-        assertEquals(false, lastRecordedStateUpdate)
+        assertFalse(coordinator.isRunning)
+        assertEquals(0, startCount)
     }
 }

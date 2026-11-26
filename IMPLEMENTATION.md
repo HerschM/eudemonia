@@ -12,24 +12,25 @@
 
 ## 1. Production Subsystem Architecture & Runtime Mechanics (`lib/` & `android/`)
 
-### A. Hardware Trigger & Native Android Layer (Accessibility Service, Volume Safety & Debouncing)
+### A. Native Capture Core & Capture Triggers (Kotlin Recorder, Capture Inbox, Notification, Home-Screen Widget, In-App Button; Volume Trigger Parked)
 - **Location**: `android/app/src/main/kotlin/com/eudemonia/eudemonia/`
-- **Files**:
-  - `ButtonInterceptorService.kt`: Android `AccessibilityService` running in an isolated process (`:interceptor`).
-  - `VolumeButtonCoordinator.kt`: State machine managing key events, dual-press windows, and repeating volume steps.
-  - `TriggerDebouncer.kt`: Shared thread-safe 500ms cooldown debouncer.
-  - `RecordingStateTracker.kt`: Pure Kotlin recording-state mirror used by the interceptor process to pick the start vs stop haptic.
-  - `MainActivity.kt`: Flutter activity establishing the `com.eudemonia/hardware_buttons` `MethodChannel`.
+- **Status**: built 2026-11-26 for the first public release (TASK-063, TASK-037, TASK-076, TASK-077) and **verified on the Pixel 7a the same day**: lock screen, shade with another app in front, app task removed, plain notification after an update, home-screen widget, in-app capsule, ingestion of files that waited in the inbox (`TASKS.md` Milestone 15 logs). Not yet done: a real reboot, a recording during a Synthesis run.
+- **Files (one responsibility each)**:
+  - `CaptureCore.kt`: process singleton and single source of truth for "is a thought being recorded". Every trigger goes through it; the service, the widget and the Flutter bridge are its listeners. One worker thread runs every start, stop and inbox listing in order; callbacks arrive on the main thread.
+  - `CaptureSession.kt`: pure state machine. `start()` and `stop()` are explicit and idempotent (no toggle, no debounce): a second start or a stop while idle changes nothing and gives no haptic.
+  - `CaptureRecorder.kt`: `AudioRecord`, 16 kHz, mono, PCM16, source `DEFAULT` (parity with the removed `record` plugin), read on an urgent-audio thread into `WavFileWriter`.
+  - `WavFileWriter.kt`: writes the WAV header and data; `repairHeader()` fixes a file whose header was never finished.
+  - `CaptureInbox.kt`: `<Flutter documents dir>/capture_inbox/`. A recording is written as `<startedAtMs>.wav.part` and renamed to `<startedAtMs>.wav` on stop (one writer per file; native never touches a committed file again). On start-up a `.part` left by a killed process is repaired and committed if it holds more than 0.3 s of audio, otherwise deleted.
+  - `CaptureHaptics.kt`: start = one 45 ms pulse, stop = double pulse (`0, 30, 50, 30`), fired natively the moment a start or stop is confirmed, for every trigger source.
+  - `CaptureNotificationFactory.kt` / `CaptureNotificationContent.kt`: the persistent notification (see B.4).
+  - `CaptureWidgetProvider.kt`, `CaptureWidgetUpdater.kt`, `CaptureWidgetRenderState.kt`, `res/layout/capture_widget.xml`, `res/xml/capture_widget_info.xml`: the home-screen widget (FR10.4), a 2×1 pill in the colours of the in-app capsule. Idle: microphone + `Record` → `ACTION_START_CAPTURE`. Recording: stop icon + running `Chronometer` + `Stop` → `ACTION_STOP_CAPTURE` (short labels: longer ones were cut off at 2×1 on the Pixel 7a). Without the microphone permission a tap opens the app instead. Re-rendered on every state change.
+  - `MainActivity.kt`: Flutter bridge on the channel `com.eudemonia/capture` (see C.0). The older channel `com.eudemonia/hardware_buttons` now only carries the battery, foreground-service and audio-playback methods; its name is a leftover to rename when next touched.
 - **Mechanics**:
-  1. `ButtonInterceptorService` intercepts `KEYCODE_VOLUME_UP` and `KEYCODE_VOLUME_DOWN`.
-  2. If only one button is pressed or held, `VolumeButtonCoordinator` dispatches `audioManager.adjustSuggestedStreamVolume(..., FLAG_SHOW_UI)`, transparently preserving system volume changes with smooth repetition (`repeatIntervalMs = 110L`, `initialRepeatDelayMs = 300L`).
-  3. When both buttons are depressed within a 50ms window (`dualPressWindowMs = 50L`):
-     - An instant native haptic pulse is triggered directly via `Vibrator` / `VibratorManager`: single crisp pulse for start recording (`createOneShot(45)`), and distinct double-pulse completion buzz for stop recording (`createWaveform(longArrayOf(0, 30, 50, 30), -1)`).
-     - **Start/stop prediction with authoritative correction**: the haptic must fire before the app process reacts, so `RecordingStateTracker.onTriggerFired()` optimistically predicts the toggle. After every trigger Flutter reports the real outcome (`setRecordingState` → package-scoped `RECORDING_STATE_CHANGED` broadcast → `onAuthoritativeState()`), so a dropped trigger, a denied microphone, or a recording toggled from the notification can never leave the two patterns inverted.
-     - An explicit broadcast (`com.eudemonia.eudemonia.HARDWARE_TRIGGER`) is sent with the current device lock state (`isLocked`).
-  4. Both `MainActivity` and `EudemoniaForegroundService` listen for the trigger broadcast, pass it through `TriggerDebouncer.shared.tryTrigger()` (cooldown 500ms), and invoke the Flutter method `onHardwareTrigger`.
-  5. On the Dart side the trigger is received by `CaptureController` (`lib/features/capture/capture_controller.dart`, see Subsystem C), not by a widget.
-  6. The main manifest declares **no `INTERNET` permission** (it exists only in the `debug`/`profile` manifests for Flutter tooling), enforcing the 0-bytes-outbound privacy NFR at the OS level in release builds.
+  1. **Three triggers, one path**: the notification action and the widget send `ACTION_START_CAPTURE` / `ACTION_STOP_CAPTURE` to `EudemoniaForegroundService` through `PendingIntent.getForegroundService`; the in-app capsule calls `start` / `stop` on the channel. All end in `CaptureCore`.
+  2. **No Flutter needed to record**: a trigger becomes a WAV file in the inbox with no Dart involved. With no Flutter engine alive, files wait in the inbox and are ingested at the next app start (C.0). The service **never starts an activity**, and `MainActivity` no longer has `showWhenLocked` / `turnScreenOn`, so the app and the user's notes never appear over the lock screen (FR10.5, FR10.6).
+  3. **Every state change is announced** to all listeners (`onStateChanged`, and `onCaptureSaved` before the idle state), whoever triggered it. After a tap that changes nothing (for example Stop on a widget left showing a recording by a killed process) the service still redraws the notification and the widgets from the result.
+  4. The main manifest declares **no `INTERNET` permission** (it exists only in the `debug`/`profile` manifests for Flutter tooling), enforcing the 0-bytes-outbound privacy NFR at the OS level in release builds. (Model delivery for a Play install is undecided, TASK-081.)
+- **Parked, not compiled, not in the manifest (TASK-077)**: the dual-volume-button trigger and its Accessibility service (FR1) live in `android/app/src/parked/hardware_trigger/` (`ButtonInterceptorService`, `VolumeButtonCoordinator`, `RecordingStateTracker`, `TriggerDebouncer`, their tests, the service config, the manifest block as a snippet, and a README on reviving it: the interceptor should start the capture service with the two capture actions). Last working version: commit `63aaec4`. The built APK's manifest contains no Accessibility declaration (checked with `aapt2 dump xmltree`).
 
 ### B. Background Persistence & Permissions (Foreground Keep-Alive & Battery Exemption)
 - **Files**:
@@ -37,9 +38,10 @@
   - `lib/features/settings/background_permission_service.dart`
   - `lib/features/settings/settings_screen.dart`
 - **Mechanics**:
-  1. **Dual Permission Requirement**:
-     - *Accessibility Service*: Required for intercepting physical volume hardware keys outside the app and while locked.
-     - *Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`)*: Required to exempt the application from Android Doze mode and OS background hibernation.
+  1. **What Capture Needs from the System in R1**:
+     - *Microphone* (`RECORD_AUDIO`) and *notifications* (`POST_NOTIFICATIONS`, without which the lock-screen Record button is hidden). Both are requested by `MainActivity` when the service is first started and are surfaced by a banner on the Capture screen when missing (1.G).
+     - *Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`)*: still offered as a Settings row only; whether R1 keeps it is an open decision (TASK-081 b).
+     - The Accessibility Service is not requested (parked, see A).
   2. **Foreground Service Keep-Alive**:
      - `EudemoniaForegroundService` runs with `foregroundServiceType="microphone"` and displays a persistent low-priority ongoing notification (`eudemonia_background_channel`).
      - Elevates the app process priority to `FOREGROUND_SERVICE`, preventing the Android Low Memory Killer (LMK) from terminating the background listener.
@@ -47,15 +49,16 @@
      - `EudemoniaForegroundService.isRunning` becomes `true` only after `startForeground()` succeeds; on failure the service stops itself instead of lingering without foreground priority.
      - The service keeps the process alive and in the `/foreground` cpuset; it does **not** keep the CPU awake. Processing that must finish with the screen off holds a bounded wake lock (1.E.4).
   3. **UI Coordination**:
-     - `BackgroundPermissionService` queries both permissions simultaneously via `MethodChannel`.
-     - `showSimultaneousPermissionModal()` provides an educational bottom sheet guiding the user to grant both requirements in one flow.
-     - Standardized status badges: **Enabled** (Green) and **Disabled** (Amber).
-  4. **Permanent Lock Screen Notification Banner & Capture Controller (FR10)**:
-     - `EudemoniaForegroundService` maintains dynamic interactive notification action buttons:
-       - Idle: Displays `[ 🎙️ Record Thought ]` (`ACTION_START_CAPTURE`).
-       - Recording: Updates title to `Recording Thought...` and displays `[ ⏹ Stop & Save ]` (`ACTION_STOP_CAPTURE`).
-     - `ForegroundServiceCoordinator` coordinates lock screen intents and dispatches triggers via `deliverTrigger(isLocked = true, desiredRecording = true|false)` without requiring phone unlock. The explicit `desiredRecording` argument makes the two actions idempotent: a stale `Stop & Save` can never start a recording.
-     - Synchronized bidirectionally with Flutter via `MethodChannel("setRecordingState")`: `CaptureController` reports the authoritative state after every trigger, and `MainActivity.publishRecordingState()` fans it out to the notification and to the interceptor process.
+     - `BackgroundPermissionService.checkStatus()` returns `{isMicrophoneGranted, areNotificationsEnabled, isBatteryOptimizationIgnored, isForegroundServiceRunning}`; the two runtime permissions are read through an injectable `RuntimePermissionGateway` (`permission_handler`), the other two over the method channel. `requestMicrophone()` / `requestNotifications()` open the app's system settings when the permission is permanently denied.
+     - Standardized status badges: **Enabled** (Green) and **Disabled** (Amber). The dual-permission modal is removed.
+  4. **Persistent Notification with a One-Tap Record Button, Timer and Stop & Save (FR10.1–FR10.3)**:
+     - **Body with its own button** (`res/layout/capture_notification.xml`, `DecoratedCustomViewStyle`, same view collapsed and expanded): idle `Tap Record to capture a thought` + a green `Record` pill; recording `Recording 00:06` (a `Chronometer` counting from the capture start) + `Stop & Save`. The button is part of the collapsed notification, so recording is **one tap, without expanding it**, in the shade and on the lock screen. A button that sends a service intent runs on the lock screen without unlocking (only activity intents make Android ask for the unlock). Tapping elsewhere on the notification opens the app (which does require unlocking).
+     - **Channel `eudemonia_capture`, importance DEFAULT, no sound, no vibration, no badge**. Found on the Pixel 7a 2026-11-26: with the earlier low-importance channel the notification was classed "silent" and was **absent from the lock screen** (`lock_screen_show_silent_notifications = 0`). A channel's importance cannot be raised after creation, so the old channel `eudemonia_background_channel` is deleted and replaced. Cost: the microphone icon is always in the status bar and the notification sits in the main section of the shade.
+     - Public lock-screen visibility, shown immediately (`FOREGROUND_SERVICE_IMMEDIATE`), monochrome status-bar icon `ic_stat_capture`. No wording about volume buttons or listening.
+     - **Every start path enters the foreground first** (`startForeground` with the microphone type): a notification or widget tap may start the service in a fresh process, and Android kills an app whose `startForegroundService` is not followed by `startForeground` within 5 s. If the system refuses (the microphone permission is missing, or the system restarted the service while the app is in the background), the service stops and does not record.
+     - **The notification outlives the service** (`CaptureNotificationRestorer`): after the phone restarts (`BOOT_COMPLETED`), after an app update (`MY_PACKAGE_REPLACED`) and when a background restart of the service is refused, the same notification is posted as a plain one. Tapping `Record` then starts the service, which Android allows from a notification tap, and the service takes the notification over. Nothing is started or recorded by the receiver itself.
+     - `ACTION_STOP` (service switched off) also ends any recording, so a recording cannot outlive the service.
+     - The service lifetime is unchanged in R1: started when the app opens and the microphone is granted, always on, type `microphone` (alternative in TASK-081 c).
 
 ### C. Zero-Latency Audio Queue & Dispatch (FIFO Queue & Non-Blocking Worker)
 - **Files**:
@@ -65,14 +68,15 @@
   - `lib/features/ai_processing/audio_queue_service.dart`
   - `lib/features/ai_processing/audio_queue_item.dart`
 - **Mechanics**:
-  0. **Capture Trigger Ownership (`CaptureController`)**:
-     - Riverpod `NotifierProvider<CaptureController, bool>` (`captureControllerProvider`, state = is recording) owns the `com.eudemonia/hardware_buttons` `onHardwareTrigger` handler. It is instantiated in `main()` before `runApp`, so triggers are handled regardless of which screen is mounted; `CaptureScreen` only watches it for the listening indicator.
-     - The state flips to recording immediately (indicator appears without waiting on the recorder) and is **reverted if `startRecording()` returns `false`** (microphone permission missing or recorder failure), so a failed start is never followed by a phantom "stop".
-     - Honors the optional `desiredRecording` argument (explicit notification actions) as a no-op when it already matches, keeps the 500ms Dart-side cooldown, and reports the authoritative state to native via `setRecordingState` after every trigger.
-  1. **Decoupled Recording Capture**:
-     - `BatchPipelineService.startRecording()` starts microphone capture with 0ms delay and returns whether capture actually began.
-     - `BatchPipelineService.stopRecordingAndProcess()` stops audio capture and immediately dispatches the recorded WAV path to `AudioQueueService.enqueue()`. The call completes in **<5ms**, immediately returning control to the UI.
-     - `enqueue()` notifies the UI providers **before** the disk write and takes its daily sequence number from an in-memory high-water mark (seeded once per calendar day from `NotesRepository.maxDailySequenceFor()` during hydration), so the capture path performs no database scan.
+  0. **Native Capture Mirrored in Dart (`NativeCaptureChannel`, `CaptureController`, `CaptureInboxIngestor`)**:
+     - `NativeCaptureChannel` wraps `com.eudemonia/capture`: Dart→native `getState`, `start`, `stop`, `listPendingCaptures`, `requestPinWidget`; native→Dart `onStateChanged {isRecording, startedAtMs}` and `onCaptureSaved {path, startedAtMs}`. Without a platform implementation it behaves as idle.
+     - `CaptureController` (`NotifierProvider<CaptureController, bool>`, state = is recording) only mirrors native state. It is created in `main()` before `runApp`; at start-up it syncs `getState()` and ingests whatever waits in the inbox (`startupSync`). It exposes `startedAt` (the capsule's timer is correct for a recording started from the notification or the widget), warms the speech model once per recording whatever started it, and `handleTrigger()` (the capsule) flips the state at once, sends `start` / `stop`, reverts if native could not start, and on a stop waits up to 5 s for that recording's `onCaptureSaved` to return its queue item.
+     - `CaptureInboxIngestor` turns a finished file into a queue item, idempotently and crash-safely: enqueue under the final path `recording_<startedAtMs>.wav` with `recordedAt` = capture time and `fileReady: false` → rename the inbox file there → `markFileReady` → `processPending()` (not awaited). If the process dies between enqueue and rename, the next scan finds the file, sees the item already queued and only completes the rename; no database scan is needed. A duplicate event for a file already ingested is ignored. Calls are serialised; one failing file does not stop the others.
+     - Ingestion runs on `onCaptureSaved`, at start-up, and on every return to the foreground (`CaptureResumeScanner`). `main()` starts the queue worker (`resumePendingWork`) only after the start-up inbox scan.
+  1. **Queue Entry**:
+     - `AudioQueueService.enqueue(path, {autoProcess, recordedAt, fileReady})` notifies the UI providers **before** the disk write. The daily sequence number belongs to the calendar day of `recordedAt` (a per-day high-water map, each day seeded once from `NotesRepository.maxDailySequenceFor()`), so a recording ingested late gets the number of the day it was spoken and the capture path performs no database scan.
+     - An item queued with `fileReady: false` is skipped by the worker until `markFileReady` (held in memory only; after a restart the inbox scan completes the move before the worker starts).
+     - `AudioRecordingService`, `BatchPipelineService` and the `record` plugin are removed: native code is the only owner of the microphone.
   2. **FIFO Disk Persistence**:
      - Enqueued items are serialized to `${appDocumentsDir}/queue/queue.json` as `AudioQueueItem` objects.
      - Status progression: `pending` -> `transcribing` -> `categorizing` -> `completed` (or `failed`).
@@ -101,8 +105,8 @@
      - Concurrent callers share one in-flight load `Future`, ensuring thread-safe idempotency; a load failure is delivered to every caller (never to an unlistened completer).
      - If the load fails, the service is disposed so a half-finished load cannot strand the model in RAM while the state reads `unloaded`.
   3. **Inactivity TTL Eviction**:
-     - Default TTL: 3 minutes (`modelInactivityTtl`).
-     - Every queue item runs inside `runWithModels()`, which calls `touch()` when the item finishes **whether it succeeded or failed**, restarting the 3-minute timer. (Previously only successful items re-armed the timer, so a failing queue kept the models resident indefinitely.)
+     - Default TTL: 2 minutes (`modelInactivityTtl`; shortened from 3 by the user on 2026-11-26). A Synthesis run that is due does not wait for it: the runner evicts the idle speech model itself (`evictModels`).
+     - Every queue item runs inside `runWithModels()`, which calls `touch()` when the item finishes **whether it succeeded or failed**, restarting the eviction timer. (Previously only successful items re-armed the timer, so a failing queue kept the models resident indefinitely.)
      - Upon expiry, `evictModels()` disposes the native speech-model handle and releases the arbiter's speech hold.
   4. **Eviction Safety (In-Use Leases)**:
      - `runWithModels(task)` holds a lease for the duration of an inference task. `evictModels()` returns `Future<bool>`: `true` once the models are out of RAM; `false` when a lease is active, in which case eviction is deferred and executed the moment the task completes. An eviction requested during loading waits for the load to settle first. Native handles are therefore never freed underneath a running inference (e.g. the Settings `Evict Models Now` button during queue processing).
@@ -175,7 +179,7 @@
   - [`lib/features/capture/presentation/floating_capture_capsule.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/capture/presentation/floating_capture_capsule.dart)
   - [`lib/features/notes/presentation/thought_card.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/presentation/thought_card.dart)
   - [`lib/features/notes/audio_playback_controller.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/notes/audio_playback_controller.dart)
-  - [`lib/features/home/presentation/smooth_processing_indicator.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/smooth_processing_indicator.dart)
+  - [`lib/features/theme/widgets/voice_wave_indicator.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/theme/widgets/voice_wave_indicator.dart), [`lib/features/theme/widgets/pulse_dots_loader.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/theme/widgets/pulse_dots_loader.dart)
 - **Mechanics**:
   - **Unified Reactive Feed**: `CaptureScreen` synthesizes the feed by watching both `recentNotesProvider` (persisted notes) and `queueItemsProvider` (in-flight & failed queue items). Newly captured audio enqueues immediately (<5ms) with `ThoughtState.enqueued` (yellow, shimmer, date/time, audio play button), transitioning seamlessly to `ThoughtState.processed` (blue) upon worker completion without requiring an app restart. Rows are built lazily (`ListView.builder`) under per-day headers (`TODAY — DD/MM`, `YESTERDAY — DD/MM`, `DD/MM/YYYY`).
   - **No Categorization on Capture (FR9.1, FR11.2)**: The Capture screen has no folder carousel and no per-folder list screen, and `ThoughtCard` renders no folder badge or category picker. Folders appear only on Synthesis sessions.
@@ -186,14 +190,14 @@
     - *Synthesized*: Soft mint background (`#DCFCE7`) with footer `🧩 Synthesized in #S-NN`, resolved by `CaptureScreen` from `synthesisRepositoryProvider`.
     - Header order is strictly `[# Number]` → `[▶ Play Audio]` → `[• Unread Dot]` → `[🗑️ Delete]`; footer timestamp is `DD/MM  HH:MM AM/PM`.
   - **Compact Dual Dropdown Filters (FR9.2)**: `capture_triage_filter_dropdown` (`All Triage`, `Unread`, `Read`) and `capture_status_filter_dropdown` (`All Statuses`, `Processing`, `Processed`, `Synthesized`, `Failed`) in a `Wrap`, replacing the former chip row. Both filters combine; an empty result reads `No thoughts matching active filters`.
-  - **Interactive Floating Capture Trigger (FR9.3)**: `FloatingCaptureCapsule` (pure presentational) floats above the feed: `[ 🎙️ / Press Vol Up + Down to Capture ]`. Tapping calls `CaptureController.handleTrigger()` (the same path as the hardware trigger). While recording it morphs into a stop icon, animated waveform and a live elapsed timer (`00:04 • Tap to Stop`). When the tap finishes a recording, the screen shows `Captured a new note [#0X]` using the sequence number of the item returned by the controller.
+  - **Interactive Floating Capture Trigger (FR9.3)**: `FloatingCaptureCapsule` (pure presentational) floats above the feed: `[ 🎙️ / Tap to capture ]` (R1 wording while the volume trigger is parked). Tapping calls `CaptureController.handleTrigger()`, which records through the native capture core like the notification and the widget. While recording it morphs into a stop icon, animated waveform and a live elapsed timer counted from the controller's `startedAt` (`00:04 • Tap to Stop`). When the tap finishes a recording, the screen shows `Captured a new note [#0X]` using the sequence number of the item returned by the controller. Empty state: `No thoughts yet. Tap the mic below, the Record button in your notifications, or the home-screen widget.`
   - **Machine Status Lives in the Shell**: The Capture screen carries no pending pill or processing banner; pipeline state is shown by the shell's Pipeline HUD pill (Subsystem I).
   - **Recording Indicator**: `CaptureScreen` watches `captureControllerProvider` (Subsystem C); it does not own the hardware trigger channel.
   - **Dedicated Audio Playback Controller**: Powered by Riverpod 3 `NotifierProvider<AudioPlaybackController, AudioPlaybackState>` over `MethodChannel('com.eudemonia/audio_playback')`. A native playback error (`PlatformException`, e.g. missing file) resets the state instead of showing a card as playing. In Kotlin, `MediaPlayer` plays private audio files via `player.setDataSource(file.absolutePath)` with speech `AudioAttributes` (see Chronicle #12).
-  - **Hardware-Accelerated Smooth Progress Indicator**: `SmoothProcessingIndicator` uses a GPU-accelerated `CustomPainter` with an internal `RepaintBoundary` and ticking `AnimationController`, guaranteeing locked 60/120fps sweep fluidity even during heavy CPU-bound background inference.
+  - **Loaders Without Round Spinners (user request 2026-11-26)**: no `CircularProgressIndicator` anywhere in `lib/` or `previews/`. A thought whose recording waits for or is in transcription shows `VoiceWaveIndicator` (animated bars, shared with the capture capsule); every other loading state shows `PulseDotsLoader` (three dots pulsing in sequence). Both run one `AnimationController` inside a `RepaintBoundary`, so they stay fluid while inference loads the CPU, and both show a static frame when the system's reduce-motion setting is on. The earlier `SmoothProcessingIndicator` (a round sweep) is deleted.
   - **Unread Thought Status & In-Card Triage**: Unreviewed processed cards feature a subtle electric blue indicator dot (`•`). Tapping the card marks it as read and clears the indicator.
   - **In-Card Failure Presentation**: Failed thoughts render directly as cards with `ThoughtState.failed` (soft red, failure reason, audio playback, 1-tap `[ Retry ]`), eliminating intrusive full-screen error banners.
-  - **Ambient Permissions Alert**: Automatically warns the user if Accessibility or Battery Exemption permissions are missing, auto-dismissing via `WidgetsBindingObserver` when granted.
+  - **Capture-Readiness Banner** (`capture_readiness_banner`): microphone not granted → `Microphone access is needed to capture thoughts.` with `Allow`; otherwise notifications not granted → `Notifications are off, so the Record button on your lock screen is hidden.` with `Turn on`; otherwise nothing. The battery exemption no longer raises a banner.
   - **Known Deviation from FR5.2 (Capture-Time Folder Inference)**: The capture LLM turn still returns a folder alongside the cleaned text and stores it on the note as hidden metadata, because `SynthesisRepository.synthesizeRawNotes()` routes thoughts into sessions by that folder. It is never displayed on Capture. Moving classification into the synthesis turn belongs to the Milestone 9 clustering engine (TASK-049); removing it earlier would collapse every session into `Uncategorized`.
 
 ### H. Diagnostic Telemetry & Rotating Logging (2MB Capped Log File & Telemetry Dump)
@@ -205,23 +209,19 @@
   - Enforces a 2MB rotating file cap to prevent unbounded storage consumption.
   - `SettingsScreen` includes interactive actions to view system logs in a live modal, copy a full diagnostic dump to clipboard, or clear logs.
 
-### I. Four-Stage Production Navigation Shell & Mind Pipeline HUD (`lib/features/home/presentation/`)
+### I. Production Navigation Shell (Two Stages in R1: Capture & Synthesis) & Mind Pipeline HUD (`lib/features/home/presentation/`)
 - **Files**:
   - [`lib/features/home/presentation/main_navigation_shell.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/main_navigation_shell.dart)
   - [`lib/features/home/presentation/pipeline_hud_modal.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/home/presentation/pipeline_hud_modal.dart)
-  - [`lib/features/insights/presentation/insights_placeholder_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/insights/presentation/insights_placeholder_screen.dart)
-  - [`lib/features/action/presentation/action_placeholder_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/action/presentation/action_placeholder_screen.dart)
 - **Mechanics**:
   - **Top Bar**: Minimalist header with branding `Eudemonia`, interactive Mind Pipeline HUD pill (`[ ⚡ X in Pipeline ▾ ]` or `[ 🌿 In Sync ▾ ]`), and Settings gear navigation.
   - **Interactive Mind Pipeline HUD Modal**: Bottom sheet revealing real-time machine pipeline state across stages:
     - *Stage 1 (Capture)*: Shows pending raw audio in queue and processing state.
     - *Stage 2 (Synthesis)*: Shows count of buffered thoughts awaiting clustering with an on-demand `[ ⚡ Synthesize Now ]` trigger button.
-    - *Stages 3 & 4 (Insights & Action)*: Indicates synchronicity status.
     - *Memory footer*: the sheet opens immediately and fills in a live OS reading (`describePipelineMemory`): model state, app memory (PSS) and device free/total RAM, or `live memory reading unavailable`. No estimated figures are shown.
-  - **Four-Stage Tab Bar & Zero-Suppression**:
+  - **Two-Stage Tab Bar & Zero-Suppression (R1)**: two half-width tabs. The Insights and Action placeholder screens and their greyed-out tabs were removed on 2026-11-26 (TASK-078); their design previews remain in `previews/` for their return.
     - `Capture (X)`: Zero-suppressed unconsumed thought count ($X = \text{unread processed} + \text{in-flight queue}$). Thoughts already consumed by a synthesis session (`ThoughtState.synthesized`) are excluded, matching the unread dot and `Unread` filter.
     - `Synthesis (Y)`: Zero-suppressed unconsumed session count ($Y = \text{unread clusters}$).
-    - `Insights` & `Action`: Visually greyed out (`Opacity(0.38)`) and tap-intercepted to remain unclickable placeholders with friendly explanatory empty states until backend stages are activated.
 
 ### J. Production Synthesis Subsystem & Session Clustering (`lib/features/synthesis/`)
 - **Files**:
@@ -246,7 +246,8 @@
     - **Runner ([`application/synthesis_runner.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/application/synthesis_runner.dart))**: one run at a time; returns `busy` while recording, while the capture queue has pending items or while the speech model is in use; evicts the speech model, takes the language slot, loads the LLM, organises, then writes session by session and **commits each session only after its write succeeded** (`createSession` / `updateSession`, unread, thoughts → `synthesized`). Every candidate thought gets `Note.synthesisAttempts + 1` **when the run starts** (persisted before any model work, so a run whose process dies is counted); a synthesized thought is reset to 0; a preempted run takes its count back; thoughts that could not be filed or written, and all thoughts of a run that failed with an error, keep the count (automatic runs skip a thought at 3; manual runs always retry). The run holds the CPU wake lock (1.E.4) and logs its start, its duration and every rejected model reply with the thought ids and the reason (`SynthesisEngine.onRejected`: the first 100 characters of a rejected folder reply, or word counts for a rejected note — never the note text). Sessions flagged `isReprocessing` (style, merge, eject) are rewritten from their raw thoughts in the same run and the flag cleared; a flagged session without thoughts is removed. Preemption by capture cancels the turn, unloads the LLM, then releases the arbiter; result `preempted`. The LLM is always unloaded before the run returns.
     - **Triggers ([`application/synthesis_trigger_controller.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/synthesis/application/synthesis_trigger_controller.dart), FR11.8)**: started in `main.dart`, notified by the audio queue when a thought is saved. Count trigger (default 3 waiting thoughts) after a 20 s settle delay that restarts on every new thought; quiet trigger (default 15 min without a new thought); `busy` and `preempted` runs are retried after 60 s while thoughts wait. **App launch only arms the quiet timer** (no run right after the user opens the app), and **only thoughts no run has failed on count towards starting a run** (the model is deterministic, so retrying them alone repeats the failure; a run started by new thoughts retries them) — both since 2026-11-22, Chronicle #35. Thresholds live in `application/synthesis_settings.dart` (persisted with `shared_preferences`, edited in Settings). Manual: `presentation/manual_synthesis.dart` `startManualSynthesis()` starts a run without waiting and shows a SnackBar.
     - **Verified on the Pixel 7a 2026-11-21 (Qwen2.5-1.5B)**: automatic run at launch with the screen locked filed and wrote 10 sessions from the user's ≈ 30 waiting thoughts in ≈ 5 min; 4 thoughts failed validation and stayed in Capture; process memory ≈ 2.45 GB during the run and 572 MB after unload.
-    - **Model profile in use since 2026-11-22: `SynthesisModelProfile.current` = `qwen3_4b`** (`qwen3-4b.gguf` Q4_K_M, `ChatFormat.chatmlNoThink` — ChatML with an empty `<think>` block opening the answer, `NoteStyle.structured`, batch 5). `qwen25_1_5b` is kept as a profile. One turn may take 8 min (`LLMConfig.generationTimeout`), a stopped turn 4 min to report (`LLMService.stopTimeout`). Since the late evening of 2026-11-22 the structured prompt carries one worked example and the rule that every numbered thought must appear, the write limit is 500 words, valid output is 0.4–1.3 of the input words, and a note that leaves a thought out (`thoughtsMissingFrom`, distinctive-word coverage below 0.3) is rejected and its piece split — reason and measurements in the TASK-071 Progress Log. First run on the Pixel 7a: 28 thoughts → 8 sessions in 1244 s on screen, peak 3430 MB, 356 MB after unload; one single-thought folder reply rejected for its form (`Answer: Work`). Cards show the note as plain text, so the model's `**Title**` markers are visible. `integration_test/synthesis_reset_test.dart` is a development tool that exports and deletes all sessions.
+    - **The profile comes from the user's chosen language model (2026-11-26, 1.L)**: `SynthesisRunner` resolves `activeSynthesisProfileProvider` once at the start of each run; with no ready, fitting, selected model the run returns `SynthesisRunResult.noModel` before anything is evicted, loaded or counted, the trigger controller does not retry, and a manual run says `Choose a writing model first`. `SynthesisModelProfile.current` no longer exists.
+    - **Profile of the model measured on the Pixel 7a: `qwen3_4b`** (`qwen3-4b.gguf` Q4_K_M, `ChatFormat.chatmlNoThink` — ChatML with an empty `<think>` block opening the answer, `NoteStyle.structured`, batch 5). `qwen25_1_5b` is kept as a profile. One turn may take 8 min (`LLMConfig.generationTimeout`), a stopped turn 4 min to report (`LLMService.stopTimeout`). Since the late evening of 2026-11-22 the structured prompt carries one worked example and the rule that every numbered thought must appear, the write limit is 500 words, valid output is 0.4–1.3 of the input words, and a note that leaves a thought out (`thoughtsMissingFrom`, distinctive-word coverage below 0.3) is rejected and its piece split — reason and measurements in the TASK-071 Progress Log. First run on the Pixel 7a: 28 thoughts → 8 sessions in 1244 s on screen, peak 3430 MB, 356 MB after unload; one single-thought folder reply rejected for its form (`Answer: Work`). Cards show the note as plain text, so the model's `**Title**` markers are visible. `integration_test/synthesis_reset_test.dart` is a development tool that exports and deletes all sessions.
     - **Verified on the Pixel 7a 2026-11-22 (CPU-only library, Qwen2.5-1.5B)**: every card and both folder menus render for all folders (screenshots); a manual run holds `Eudemonia:synthesis` in `dumpsys power`; details and timings in `TASKS.md` TASK-071.
     - **Not yet implemented**: `appliedStyleId` does not change the write prompt (styles are UI state only); the HUD button is not disabled during a run; no UI for failed thoughts or run progress; folders cannot be managed by the user (TASK-048); thermal and battery guard for automatic runs (TASK-072).
   - **Cluster Cards**:
@@ -257,20 +258,42 @@
   - **Triage & Folder Filtering**: Compact dual dropdowns (`All Triage`, `Unread`, `Read`) and (`All Folders` followed by the names of `defaultFolders`: `Work`, `Personal`, `Journal`, `Uncategorized`) prevent screen real-estate wastage.
   - **Pending Batch Banner**: Prominently shows unprocessed thought buffer count with an instant `[ ⚡ Synthesize Now ]` action.
 
+- **Formatted Display of the Note (FR11.15, TASK-079)**: `note_markdown.dart` is a pure parser (`parseNoteMarkdown`) from the stored text to blocks — `title` (first heading), `heading` (a line that is entirely `**…**`, or starts with `#`), `bullet` (`- `, `* `, `• `), `paragraph` — with inline `**bold**` spans; a numbered line starts its own paragraph and keeps its number; it never throws and never drops a word. `NoteMarkdownView` draws the blocks (bold title one step larger, bold headings, bullets with a hanging indent) on the Synthesis card; the merge and ejection sheets show `plainNotePreview()` (markers removed) in their one- and two-line previews. The stored text is not changed: it is Markdown and is what a later file export will write (TASK-080). Raw thoughts are never parsed as Markdown.
+
 ### K. Production Settings & Advanced Diagnostics (`lib/features/settings/`)
 - **Files**:
   - [`lib/features/settings/settings_screen.dart`](file:///Users/harshmavani/Documents/Eudemonia/lib/features/settings/settings_screen.dart)
 - **Mechanics**:
-  - **Background & Hardware Permissions**: Persistent foreground service keep-alive toggle, battery optimization exemption, and accessibility service controls with simultaneous permission guidance.
-  - **Automatic Synthesis Trigger & Batching**: Configurable capture threshold ($X$ thoughts) and session quiet window ($Y$ minutes) plus instant buffer synthesis trigger.
-  - **Folder Management & Semantic Manifestos**: Real-time display of folder manifestos (`Work`, `Ideas`, `Todos`, `Journal`) with an interactive dialog to add custom user folders and keyword anchors.
-  - **Calendar Synchronization**: Toggle to automatically block out schedule commitments extracted from thoughts.
+  - **Capture Permissions & Widget** (`CAPTURE PERMISSIONS`): rows with Enabled/Disabled badges for Microphone and Notifications (lock-screen Record button), the switch `Keep capture ready in the background` (starts and stops the foreground service), and `Add capture widget to home screen` (`requestPinWidget`; when the launcher cannot pin, a hint to add it from the launcher's widget list). The battery-optimisation row is gone with the permission (user decision 2026-11-26).
+  - **Automatic Synthesis** (`AUTOMATIC SYNTHESIS`): `Start after this many thoughts` and `Or after a quiet period` (both persisted through `SynthesisSettingsStore` and read by the trigger controller), the waiting-thoughts line (`describeThoughtsReadyForSynthesis`) and `Synthesize Now`.
+  - **Folders** (`FOLDERS`, read-only): the real folder names from `defaultFolders` (`Work`, `Personal`, `Journal`, `Uncategorized`). The earlier add/edit dialogs and manifesto list held their data in memory only and were never used by Synthesis; they were removed on 2026-11-26 (FR11.14 custom folders remain to be built).
+  - **Removed for the first release (2026-11-26, controls that did nothing)**: the `Google Calendar` sync switch (in-memory, Action stage deferred) and `Keep Raw Audio Files` (never persisted or read).
+  - **On-Device Models** (`ON-DEVICE MODELS`): one row per kind with the current state, opening the models screen (1.L).
+  - **About** (`ABOUT`): `Licences and credits` opens Flutter's licence page; `model_credits.dart` registers credits for the Parakeet speech model (CC-BY-4.0), Qwen3 (Apache-2.0), llama.cpp (MIT) and sherpa-onnx (Apache-2.0).
   - **On-Device AI Memory & Thermal Telemetry (Live OS Readings)**:
     - Files: `lib/features/settings/system_telemetry_service.dart`, `android/app/src/main/kotlin/com/eudemonia/eudemonia/SystemTelemetryCollector.kt`.
     - `SystemTelemetryCollector.snapshot()` (served on `MethodChannel('com.eudemonia/system_telemetry')`, method `getSnapshot`, executed off the UI thread) reports: `PowerManager.currentThermalStatus` (API 29+), `PowerManager.getThermalHeadroom(10)` (API 30+, `NaN` → null), app process memory as total PSS from `Debug.getMemoryInfo`, and device `availMem` / `totalMem` / `lowMemory` from `ActivityManager.MemoryInfo`. A value the OS cannot provide is `null`, never estimated.
     - `SystemTelemetry` derives display values: thermal summary `N% (Status)` where `N = (1 − headroom) × 100` clamped to 0–100 (headroom 1.0 = `THERMAL_STATUS_SEVERE`), `isThermallyThrottled` from Severe upwards, and byte formatting.
     - `SettingsScreen` watches `systemTelemetryProvider` and invalidates it every 5 seconds while open (timer cancelled in `dispose`). Thermal headroom, app memory and device memory show the live values or `Unavailable`; the `[ Evict Models Now ]` button confirms with `AI models evicted from memory.` and the memory row updates from the next reading.
   - **Diagnostic Logging**: Rotating 2MB log inspector modal, one-click clipboard telemetry dump, and log clearing.
+
+---
+
+### L. On-Device Model Delivery & Device-Fit Language-Model Choice (`lib/features/models/`, `android/.../Model*.kt`; FR16)
+- **Status**: built 2026-11-26 (TASK-084). On the Pixel 7a: the models screen shows the existing files as ready, the 4B is selected by itself, a Synthesis run completes with the selected model's profile, and a download started on mobile data with Wi-Fi-only on is handed to the system and shown as `Waiting for Wi-Fi`. **A complete download, its checksum check and a damaged file have not yet been seen on a phone.**
+- **Split of responsibility**: native owns transfer, verification and files; Dart owns the catalogue, the choice and the screens.
+- **Native (channel `com.eudemonia/model_files`)**:
+  - `ModelDownloadCoordinator` (one per process) on Android's `DownloadManager` behind `ModelDownloadTransport`: the system performs the transfer outside the app's process (survives the app being closed, resumes, shows its own notification), so none of the app's foreground-service types is involved. Destination `<external files>/model_downloads/<relativePath>.part`.
+  - **A file gets its final name only after verification**: `reconcile()` (run by every `status` call and by the download-complete broadcast) hashes a finished transfer with `Sha256Verifier` on its own thread, checks the length, then renames it to `<external files>/<relativePath>`; a mismatch deletes it and reports `failed/checksum`. `ready` therefore means "file at the final path with the expected length"; files pushed by a developer with the right length also count.
+  - `ModelFileStateResolver` (pure): `absent | queued | running | paused | verifying | ready | failed` with reasons (`waiting_for_wifi`, `waiting_for_network`, `waiting_to_retry`; `checksum`, `insufficient_space`, `http_<code>`, `file_error`, `cancelled`). Records (`relativePath → downloadId, sha256, sizeBytes`) persist in the private preferences file `eudemonia_model_downloads`. Paths that could leave the files folder are rejected.
+  - `getDeviceInfo` → total memory (MB) and free storage; `download` refuses when free space < size + 200 MB.
+  - The main manifest now declares `INTERNET` for this purpose only.
+- **Dart**:
+  - `domain/model_catalogue.dart`: constant catalogue, every file pinned by repository revision and SHA-256. Speech: Parakeet TDT 0.6b v3 int8 (4 files, 671 MB). Language: `qwen3-4b` (**listed**; 2.50 GB; offered when total memory ≥ 7000 MB, described to the user as "8 GB") and `qwen3-1.7b` (**candidate**, shown only in debug builds with a `Testing` tag; 1.11 GB; ≥ 5200 MB, "6 GB"). Rules: `fitsDevice`, `visibleLanguageModels`, `nominalGb`, `smallestRequirementGb`. Relative paths equal the earlier adb layout (`parakeet/…`, `qwen3-4b.gguf`).
+  - `application/model_library_controller.dart`: transient state (device info, availability per model summed over its files) polled once a second only while something is active, refreshed on the native `onChanged` and on app resume. A model whose transfer the system has not started yet reads as waiting (`Waiting for Wi-Fi` when Wi-Fi-only is on). `application/model_settings.dart` keeps the persistent choices apart: selected language model, Wi-Fi only (default on), first-launch screen shown. With nothing selected and exactly one ready, fitting model, that one is selected.
+  - `speechModelReadyProvider` gates the queue worker: while the speech model is not ready `AudioQueueService.processPending()` returns without touching any item (thoughts stay pending, never failed — FR16.2); the controller calls it when the model becomes ready (a plain callback, because a Riverpod listener on a provider nobody watches is paused).
+  - `presentation/model_setup_screen.dart` (`On-device models`): speech model card, one card per visible language model (download size, memory line, quality line, progress as a thin bar, `Checking file…`, `In use` selection, greyed-out reason when the phone is too small, or the no-model-fits message), Wi-Fi-only switch. Entrances: once at first launch while the speech model is missing; banners on the Capture and Synthesis screens; Settings → `ON-DEVICE MODELS`.
+- **Open**: the Qwen3 files are hosted by a third party (pinned, but could be withdrawn); whether `qwen3-1.7b` is listed (TASK-065: 3 of 21 key facts lost in the whole-engine run on the Mac against 1 for the 4B; phone memory and speed unmeasured).
 
 ---
 
@@ -637,6 +660,26 @@
 
 ---
 
+### 38. Capture Depended on the App's Screen Being Alive (Notification Tap Could Do Nothing; Notes Could Show Over the Lock Screen)
+- **Found**: 2026-11-26, while making the notification and a home-screen widget the primary capture triggers for the first public release.
+- **Root Cause**: recording lived in Dart (`record` plugin) inside the activity's Flutter engine. With the activity gone (app swiped away) the foreground service reacted to a notification tap by calling `startActivity()`; Android 12+ blocks an activity start from a service reached through a notification tap (notification trampoline), so the tap would give no recording. To make the locked-phone case work at all, `MainActivity` carried `showWhenLocked` / `turnScreenOn`, which lets the app, and the user's notes, appear over the lock screen. Separately, the service's capture actions never called `startForeground`, so a tap that started the service in a fresh process would have crashed the app after 5 s.
+- **Solution**: the native capture core (Section 1.A): Kotlin records and writes the WAV into an inbox; Dart ingests finished files (1.C.0); the service never starts an activity; the lock-screen flags are removed; every service start path enters the foreground first.
+- **Status**: unit tests and build green; phone verification pending (TASK-063 verification list).
+
+---
+
+### 39. Synthesis Count and Button Stale Until the App Was Restarted
+- **Reported**: by the user, 2026-11-26.
+- **Root Cause**: `rawNotesReadyToClusterCountProvider` was a `FutureProvider` refreshed only by hand-written `ref.invalidate` calls in the synthesis runner and repository; the queue worker's "note saved" hook and the Capture screen's edit/delete/read paths invalidated a different provider only.
+- **Solution**: one signal at the source. `NotesRepository` calls `onChanged` after every mutation, which bumps `notesRevisionProvider`; every provider derived from the notes watches it. All manual invalidations of notes providers were removed. Verified on the Pixel 7a: with the Synthesis tab already visited, a new thought changed `1 … ready` to `2 … ready`, the pipeline pill and the tab count, without leaving the app.
+
+### 40. Capture Notification Missing from the Lock Screen, Two Taps Away, and Gone After an Update
+- **Found**: on the Pixel 7a, 2026-11-26.
+- **Root Causes**: (1) the channel had low importance, which Android classes as "silent", and the phone hides silent notifications on the lock screen; (2) the Record action was only reachable after expanding the notification; (3) the notification existed only as the foreground service's notification, so it vanished whenever the process was killed for an update or a reboot, or when the system's restart of the service was refused in the background.
+- **Solution**: channel `eudemonia_capture` at default importance without sound or vibration (the old channel is deleted, since importance cannot be raised); a Record / Stop & Save button inside the notification body; `CaptureNotificationRestorer` posts the same notification as a plain one after boot, after an update and after a refused restart (Section 1.B.4). All three verified on the phone except a real reboot.
+
+---
+
 ## 4. Architectural Decisions & Target Engineering Blueprints
 
 ### A. Four-Stage Cognitive Maturation Architecture Rationale
@@ -691,9 +734,9 @@
    - **AI-Assisted Topical Merge Suggestions**: Zero-LLM entity and keyword set-intersection matching across the last 48 hours to display proactive suggestion pills without LLM compute overhead.
    - **User Persona & Custom Prompt Editing**: Formally excluded for V1 to guarantee strict JSON output compliance, prevent mobile token/KV-cache overflow, and avoid breaking backend parsers.
 
-### C. Capture-Independent Three-Part Runtime Architecture (Approved Direction, Not Yet Implemented — TASK-063 & TASK-064)
+### C. Capture-Independent Three-Part Runtime Architecture (Phase 1 Native Capture Core Built 2026-11-26, Awaiting Phone Verification — TASK-063; Phase 2 Inference Process Not Started — TASK-064)
 > [!NOTE]
-> **TARGET ARCHITECTURE**: Chosen by the user on 2026-11-19 as the long-term answer to the foreground service launching the activity. Nothing in this section is in `lib/` or `android/` yet. Promote to Section 1 as each phase lands.
+> **TARGET ARCHITECTURE**: Chosen by the user on 2026-11-19 as the long-term answer to the foreground service launching the activity. **Phase 1 is now in code and described in Section 1.A and 1.C.0**; what follows is kept as its rationale. Phase 2 is not started: with no Flutter engine alive, recordings are saved but transcribed only when the app is next opened.
 
 - **Problem Being Solved**: The Flutter engine is owned by `MainActivity`. When the activity is destroyed (swiped from recents, reclaimed by the OS) while `EudemoniaForegroundService` keeps the process alive, no Dart code exists to record. `deliverTrigger()` then calls `startActivity()`, which (1) pulls the app over whatever the user is doing, contradicting Scenario 2 and the "No Rogue Launches" invariant, (2) loses the first seconds of speech during cold start, and (3) may be blocked by Android's background-activity-start restrictions, leaving a haptic with no recording. Separately, because capture, UI and inference share one process, a native abort in a model library (Chronicle #26) takes capture down with it.
 - **Decision**: Split the runtime into three parts with independent lifetimes.

@@ -1,9 +1,8 @@
 package com.eudemonia.eudemonia
 
-import android.content.BroadcastReceiver
-import android.content.Context
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,6 +12,7 @@ class MainActivity: FlutterActivity() {
     companion object {
         const val CHANNEL = "com.eudemonia/hardware_buttons"
         const val AUDIO_CHANNEL = "com.eudemonia/audio_playback"
+        const val CAPTURE_CHANNEL = "com.eudemonia/capture"
         var activeMethodChannel: MethodChannel? = null
         var activeAudioChannel: MethodChannel? = null
 
@@ -29,30 +29,10 @@ class MainActivity: FlutterActivity() {
     private var mediaPlayer: android.media.MediaPlayer? = null
     private var currentlyPlayingPath: String? = null
 
-    private val hardwareTriggerReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "com.eudemonia.eudemonia.HARDWARE_TRIGGER") {
-                if (TriggerDebouncer.shared.tryTrigger()) {
-                    val isLocked = intent.getBooleanExtra("isLocked", false)
-                    methodChannel?.invokeMethod("onHardwareTrigger", mapOf("isLocked" to isLocked))
-                }
-            }
-        }
-    }
-
-    override fun onCreate(savedInstanceState: android.os.Bundle?) {
-        super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
-    }
+    private val captureCore: CaptureControl by lazy { CaptureCore.get(applicationContext) }
+    private var captureChannel: MethodChannel? = null
+    private var captureListener: CaptureListener? = null
+    private var modelFilesChannel: ModelFilesChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -61,47 +41,6 @@ class MainActivity: FlutterActivity() {
         
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
-                "openAccessibilitySettings" -> {
-                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    result.success(null)
-                }
-                "isAccessibilityServiceEnabled" -> {
-                    val enabledServices = android.provider.Settings.Secure.getString(
-                        contentResolver,
-                        android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                    ) ?: ""
-                    val isEnabled = enabledServices.contains(packageName) && enabledServices.contains("ButtonInterceptorService")
-                    result.success(isEnabled)
-                }
-                "isIgnoringBatteryOptimizations" -> {
-                    val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                    val isIgnoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        powerManager.isIgnoringBatteryOptimizations(packageName)
-                    } else {
-                        true
-                    }
-                    result.success(isIgnoring)
-                }
-                "requestIgnoreBatteryOptimizations" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = android.net.Uri.parse("package:$packageName")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                    }
-                    result.success(null)
-                }
-                "openBatteryOptimizationSettings" -> {
-                    val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    result.success(null)
-                }
                 "startForegroundService" -> {
                     result.success(startCaptureServiceOrRequestPermissions())
                 }
@@ -114,32 +53,6 @@ class MainActivity: FlutterActivity() {
                 }
                 "isForegroundServiceRunning" -> {
                     result.success(EudemoniaForegroundService.isRunning)
-                }
-                "requestSimultaneousPermissions" -> {
-                    val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                    val isBatteryIgnored = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        powerManager.isIgnoringBatteryOptimizations(packageName)
-                    } else {
-                        true
-                    }
-                    if (!isBatteryIgnored && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = android.net.Uri.parse("package:$packageName")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                    } else {
-                        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        startActivity(intent)
-                    }
-                    result.success(null)
-                }
-                "setRecordingState" -> {
-                    val isRecording = call.argument<Boolean>("isRecording") ?: false
-                    publishRecordingState(isRecording)
-                    result.success(null)
                 }
                 "playAudio", "pauseAudio", "stopAudio" -> {
                     handleAudioCall(call, result)
@@ -175,33 +88,10 @@ class MainActivity: FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ProcessingWakeLock.CHANNEL)
             .setMethodCallHandler { call, result -> handleProcessingWakeLockCall(call, result) }
 
-        // Register the receiver
-        val filter = IntentFilter("com.eudemonia.eudemonia.HARDWARE_TRIGGER")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(hardwareTriggerReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(hardwareTriggerReceiver, filter)
-        }
+        configureCaptureChannel(flutterEngine)
 
-        // Check if activity was launched by service trigger
-        intent?.let { forwardAutoTrigger(it) }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        forwardAutoTrigger(intent)
-    }
-
-    private fun forwardAutoTrigger(intent: Intent) {
-        if (!intent.getBooleanExtra("autoTrigger", false)) return
-        val args = mutableMapOf<String, Any>("isLocked" to intent.getBooleanExtra("isLocked", false))
-        if (intent.hasExtra("desiredRecording")) {
-            args["desiredRecording"] = intent.getBooleanExtra("desiredRecording", false)
-        }
-        methodChannel?.invokeMethod("onHardwareTrigger", args)
-        // Consume the trigger so an activity recreation does not replay it.
-        intent.removeExtra("autoTrigger")
+        modelFilesChannel?.dispose()
+        modelFilesChannel = ModelFilesChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun isGranted(permission: String): Boolean =
@@ -262,30 +152,75 @@ class MainActivity: FlutterActivity() {
             isGranted(android.Manifest.permission.RECORD_AUDIO)
         ) {
             startCaptureService()
+            // Widgets drawn without the permission open the app; let them record directly now.
+            CaptureWidgetUpdater.renderAll(applicationContext, captureCore.state)
         }
     }
 
     /**
-     * Mirrors Flutter's recording state into the lock screen notification and into the
-     * isolated interceptor process, which picks the start/stop haptic pattern from it.
+     * `com.eudemonia/capture`: Dart starts and stops captures and lists the inbox; native
+     * pushes every state change and saved file, whatever triggered it, while this engine is
+     * attached. With no engine nothing is sent and finished files wait in the inbox.
      */
-    private fun publishRecordingState(isRecording: Boolean) {
-        sendBroadcast(
-            Intent(RecordingStateTracker.ACTION_RECORDING_STATE_CHANGED).apply {
-                setPackage(packageName)
-                putExtra(RecordingStateTracker.EXTRA_IS_RECORDING, isRecording)
+    private fun configureCaptureChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CAPTURE_CHANNEL)
+        captureChannel = channel
+        channel.setMethodCallHandler { call, result -> handleCaptureCall(call, result) }
+
+        captureListener?.let { captureCore.removeListener(it) }
+        val listener = object : CaptureListener {
+            override fun onStateChanged(state: CaptureState) {
+                captureChannel?.invokeMethod(
+                    CaptureChannelCodec.METHOD_ON_STATE_CHANGED,
+                    CaptureChannelCodec.encodeState(state)
+                )
             }
-        )
-        if (!EudemoniaForegroundService.isRunning) return
-        try {
-            startService(
-                Intent(this, EudemoniaForegroundService::class.java).apply {
-                    action = ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE
-                    putExtra("isRecording", isRecording)
+
+            override fun onCaptureSaved(capture: SavedCapture) {
+                captureChannel?.invokeMethod(
+                    CaptureChannelCodec.METHOD_ON_CAPTURE_SAVED,
+                    CaptureChannelCodec.encodeSaved(capture)
+                )
+            }
+        }
+        captureCore.addListener(listener)
+        captureListener = listener
+    }
+
+    private fun handleCaptureCall(
+        call: io.flutter.plugin.common.MethodCall,
+        result: io.flutter.plugin.common.MethodChannel.Result
+    ) {
+        when (call.method) {
+            "getState" -> result.success(CaptureChannelCodec.encodeState(captureCore.state))
+            "start" -> {
+                if (!isGranted(android.Manifest.permission.RECORD_AUDIO)) {
+                    startCaptureServiceOrRequestPermissions()
+                    result.success(CaptureChannelCodec.encodeState(CaptureState.IDLE))
+                    return
                 }
-            )
+                startCaptureService()
+                captureCore.start { state -> result.success(CaptureChannelCodec.encodeState(state)) }
+            }
+            // The saved file is not returned here; it always arrives through onCaptureSaved.
+            "stop" -> captureCore.stop { state -> result.success(CaptureChannelCodec.encodeState(state)) }
+            "listPendingCaptures" -> captureCore.listCommitted { committed ->
+                result.success(committed.map(CaptureChannelCodec::encodeCommitted))
+            }
+            "requestPinWidget" -> result.success(requestPinCaptureWidget())
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun requestPinCaptureWidget(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            val manager = getSystemService(AppWidgetManager::class.java) ?: return false
+            manager.isRequestPinAppWidgetSupported &&
+                manager.requestPinAppWidget(ComponentName(this, CaptureWidgetProvider::class.java), null, null)
         } catch (e: Exception) {
-            android.util.Log.w("MainActivity", "Unable to update capture notification: ${e.message}")
+            android.util.Log.w("MainActivity", "Unable to request widget pin: ${e.message}")
+            false
         }
     }
 
@@ -412,8 +347,11 @@ class MainActivity: FlutterActivity() {
             mediaPlayer = null
             currentlyPlayingPath = null
         } catch (_: Exception) {}
-        try {
-            unregisterReceiver(hardwareTriggerReceiver)
-        } catch (_: Exception) {}
+        captureListener?.let { captureCore.removeListener(it) }
+        captureListener = null
+        captureChannel?.setMethodCallHandler(null)
+        captureChannel = null
+        modelFilesChannel?.dispose()
+        modelFilesChannel = null
     }
 }

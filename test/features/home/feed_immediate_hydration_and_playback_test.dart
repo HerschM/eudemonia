@@ -81,8 +81,8 @@ void main() {
             notesRepositoryProvider.overrideWithValue(repo),
             backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
               const BackgroundPermissionStatus(
-                isAccessibilityEnabled: true,
-                isBatteryOptimizationIgnored: true,
+                isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                 isForegroundServiceRunning: true,
               ),
             )),
@@ -128,8 +128,8 @@ void main() {
               notesRepositoryProvider.overrideWithValue(repo),
               backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
                 const BackgroundPermissionStatus(
-                  isAccessibilityEnabled: true,
-                  isBatteryOptimizationIgnored: true,
+                  isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                   isForegroundServiceRunning: true,
                 ),
               )),
@@ -197,8 +197,8 @@ void main() {
               notesRepositoryProvider.overrideWithValue(repo),
               backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
                 const BackgroundPermissionStatus(
-                  isAccessibilityEnabled: true,
-                  isBatteryOptimizationIgnored: true,
+                  isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                   isForegroundServiceRunning: true,
                 ),
               )),
@@ -265,8 +265,8 @@ void main() {
             notesRepositoryProvider.overrideWithValue(repo),
             backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
               const BackgroundPermissionStatus(
-                isAccessibilityEnabled: true,
-                isBatteryOptimizationIgnored: true,
+                isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                 isForegroundServiceRunning: true,
               ),
             )),

@@ -4,39 +4,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/capture/native_capture_channel.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
+import 'package:eudemonia/features/models/domain/model_catalogue.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_texts.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_runner.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_settings.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
+import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'background_permission_service.dart';
 import 'system_telemetry_service.dart';
-
-class FolderManifesto {
-  final String id;
-  final String name;
-  final String icon;
-  final String description;
-  final List<String> keywords;
-
-  const FolderManifesto({
-    required this.id,
-    required this.name,
-    required this.icon,
-    required this.description,
-    required this.keywords,
-  });
-
-  FolderManifesto copyWith({String? description}) {
-    return FolderManifesto(
-      id: id,
-      name: name,
-      icon: icon,
-      description: description ?? this.description,
-      keywords: keywords,
-    );
-  }
-}
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -47,11 +29,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with WidgetsBindingObserver {
-  bool _keepRawAudio = false;
-  bool _isCalendarSyncEnabled = false;
-
-  late List<FolderManifesto> _folderManifestos;
-
   /// How often live thermal and memory readings are refreshed while this screen is open.
   static const Duration telemetryRefreshInterval = Duration(seconds: 5);
   Timer? _telemetryRefreshTimer;
@@ -63,38 +40,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     _telemetryRefreshTimer = Timer.periodic(telemetryRefreshInterval, (_) {
       ref.invalidate(systemTelemetryProvider);
     });
-    _folderManifestos = [
-      const FolderManifesto(
-        id: 'work',
-        name: 'Work',
-        icon: '💼',
-        description:
-            'Flutter app development, technical architecture, and system design.',
-        keywords: ['flutter', 'riverpod', 'isar', 'debouncer'],
-      ),
-      const FolderManifesto(
-        id: 'ideas',
-        name: 'Ideas',
-        icon: '💡',
-        description: 'Creative concepts, product features, and brainstorming.',
-        keywords: ['voice-first', 'ai-hud', 'mobile', 'on-device'],
-      ),
-      const FolderManifesto(
-        id: 'todos',
-        name: 'Todos',
-        icon: '✅',
-        description: 'Action items, operational commitments, and errands.',
-        keywords: ['call', 'fix', 'review', 'schedule'],
-      ),
-      const FolderManifesto(
-        id: 'journal',
-        name: 'Journal',
-        icon: '📖',
-        description:
-            'Personal reflections, daily logs, energy levels, and stream-of-consciousness.',
-        keywords: ['morning walk', 'reflection', 'mood', 'gratitude'],
-      ),
-    ];
   }
 
   @override
@@ -109,6 +54,55 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (state == AppLifecycleState.resumed) {
       ref.invalidate(backgroundPermissionStatusProvider);
     }
+  }
+
+  Future<void> _addCaptureWidget() async {
+    final pinned = await ref.read(nativeCaptureChannelProvider).requestPinWidget();
+    if (pinned || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Long-press your home screen, choose Widgets, then Eudemonia.'),
+      ),
+    );
+  }
+
+  Widget _buildPermissionRow({
+    required Key key,
+    required bool granted,
+    required IconData grantedIcon,
+    required IconData missingIcon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      key: key,
+      leading: Icon(
+        granted ? grantedIcon : missingIcon,
+        color: granted ? Colors.green : Colors.amber.shade700,
+      ),
+      title: Text(title,
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary)),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
+      trailing: Chip(
+        label: Text(
+          granted ? 'Enabled' : 'Disabled',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: granted ? Colors.green.shade900 : Colors.black87,
+          ),
+        ),
+        backgroundColor: granted ? Colors.green.shade100 : Colors.amber.shade300,
+      ),
+      onTap: onTap,
+    );
   }
 
   void _evictModelsNow() async {
@@ -127,118 +121,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           style: const TextStyle(color: AppColors.accentCapture),
         ),
         duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _openAddFolderDialog() {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surfaceElevated,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppColors.cardRadius),
-        ),
-        title: const Text(
-          'Add Custom Folder',
-          style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Folder Name',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              key: const Key('new_folder_name_field'),
-              controller: nameController,
-              style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'e.g. Health, Finances, Client X',
-                hintStyle: const TextStyle(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: const BorderSide(color: AppColors.borderSubtle),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Semantic Description (Manifesto)',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              key: const Key('new_folder_desc_field'),
-              controller: descController,
-              maxLines: 2,
-              style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Describe projects and topics that belong in this folder...',
-                hintStyle: const TextStyle(color: AppColors.textTertiary),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: const BorderSide(color: AppColors.borderSubtle),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            key: const Key('confirm_add_folder_button'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accentAction,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6)),
-            ),
-            onPressed: () {
-              final name = nameController.text.trim();
-              final desc = descController.text.trim();
-              if (name.isNotEmpty) {
-                setState(() {
-                  _folderManifestos.add(
-                    FolderManifesto(
-                      id: name.toLowerCase().replaceAll(' ', '_'),
-                      name: name,
-                      icon: '📁',
-                      description: desc.isNotEmpty ? desc : 'Custom user folder.',
-                      keywords: [name.toLowerCase()],
-                    ),
-                  );
-                });
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Create Folder',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
@@ -283,12 +165,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         children: [
-          // Section 1: Background & Hardware Permissions
-          _buildSectionHeader('HARDWARE & BACKGROUND PERMISSIONS'),
+          // Section 1: Capture permissions
+          _buildSectionHeader('CAPTURE PERMISSIONS'),
           permStatusAsync.when(
             data: (status) {
-              final allGranted = status.areAllGranted;
-              return Material(
+                            return Material(
                 color: AppColors.surface,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppColors.cardRadius),
@@ -298,58 +179,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     children: [
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 12.0),
-                        child: Material(
-                          color: allGranted
-                              ? Colors.green.withValues(alpha: 0.08)
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .primaryContainer
-                                  .withValues(alpha: 0.3),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: allGranted
-                                  ? Colors.green.shade400
-                                  : Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                          child: ListTile(
-                            leading: Icon(
-                              allGranted ? Icons.check_circle : Icons.offline_bolt,
-                              color: allGranted
-                                  ? Colors.green
-                                  : Theme.of(context).colorScheme.primary,
-                              size: 32,
-                            ),
-                            title: Text(
-                              allGranted
-                                  ? 'Background Capture Enabled'
-                                  : 'Enable Both Permissions Simultaneously',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              allGranted
-                                  ? 'The app is exempt from battery saver and listening for volume shortcuts.'
-                                  : 'Grants battery optimization exemption & accessibility service together.',
-                            ),
-                            trailing: allGranted
-                                ? null
-                                : ElevatedButton(
-                                    child: const Text('Grant Both'),
-                                    onPressed: () =>
-                                        permService.showSimultaneousPermissionModal(
-                                      context,
-                                      onPermissionsUpdated: () {
-                                        ref.invalidate(
-                                            backgroundPermissionStatusProvider);
-                                      },
-                                    ),
-                                  ),
-                          ),
-                        ),
+                      _buildPermissionRow(
+                        key: const Key('settings_microphone_row'),
+                        granted: status.isMicrophoneGranted,
+                        grantedIcon: Icons.check_circle,
+                        missingIcon: Icons.mic_off,
+                        title: 'Microphone',
+                        subtitle: status.isMicrophoneGranted
+                            ? 'Thoughts are recorded on this device.'
+                            : 'Needed to capture thoughts. Tap to allow.',
+                        onTap: () async {
+                          await permService.requestMicrophone();
+                          ref.invalidate(backgroundPermissionStatusProvider);
+                        },
                       ),
+                      const Divider(color: AppColors.borderSubtle, height: 16),
+                      _buildPermissionRow(
+                        key: const Key('settings_notifications_row'),
+                        granted: status.areNotificationsEnabled,
+                        grantedIcon: Icons.check_circle,
+                        missingIcon: Icons.notifications_off,
+                        title: 'Notifications (lock-screen Record button)',
+                        subtitle: status.areNotificationsEnabled
+                            ? 'Start a capture from the lock screen.'
+                            : 'Turn on to show the Record button on your lock screen.',
+                        onTap: () async {
+                          await permService.requestNotifications();
+                          ref.invalidate(backgroundPermissionStatusProvider);
+                        },
+                      ),
+                      const Divider(color: AppColors.borderSubtle, height: 16),
                       // Persistent Foreground Service Toggle
                       SwitchListTile(
                         secondary: Icon(
@@ -360,13 +219,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               ? Colors.green
                               : Colors.amber.shade700,
                         ),
-                        title: const Text('Keep App Alive in Background',
+                        title: const Text('Keep capture ready in the background',
                             style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.textPrimary)),
                         subtitle: const Text(
-                            'Runs a low-priority foreground service with lock screen capture banner',
+                            'Keeps the Record button on your lock screen and finishes transcription and notes while the app is closed.',
                             style: TextStyle(
                                 fontSize: 12, color: AppColors.textSecondary)),
                         value: status.isForegroundServiceRunning,
@@ -381,93 +240,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       ),
                       const Divider(color: AppColors.borderSubtle, height: 16),
                       ListTile(
-                        leading: Icon(
-                          status.isBatteryOptimizationIgnored
-                              ? Icons.check_circle
-                              : Icons.battery_alert,
-                          color: status.isBatteryOptimizationIgnored
-                              ? Colors.green
-                              : Colors.amber.shade700,
-                        ),
-                        title: const Text('Background Execution (Battery Exemption)',
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary)),
-                        subtitle: Text(
-                          status.isBatteryOptimizationIgnored
-                              ? 'Tap to manage or remove in Android Settings'
-                              : 'Keeps Flutter engine alive without being killed in idle',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary),
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            status.isBatteryOptimizationIgnored
-                                ? 'Enabled'
-                                : 'Disabled',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: status.isBatteryOptimizationIgnored
-                                  ? Colors.green.shade900
-                                  : Colors.black87,
-                            ),
-                          ),
-                          backgroundColor: status.isBatteryOptimizationIgnored
-                              ? Colors.green.shade100
-                              : Colors.amber.shade300,
-                        ),
-                        onTap: () async {
-                          if (status.isBatteryOptimizationIgnored) {
-                            await permService.openBatteryOptimizationSettings();
-                          } else {
-                            await permService.requestBatteryOptimizationExemption();
-                          }
-                          ref.invalidate(backgroundPermissionStatusProvider);
-                        },
-                      ),
-                      const Divider(color: AppColors.borderSubtle, height: 16),
-                      ListTile(
-                        leading: Icon(
-                          status.isAccessibilityEnabled
-                              ? Icons.check_circle
-                              : Icons.accessibility,
-                          color: status.isAccessibilityEnabled
-                              ? Colors.green
-                              : Colors.amber.shade700,
-                        ),
-                        title: const Text('Accessibility Service',
+                        key: const Key('settings_add_widget_row'),
+                        leading: const Icon(Icons.widgets_outlined,
+                            color: AppColors.accentCapture),
+                        title: const Text('Add capture widget to home screen',
                             style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.textPrimary)),
                         subtitle: const Text(
-                          'Intercepts dual volume buttons globally. Tap to enable/disable.',
+                          'One tap on the home screen starts a capture.',
                           style: TextStyle(
                               fontSize: 12, color: AppColors.textSecondary),
                         ),
-                        trailing: Chip(
-                          label: Text(
-                            status.isAccessibilityEnabled
-                                ? 'Enabled'
-                                : 'Disabled',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: status.isAccessibilityEnabled
-                                  ? Colors.green.shade900
-                                  : Colors.black87,
-                            ),
-                          ),
-                          backgroundColor: status.isAccessibilityEnabled
-                              ? Colors.green.shade100
-                              : Colors.amber.shade300,
-                        ),
-                        onTap: () async {
-                          await permService.openAccessibilitySettings();
-                          ref.invalidate(backgroundPermissionStatusProvider);
-                        },
+                        onTap: _addCaptureWidget,
                       ),
                     ],
                   ),
@@ -477,7 +263,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             loading: () => const Center(
               child: Padding(
                 padding: EdgeInsets.all(16.0),
-                child: CircularProgressIndicator(),
+                child: PulseDotsLoader(),
               ),
             ),
             error: (err, _) => ListTile(
@@ -487,8 +273,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ),
           const SizedBox(height: 20),
 
+          // On-device models: the files the app downloads (FR16)
+          _buildSectionHeader('ON-DEVICE MODELS'),
+          _buildModelRows(),
+          const SizedBox(height: 20),
+
           // Section 2: Automatic Synthesis Trigger & Batching
-          _buildSectionHeader('AUTOMATIC SYNTHESIS TRIGGER & BATCHING'),
+          _buildSectionHeader('AUTOMATIC SYNTHESIS'),
           Container(
             decoration: BoxDecoration(
               color: AppColors.surface,
@@ -500,7 +291,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Groups thoughts captured during an activity and triggers clustering without draining mobile battery.',
+                  'Synthesis turns waiting thoughts into notes by itself. Choose when it starts.',
                   style: TextStyle(
                       fontSize: 12,
                       height: 1.4,
@@ -516,7 +307,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Trigger After X Captures',
+                            'Start after this many thoughts',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -525,7 +316,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Accumulated unprocessed notes threshold',
+                            'Synthesis starts once this many thoughts are waiting.',
                             style: TextStyle(
                                 fontSize: 12, color: AppColors.textSecondary),
                           ),
@@ -584,7 +375,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Trigger After Y Minutes Quiet',
+                            'Or after a quiet period',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -593,7 +384,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Session quiet window since last capture',
+                            'Synthesis also starts when no new thought has arrived for this long.',
                             style: TextStyle(
                                 fontSize: 12, color: AppColors.textSecondary),
                           ),
@@ -660,7 +451,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '$bufferCount Unprocessed Thoughts in Buffer',
+                              bufferCount == 0 ? 'No thoughts waiting' : describeThoughtsReadyForSynthesis(bufferCount),
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -669,7 +460,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                             ),
                             const SizedBox(height: 2),
                             const Text(
-                              'Will auto-cluster when threshold is met',
+                              'Starts by itself when the settings above are met',
                               style: TextStyle(
                                   fontSize: 11, color: AppColors.textTertiary),
                             ),
@@ -705,9 +496,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ),
           const SizedBox(height: 20),
 
-          // Section 3: Folder Management & Semantic Manifestos
-          _buildSectionHeader('FOLDER MANAGEMENT & SEMANTIC MANIFESTOS'),
+          // Folders synthesis files notes under (read-only: the set is fixed in this release)
+          _buildSectionHeader('FOLDERS'),
           Container(
+            width: double.infinity,
             decoration: BoxDecoration(
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(AppColors.cardRadius),
@@ -718,153 +510,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Folder descriptions guide on-device AI classification to accurately distinguish between projects and apps, even for abrupt thoughts.',
+                  'Synthesis files each note in one of these folders.',
                   style: TextStyle(
                       fontSize: 12,
                       height: 1.4,
                       color: AppColors.textSecondary),
                 ),
-                const SizedBox(height: 12),
-                ..._folderManifestos.map((manifesto) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.borderSubtle),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(manifesto.icon,
-                                style: const TextStyle(fontSize: 14)),
-                            const SizedBox(width: 8),
-                            Text(
-                              manifesto.name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
+                const SizedBox(height: 10),
+                Wrap(
+                  key: const Key('settings_folder_list'),
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final folder in defaultFolders)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius:
+                              BorderRadius.circular(AppColors.badgeRadius),
+                          border: Border.all(color: AppColors.borderSubtle),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          manifesto.description,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    key: const Key('add_custom_folder_button'),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.accentAction),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6)),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    icon: const Icon(Icons.add,
-                        size: 16, color: AppColors.accentAction),
-                    label: const Text(
-                      'Add Custom Folder',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.accentAction),
-                    ),
-                    onPressed: _openAddFolderDialog,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Section 4: Calendar Synchronization
-          _buildSectionHeader('CALENDAR SYNCHRONIZATION'),
-          Material(
-            color: AppColors.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppColors.cardRadius),
-              side: const BorderSide(color: AppColors.borderSubtle),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Sync Action Items with Calendar',
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary)),
-                    subtitle: const Text(
-                        'Automatically schedule extracted commitments as time blocks',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary)),
-                    value: _isCalendarSyncEnabled,
-                    onChanged: (val) =>
-                        setState(() => _isCalendarSyncEnabled = val),
-                  ),
-                  const Divider(height: 16, color: AppColors.borderSubtle),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
                         child: Text(
-                          'Active Calendar Provider',
-                          style: TextStyle(
-                              fontSize: 13,
+                          folder.name,
+                          style: const TextStyle(
+                              fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textPrimary),
                         ),
                       ),
-                      Text(
-                        'Google Calendar',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.accentAction),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Section 5: Audio Capture Storage
-          _buildSectionHeader('AUDIO CAPTURE STORAGE'),
-          Material(
-            color: AppColors.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppColors.cardRadius),
-              side: const BorderSide(color: AppColors.borderSubtle),
-            ),
-            child: SwitchListTile(
-              title: const Text('Keep Raw Audio Files',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary)),
-              subtitle: const Text(
-                  'Retain original WAV voice audio alongside cleaned transcripts',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary)),
-              value: _keepRawAudio,
-              onChanged: (val) => setState(() => _keepRawAudio = val),
+                  ],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -1125,7 +803,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ],
             ),
           ),
+          const SizedBox(height: 20),
+
+          // About: licences and credits for the bundled models and libraries
+          _buildSectionHeader('ABOUT'),
+          Material(
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppColors.cardRadius),
+              side: const BorderSide(color: AppColors.borderSubtle),
+            ),
+            child: ListTile(
+              key: const Key('settings_licences_row'),
+              leading: const Icon(Icons.info_outline,
+                  color: AppColors.accentAction),
+              title: const Text('Licences and credits',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary)),
+              subtitle: const Text(
+                  'The models and open-source software Eudemonia runs on',
+                  style: TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary)),
+              trailing: const Icon(Icons.chevron_right,
+                  size: 20, color: AppColors.textTertiary),
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'Eudemonia',
+              ),
+            ),
+          ),
           const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModelRows() {
+    final speech = ref.watch(speechModelAvailabilityProvider);
+    final profile = ref.watch(activeSynthesisProfileProvider);
+    final writing = ModelCatalogue.languageModels.where((m) => m.profile == profile).firstOrNull;
+    Widget row(Key key, String label, String value) => Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: key,
+            borderRadius: BorderRadius.circular(AppColors.cardRadius),
+            onTap: () => openModelSetup(Navigator.of(context)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$label · $value',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
+                ],
+              ),
+            ),
+          ),
+        );
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppColors.cardRadius),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Column(
+        children: [
+          row(const Key('settings_speech_model_row'), 'Speech model', describeSpeechModelState(speech)),
+          const Divider(height: 1, color: AppColors.borderSubtle),
+          row(const Key('settings_writing_model_row'), 'Writing model', writing?.displayName ?? 'Not chosen'),
         ],
       ),
     );

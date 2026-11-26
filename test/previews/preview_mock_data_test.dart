@@ -141,8 +141,6 @@ void main() {
 
     test('MockData provides Settings and Batching Configuration thresholds', () {
       final settings = MockData.settingsConfig;
-      expect(settings.isAccessibilityGranted, isTrue);
-      expect(settings.isBatteryExemptGranted, isTrue);
       expect(settings.isForegroundKeepAlive, isTrue);
       expect(settings.synthesisNoteThreshold, equals(3));
       expect(settings.synthesisInactivityMinutes, equals(15));
@@ -152,7 +150,7 @@ void main() {
       expect(settings.autoSyncOnExtract, isTrue);
       expect(settings.thermalHeadroomPercent, equals(84));
       expect(settings.ramFootprint, equals('1.58 GB'));
-      expect(settings.evictionCountdownSeconds, equals(164));
+      expect(settings.evictionCountdownSeconds, equals(104));
     });
 
     test('MockSynthesisCluster tracks unread indicator and action extraction completion', () {
@@ -184,5 +182,17 @@ void main() {
       }
     });
   });
-}
 
+  group('Model setup scenarios', () {
+    test('cover nothing downloaded, speech downloading, 4B in use, a small phone and no fit', () {
+      final scenarios = MockData.modelScenarios;
+      expect(scenarios.length, 5);
+      expect(scenarios[0].availability, isEmpty);
+      expect(scenarios[1].availability.values.single.fraction, greaterThan(0));
+      expect(scenarios[2].selectedLanguageModelId, 'qwen3-4b');
+      expect(scenarios[3].totalRamMb, lessThan(7000));
+      expect(scenarios[3].totalRamMb, greaterThanOrEqualTo(5200));
+      expect(scenarios[4].totalRamMb, lessThan(5200));
+    });
+  });
+}

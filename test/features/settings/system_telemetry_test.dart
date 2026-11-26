@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/home/main_navigation_shell.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
+import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
+
+import 'fake_permission_gateway.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -101,7 +104,10 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [notesRepositoryProvider.overrideWithValue(NotesRepository())],
+          overrides: [
+            runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
+            notesRepositoryProvider.overrideWithValue(NotesRepository()),
+          ],
           child: const MaterialApp(home: SettingsScreen()),
         ),
       );
@@ -165,7 +171,10 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [notesRepositoryProvider.overrideWithValue(NotesRepository())],
+          overrides: [
+            runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
+            notesRepositoryProvider.overrideWithValue(NotesRepository()),
+          ],
           child: const MaterialApp(home: MainNavigationShell()),
         ),
       );

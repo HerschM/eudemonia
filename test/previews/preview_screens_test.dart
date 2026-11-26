@@ -5,6 +5,7 @@ import '../../previews/screens/capture_screen_preview.dart';
 import '../../previews/screens/synthesis_screen_preview.dart';
 import '../../previews/screens/insights_screen_preview.dart';
 import '../../previews/screens/action_screen_preview.dart';
+import '../../previews/screens/model_setup_preview.dart';
 
 void main() {
   group('Four-Stage Preview Screens Widget Tests', () {
@@ -70,7 +71,7 @@ void main() {
       // Floating Trigger Button with larger mic and "/" separator
       expect(find.byKey(const Key('floating_capture_button')), findsOneWidget);
       expect(find.text('/'), findsOneWidget);
-      expect(find.text('Press Vol Up + Down to Capture'), findsOneWidget);
+      expect(find.text('Tap to capture'), findsOneWidget);
 
       // Test Floating Button Tap -> transforms into active recording with listening waveform
       await tester.tap(find.byKey(const Key('floating_capture_button')));
@@ -126,7 +127,7 @@ void main() {
       await tester.tap(find.text('Failed').last);
       await tester.pumpAndSettle();
       expect(find.text('#02'), findsOneWidget);
-      expect(find.textContaining('No speech detected in audio recording'),
+      expect(find.textContaining('Speech recognition stopped unexpectedly'),
           findsOneWidget);
 
       // Reset status filter to All
@@ -157,7 +158,7 @@ void main() {
       // Verify pending batch synthesis banner is visible
       expect(find.byKey(const Key('pending_synthesis_batch_banner')),
           findsOneWidget);
-      expect(find.textContaining('2 raw thoughts ready to cluster'),
+      expect(find.text('2 thoughts ready for Synthesis'),
           findsOneWidget);
 
       // Verify synthesized notes
@@ -370,7 +371,7 @@ void main() {
 
       // Action items
       expect(
-          find.textContaining('Verify accessibility debouncer on locked phone'),
+          find.textContaining('Verify capture widget on locked phone'),
           findsOneWidget);
       expect(find.text('⚡ High Urgency'), findsOneWidget);
 
@@ -410,7 +411,7 @@ void main() {
 
       expect(find.text('Mind Pipeline Status'), findsOneWidget);
       expect(find.textContaining('audio recording transcribing'), findsOneWidget);
-      expect(find.textContaining('raw thoughts ready to cluster'), findsOneWidget);
+      expect(find.textContaining('thoughts ready for Synthesis'), findsOneWidget);
       expect(find.textContaining('Next daily refresh in 14h'), findsOneWidget);
       expect(find.textContaining('All action commitments extracted'), findsOneWidget);
 
@@ -431,52 +432,22 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Settings & Diagnostics'), findsOneWidget);
-      expect(find.text('Accessibility Interceptor'), findsOneWidget);
-      expect(find.text('ENABLED'), findsWidgets);
+      expect(find.text('Accessibility Interceptor'), findsNothing);
+      expect(find.text('CAPTURE PERMISSIONS'), findsOneWidget);
+      expect(find.textContaining('Battery'), findsNothing);
       expect(find.byKey(const Key('synthesis_note_threshold_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('synthesis_inactivity_minutes_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('trigger_synthesis_now_btn')), findsOneWidget);
 
-      // Verify Folder Management & Semantic Manifestos Section
-      final folderHeaderFinder =
-          find.text('FOLDER MANAGEMENT & SEMANTIC MANIFESTOS');
+      // Folders are a read-only list; calendar and raw-audio controls are gone.
+      final folderHeaderFinder = find.text('FOLDERS');
       await tester.scrollUntilVisible(folderHeaderFinder, 300);
       await tester.pumpAndSettle();
       expect(folderHeaderFinder, findsOneWidget);
-      expect(find.byKey(const Key('folder_item_work')), findsOneWidget);
-      expect(find.byKey(const Key('folder_item_eudemonia')), findsOneWidget);
-
-      // Tap Edit on Work folder manifesto
-      final editWorkBtn = find.byKey(const Key('edit_manifesto_work'));
-      await tester.tap(editWorkBtn);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Edit Description for "Work"'), findsOneWidget);
-      await tester.enterText(
-          find.byKey(const Key('edit_folder_desc_field')),
-          'Client projects and technical design docs.');
-      await tester.tap(find.byKey(const Key('confirm_edit_folder_button')));
-      await tester.pumpAndSettle();
-      expect(find.text('Client projects and technical design docs.'),
-          findsOneWidget);
-
-      // Tap Add Custom Folder
-      final addFolderBtn = find.byKey(const Key('add_custom_folder_button'));
-      await tester.scrollUntilVisible(addFolderBtn, 200);
-      await tester.pumpAndSettle();
-      await tester.tap(addFolderBtn);
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('confirm_add_folder_button')), findsOneWidget);
-      expect(find.byKey(const Key('new_folder_name_field')), findsOneWidget);
-      await tester.enterText(
-          find.byKey(const Key('new_folder_name_field')), 'Health & Fitness');
-      await tester.enterText(find.byKey(const Key('new_folder_desc_field')),
-          'Workout logs, nutrition notes, running pace, and recovery.');
-      await tester.tap(find.byKey(const Key('confirm_add_folder_button')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Health & Fitness'), findsOneWidget);
+      expect(find.byKey(const Key('settings_folder_list')), findsOneWidget);
+      expect(find.byKey(const Key('add_custom_folder_button')), findsNothing);
+      expect(find.text('CALENDAR SYNCHRONIZATION'), findsNothing);
+      expect(find.text('AUDIO CAPTURE STORAGE'), findsNothing);
 
       final evictBtnFinder = find.byKey(const Key('evict_models_btn'));
       await tester.scrollUntilVisible(evictBtnFinder, 300);
@@ -504,6 +475,80 @@ void main() {
       await tester.tap(find.text('Action (3)'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Device Calendar'), findsOneWidget);
+    });
+  });
+
+  group('ModelSetupPreview (FR16) on 360dp', () {
+    Future<void> pumpScenario(WidgetTester tester, int scenario) async {
+      tester.view.physicalSize = const Size(360 * 2, 1800 * 2);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(home: ModelSetupPreview(initialScenario: scenario)));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('every scenario renders with zero overflows', (tester) async {
+      for (var i = 0; i < 5; i++) {
+        await pumpScenario(tester, i);
+        expect(find.text('On-device models'), findsOneWidget, reason: 'scenario $i');
+        expect(tester.takeException(), isNull, reason: 'scenario $i');
+      }
+    });
+
+    testWidgets('nothing downloaded offers Download and the candidate carries a Testing tag', (tester) async {
+      await pumpScenario(tester, 0);
+      expect(find.text('Download'), findsNWidgets(3));
+      expect(find.byKey(const Key('model_testing_tag_qwen3-1.7b')), findsOneWidget);
+    });
+
+    testWidgets('speech downloading shows 312 MB of 671 MB', (tester) async {
+      await pumpScenario(tester, 1);
+      expect(find.text('312 MB of 671 MB'), findsOneWidget);
+    });
+
+    testWidgets('4B ready and in use', (tester) async {
+      await pumpScenario(tester, 2);
+      expect(find.text('In use'), findsOneWidget);
+      expect(find.byKey(const Key('model_download_qwen3-1.7b')), findsOneWidget);
+    });
+
+    testWidgets('a phone too small for the 4B greys it out but still offers the 1.7B', (tester) async {
+      await pumpScenario(tester, 3);
+      expect(find.text('Needs a phone with 8 GB of memory. This phone has 6 GB.'), findsOneWidget);
+      expect(find.byKey(const Key('model_download_qwen3-4b')), findsNothing);
+      expect(find.byKey(const Key('model_download_qwen3-1.7b')), findsOneWidget);
+    });
+
+    testWidgets('no model fits shows the honest message', (tester) async {
+      await pumpScenario(tester, 4);
+      expect(find.byKey(const Key('model_no_fit_message')), findsOneWidget);
+    });
+
+    testWidgets('mock buttons move the state and the scenario chips switch scenario', (tester) async {
+      await pumpScenario(tester, 0);
+      await tester.tap(find.byKey(const Key('model_download_qwen3-4b')));
+      await tester.pump();
+      expect(find.byKey(const Key('model_progress_qwen3-4b')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('model_cancel_qwen3-4b')));
+      await tester.pump();
+      expect(find.byKey(const Key('model_download_qwen3-4b')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('model_scenario_4')));
+      await tester.pump();
+      expect(find.byKey(const Key('model_no_fit_message')), findsOneWidget);
+    });
+
+    testWidgets('reachable from the settings preview', (tester) async {
+      tester.view.physicalSize = const Size(360 * 2, 1800 * 2);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: GalleryShell()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_gear_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_models_row')));
+      await tester.pumpAndSettle();
+      expect(find.text('On-device models'), findsOneWidget);
     });
   });
 }

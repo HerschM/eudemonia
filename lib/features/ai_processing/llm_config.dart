@@ -10,7 +10,7 @@ class LLMConfig {
 
   /// Idle time after which `ModelLifecycleManager` unloads the speech model from RAM.
   /// The language model is not governed by this value: a synthesis run unloads it when the
-  /// run ends. Default is 3 minutes.
+  /// run ends. Default is 2 minutes.
   final Duration modelInactivityTtl;
 
   /// Maximum time to wait for a single completion before generation is stopped
@@ -33,7 +33,7 @@ class LLMConfig {
 
   const LLMConfig({
     this.kvCacheMaxSize = 4096,
-    this.modelInactivityTtl = const Duration(minutes: 3),
+    this.modelInactivityTtl = const Duration(minutes: 2),
     this.generationTimeout = const Duration(minutes: 8),
     this.modelLoadTimeout = const Duration(seconds: 180),
     this.promptChunkTokens = 64,

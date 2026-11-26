@@ -2,47 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:eudemonia/features/capture/native_capture_channel.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
+
+import '../capture/capture_test_doubles.dart';
+import 'fake_permission_gateway.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const channel = MethodChannel('com.eudemonia/hardware_buttons');
 
-  group('Background Permission UI & Widget Tests', () {
+  group('Settings capture-readiness rows', () {
     late List<MethodCall> methodCalls;
-    bool mockAccessibility = false;
-    bool mockBatteryIgnored = false;
+    late FakePermissionGateway permissions;
+    late FakeNativeCaptureChannel capture;
     bool mockForegroundRunning = false;
 
     setUp(() {
       methodCalls = [];
-      mockAccessibility = false;
-      mockBatteryIgnored = false;
       mockForegroundRunning = false;
+      permissions = FakePermissionGateway(
+        microphone: PermissionStatus.denied,
+        notification: PermissionStatus.denied,
+      );
+      capture = FakeNativeCaptureChannel();
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
         methodCalls.add(call);
         switch (call.method) {
-          case 'isAccessibilityServiceEnabled':
-            return mockAccessibility;
-          case 'isIgnoringBatteryOptimizations':
-            return mockBatteryIgnored;
           case 'isForegroundServiceRunning':
             return mockForegroundRunning;
-          case 'startForegroundService':
-            mockForegroundRunning = true;
-            return true;
-          case 'stopForegroundService':
-            mockForegroundRunning = false;
-            return true;
-          case 'openAccessibilitySettings':
-          case 'requestIgnoreBatteryOptimizations':
-          case 'openBatteryOptimizationSettings':
-          case 'requestSimultaneousPermissions':
-            return null;
           default:
             return null;
         }
@@ -54,109 +47,96 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     });
 
-    testWidgets(
-      'showSimultaneousPermissionModal renders on 360dp narrow viewport with NO RenderFlex overflow and NO DecoratedBox assertion',
-      (WidgetTester tester) async {
-        // Enforce a realistic narrow mobile viewport width (360 x 640 logical pixels)
-        tester.view.physicalSize = const Size(360, 640);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    Future<void> pumpSettings(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(390, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-        final service = BackgroundPermissionService(channel: channel);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            runtimePermissionGatewayProvider.overrideWithValue(permissions),
+            nativeCaptureChannelProvider.overrideWithValue(capture),
+          ],
+          child: const MaterialApp(home: SettingsScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
 
-        await tester.pumpWidget(
-          ProviderScope(
-            child: MaterialApp(
-              home: Scaffold(
-                body: Builder(
-                  builder: (context) {
-                    return ElevatedButton(
-                      onPressed: () {
-                        service.showSimultaneousPermissionModal(context);
-                      },
-                      child: const Text('Open Modal'),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
+    Finder badgeIn(String rowKey) => find.descendant(
+          of: find.byKey(Key(rowKey)),
+          matching: find.byType(Chip),
         );
 
-        // Tap to open bottom sheet
-        await tester.tap(find.text('Open Modal'));
-        await tester.pumpAndSettle();
+    testWidgets('shows Microphone and Notifications rows with Disabled badges, and no accessibility, volume or battery wording',
+        (tester) async {
+      await pumpSettings(tester);
 
-        // Verify title exists and wraps cleanly
-        expect(find.text('Background Permissions Required'), findsOneWidget);
+      expect(find.text('Microphone'), findsOneWidget);
+      expect(find.text('Notifications (lock-screen Record button)'), findsOneWidget);
+      expect(find.text('CAPTURE PERMISSIONS'), findsOneWidget);
+      expect(find.textContaining('Battery'), findsNothing);
+      expect(find.descendant(of: badgeIn('settings_microphone_row'), matching: find.text('Disabled')),
+          findsOneWidget);
+      expect(find.descendant(of: badgeIn('settings_notifications_row'), matching: find.text('Disabled')),
+          findsOneWidget);
+      expect(find.textContaining('Accessibility'), findsNothing);
+      expect(find.textContaining('volume', findRichText: true), findsNothing);
+      expect(find.textContaining('Grant Both'), findsNothing);
+      expect(find.text('Active'), findsNothing);
+      expect(find.text('Granted'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
 
-        // Assert no framework exceptions occurred (catches RenderFlex overflow & DecoratedBox assertion)
-        expect(tester.takeException(), isNull);
+    testWidgets('shows Enabled badges once everything is granted', (tester) async {
+      permissions = FakePermissionGateway();
+      mockForegroundRunning = true;
 
-        // Verify that ambiguous 'Active' and 'Granted' texts DO NOT exist in the modal
-        expect(find.text('Active'), findsNothing);
-        expect(find.text('Granted'), findsNothing);
+      await pumpSettings(tester);
 
-        // When disabled, badges must say 'Disabled'
-        expect(find.text('Disabled'), findsNWidgets(2));
-      },
-    );
+      expect(find.text('Enabled'), findsNWidgets(2));
+      expect(find.text('Disabled'), findsNothing);
+    });
 
-    testWidgets(
-      'SettingsScreen uses consistent Enabled/Disabled states without Active or Granted',
-      (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(390, 844);
-        tester.view.devicePixelRatio = 1.0;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
+    testWidgets('tapping the Microphone and Notifications rows requests the permissions', (tester) async {
+      await pumpSettings(tester);
 
-        mockAccessibility = false;
-        mockBatteryIgnored = false;
+      await tester.tap(find.byKey(const Key('settings_microphone_row')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings_notifications_row')));
+      await tester.pumpAndSettle();
 
-        await tester.pumpWidget(
-          const ProviderScope(
-            child: MaterialApp(
-              home: SettingsScreen(),
-            ),
-          ),
-        );
+      expect(permissions.requested, [Permission.microphone, Permission.notification]);
+      expect(find.text('Enabled'), findsWidgets);
+    });
 
-        await tester.pumpAndSettle();
+    testWidgets('Add capture widget asks the launcher to pin it and stays quiet on success', (tester) async {
+      await pumpSettings(tester);
+      final row = find.byKey(const Key('settings_add_widget_row'));
+      await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
 
-        // Initial state: both are disabled
-        expect(find.text('Disabled'), findsWidgets);
-        expect(find.text('Active'), findsNothing);
-        expect(find.text('Granted'), findsNothing);
+      expect(find.text('Add capture widget to home screen'), findsOneWidget);
+      await tester.tap(row);
+      await tester.pump();
 
-        // Verify that tapping Enable Both triggers simultaneous permission method
-        final grantBothBtn = find.text('Grant Both');
-        expect(grantBothBtn, findsOneWidget);
-      },
-    );
+      expect(capture.pinCalls, 1);
+      expect(find.byType(SnackBar), findsNothing);
+    });
 
-    testWidgets(
-      'SettingsScreen displays Enabled badge in green when permissions are active',
-      (WidgetTester tester) async {
-        mockAccessibility = true;
-        mockBatteryIgnored = true;
-        mockForegroundRunning = true;
+    testWidgets('when the launcher cannot pin, a SnackBar explains how to add the widget by hand',
+        (tester) async {
+      capture.pinSucceeds = false;
+      await pumpSettings(tester);
+      final row = find.byKey(const Key('settings_add_widget_row'));
+      await tester.scrollUntilVisible(row, 100, scrollable: find.byType(Scrollable).first);
 
-        await tester.pumpWidget(
-          const ProviderScope(
-            child: MaterialApp(
-              home: SettingsScreen(),
-            ),
-          ),
-        );
+      await tester.tap(row);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-        await tester.pumpAndSettle();
-
-        // When enabled, badges must say 'Enabled'
-        expect(find.text('Enabled'), findsWidgets);
-        expect(find.text('Active'), findsNothing);
-        expect(find.text('Granted'), findsNothing);
-      },
-    );
+      expect(find.text('Long-press your home screen, choose Widgets, then Eudemonia.'), findsOneWidget);
+    });
   });
 }

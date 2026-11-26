@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
 
 /// Modal bottom sheet allowing users to explicitly merge one synthesis session into another.
 class NoteMergeModal extends StatelessWidget {
@@ -186,7 +187,7 @@ class NoteMergeModal extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    target.synthesizedContent,
+                                    plainNotePreview(target.synthesizedContent),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(

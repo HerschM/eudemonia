@@ -53,6 +53,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 ### Key User Scenarios
 
 #### Scenario 1: Screen-Off / Pocket Capture
+> **R1 (2026-11-26)**: with FR1 deferred, the locked-phone capture is one tap on `Record Thought` in the lock-screen notification and one tap on `Stop & Save`; the pocket (no-look) variant below returns with the volume trigger.
+
 - **Context**: User is walking outdoors with phone locked in pocket. A breakthrough thought occurs.
 - **Action**: User presses both volume buttons simultaneously through their pocket fabric.
 - **Feedback**: A sharp dual-pulse native haptic confirms recording has started. User speaks naturally for 15 seconds.
@@ -60,6 +62,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **Outcome**: The audio is saved to the local queue in <5ms. The phone stays in the user's pocket. The background worker loads the on-device models, performs STT (the transcript is shown as spoken), assigns daily sequence `#01`, and renders in the **Capture** stream without premature classification.
 
 #### Scenario 2: Active Interruption Inside Another App
+> **R1 (2026-11-26)**: the trigger is the Record button in the notification shade (or the widget from the home screen); the outcome below is unchanged — Eudemonia never comes to the front (FR10.5).
+
 - **Context**: User is reading a document or navigating in Google Maps when an unrelated task comes to mind.
 - **Action**: User triggers dual volume buttons.
 - **Outcome**: Capture starts instantly without launching Eudemonia over the active navigation screen or interrupting foreground tasks. When stopped, normal volume buttons immediately resume transparent audio level control.
@@ -105,11 +109,32 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
    - **Synthesis**: Multi-thought clustering by temporal proximity and semantic similarity. Notes are classified strictly into predefined folders (`Work`, `Ideas`, `Todos`, `Journal`, fallback `Uncategorized`) with a compact folder filter dropdown. Open-ended auto-tagging is strictly avoided to prevent taxonomy explosion.
    - **Insights**: Higher-order emotional climate, topic load, and recurrent pattern dashboards.
    - **Action**: Commitments extraction and calendar time-blocking.
-5. **Mobile Resource Respect**: Mobile operating systems aggressively kill memory-heavy apps. Models must load sequentially and be evicted after 3 minutes of idle time to prevent phone slowdowns and Android Low Memory Killer (LMK) kills.
+5. **Mobile Resource Respect**: Mobile operating systems aggressively kill memory-heavy apps. Models must load sequentially and be evicted after 2 minutes of idle time to prevent phone slowdowns and Android Low Memory Killer (LMK) kills.
 
 ---
 
 ## 5. Scope, Functional Requirements (FR) & Non-Functional Requirements (NFR)
+
+### R1. First Public Release Scope (Capture & Synthesis Only; Notification, Widget & In-App Capture; Decided by the User 2026-11-26)
+
+> [!IMPORTANT]
+> This block governs what is built and enabled in the **first public release (R1)**. Requirements below that R1 defers stay valid as written and return after launch; they are not to be built, shown or declared to Google Play in R1.
+
+- **Ships in R1**:
+  - **Two stages only**: Capture and Synthesis. The Insights and Action tabs are removed from the navigation shell (no greyed-out placeholders).
+  - **Three ways to capture** (FR9.3, FR10): the Record button on the persistent notification (usable on the lock screen without unlocking), a home-screen widget, and the capture capsule inside the app. The notification and the widget are the primary mechanism.
+  - Recording is done by native Android code, so a thought is saved without the app being open and without the app coming to the front (FR10.5).
+  - On-device speech recognition and Synthesis as specified (FR4, FR5, FR11); synthesized notes are displayed as formatted text, not with literal Markdown markers (FR11.15).
+  - **Models are downloaded inside the app** and the user chooses a language model that fits the phone (FR16).
+  - **No payment flow**: Synthesis is free in R1.
+- **Deferred until after R1** (in the order the user wants them taken up, where stated):
+  - **FR1 dual-volume-button trigger and the Accessibility Service**: Google Play's Accessibility declaration takes long to approve and the trigger needs testing across many phones before it can feel reliable. The last working code is parked, not compiled and not in the manifest (`android/app/src/parked/hardware_trigger/`).
+  - **FR14 Action and FR15 Insights**: need a long period of ironing out; user feedback on Capture and Synthesis comes first.
+  - **Payment flow and the lock that leads to payment**: work starts after R1 is live (see `business/STRATEGY.md`); requirements to be written then.
+  - **Wording trials for the synthesized note** (prompt changes only) — after the cosmetic issues are fixed and the Google verification video is recorded.
+  - **FR12 thermal and battery guard** (TASK-072) and other functional tuning — after everything needed for launch and verification.
+  - **Export of notes as Markdown files** (FR11.15, roadmap).
+- **Order of work for R1 (user, 2026-11-26)**: everything needed for launch and Google's app verification first (capture mechanism, scope cut, cosmetic and smoothness fixes, the verification video), then note wording, then functional issues such as heat.
 
 ### A. In-Scope (v1.0 MVP & Active Extensions)
 - Android physical dual-volume key trigger detection via an Accessibility Service.
@@ -141,6 +166,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 ### C. Functional Requirements (FR)
 
 #### FR1: Hardware Key Trigger & Volume Safety
+> **Deferred until after the first public release (2026-11-26, see R1 above).** Not built into or declared by R1; the code is parked in `android/app/src/parked/hardware_trigger/`. The requirements below are kept for its return.
+
 - **FR1.1**: The system must intercept `VOLUME_UP` and `VOLUME_DOWN` key events via an Android `AccessibilityService`.
 - **FR1.2**: If both volume keys are pressed within a 50ms window (`dualPressWindowMs`), the system must trigger the thought recording toggle (start or stop).
 - **FR1.3**: When a dual-press trigger is detected, the system must trigger a native vibration pattern immediately in native code without deferring to the Flutter engine.
@@ -174,8 +201,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 #### FR6: Model Lifecycle & Memory Management
 - **FR6.1**: The system must maintain three lifecycle states: `unloaded`, `loading`, and `ready`.
 - **FR6.2**: Models must be loaded **sequentially** (STT first, LLM second) to prevent simultaneous memory allocation spikes above Android Low Memory Killer thresholds.
-- **FR6.3**: When idle for 3 minutes (`modelInactivityTtl`), the system must automatically unload both models from RAM, reclaiming ~1.6 GB and restoring baseline footprint to <60 MB.
-- **FR6.4**: Completing an item or interacting with the queue must touch the lifecycle manager, resetting the 3-minute eviction timer.
+- **FR6.3**: When idle for 2 minutes (`modelInactivityTtl`; shortened from 3 minutes by the user on 2026-11-26), the system must automatically unload both models from RAM, reclaiming ~1.6 GB and restoring baseline footprint to <60 MB. A Synthesis run that is due does not wait for this timer: it unloads the idle speech model itself.
+- **FR6.4**: Completing an item or interacting with the queue must touch the lifecycle manager, resetting the eviction timer.
 
 #### FR7: Local Persistence
 - **FR7.1**: Raw and synthesized thoughts must be saved to an embedded local database (Isar) containing `id`, `sequenceNumber`, `rawText`, `cleanedText`, `synthesizedContent`, `clusterId`, `folder`, `createdAt`, and `originalAudioPath`.
@@ -183,7 +210,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 #### FR8: Background Reliability & Permissions
 - **FR8.1**: The app must provide an Android Foreground Service (`EudemoniaForegroundService`) with an ongoing low-priority notification to protect the process from OS termination.
-- **FR8.2**: The app must detect and request both Accessibility Service and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) simultaneously through an educational modal.
+- **FR8.2**: The app must detect and request both Accessibility Service and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) simultaneously through an educational modal. **R1 (2026-11-26)**: the Accessibility Service is not requested (FR1 deferred) and the dual modal is removed; the permissions capture depends on in R1 are the microphone and notifications, each surfaced by a banner on the Capture screen with a one-tap fix when missing. **R1 does not request the battery exemption** (user decision 2026-11-26: Google Play restricts that permission and lists no voice-recording use); the foreground service and a bounded wake lock carry background processing.
 - **FR8.3**: Permission status indicators across settings and alerts must use standardized **Enabled** (Green) and **Disabled** (Amber) badges.
 
 #### FR9: Capture Screen Presentation, Status Colors & Dual Filters
@@ -197,7 +224,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
   - **Status Filter Dropdown**: Dropdown filter situated above feed for `All Statuses`, `Processing`, `Processed`, `Synthesized`, and `Failed`.
   - Dropdown controls preserve vertical space and ensure visual alignment with the Synthesis screen's controls.
 - **FR9.3 (Interactive Floating Capture Trigger)**:
-  - The Capture screen features an elevated floating capsule: `[ 🎙️ / Press Vol Up + Down to Capture ]` with a prominent mic icon (`20sp`) and `"/"` separator.
+  - The Capture screen features an elevated floating capsule: `[ 🎙️ / Press Vol Up + Down to Capture ]` with a prominent mic icon (`20sp`) and `"/"` separator. **R1**: the label reads `[ 🎙️ / Tap to capture ]` while FR1 is deferred.
   - The trigger is directly clickable in-app to start recording without physical volume buttons.
   - While recording, the pill transforms to show an active listening loader bar / pulsating audio waveform inside the button itself with elapsed time. Tapping again stops recording, enqueuing a Yellow pending note immediately with clean SnackBar feedback: `"Captured a new note [#0X]"` (free of internal implementation or debug filler text).
 - **FR9.4**: Every capture note receives a daily sequence number (`#01`, `#02`, `#03`...). The counter resets to `#01` every day at midnight.
@@ -210,6 +237,9 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
 - **FR10.2**: Toggling the notification button must trigger start and stop of thought recording directly from the lock screen or notification shade without requiring device unlock.
 - **FR10.3**: While recording is active, the notification must update dynamically to display an elapsed timer (`Recording 00:06...`) and a `[ ⏹ Stop & Save ]` action.
+- **FR10.4 (Home-Screen Capture Widget, added 2026-11-26)**: The app provides a home-screen widget with one tap target: `Record thought` when idle; while recording it shows the running elapsed time and `Stop & save`. Settings offers `Add capture widget to home screen`.
+- **FR10.5 (Capture Without the App, added 2026-11-26)**: Starting or stopping a recording from the notification or the widget must never open the app or bring it in front of what the user is doing, and must work when the app's screen has been closed. The recording is saved on the device at once; it is transcribed in the background while the app's process is alive, otherwise the next time the app is opened. The start and stop haptics (FR1.3 patterns) are given natively for every way of capturing.
+- **FR10.6 (Nothing Shown Over the Lock Screen, added 2026-11-26)**: The app's screens and the user's notes are never displayed over the lock screen; only the notification with its timer and buttons is.
 
 #### FR11: Synthesis, Predefined Folders & Session Clustering
 - **FR11.1**: The system must automatically cluster disjointed raw notes captured within an active temporal window (e.g. 15–45 minutes) that share contextual continuity or topical affinity into a unified synthesized note.
@@ -254,6 +284,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
   - **Enriched Classification Prompting**: Stage 1 language cleanup and Stage 2 clustering inject folder manifestos into prompts, allowing the local LLM to accurately categorize abrupt, context-dependent voice notes (e.g., *"Need to finish UI/UX"* matches `Eudemonia` because UI/UX is explicitly in its manifesto).
   - **Default Note Style per Folder (proposed by the user 2026-11-22, decision pending)**: Settings may let the user choose, for each folder, the style in which its notes are written by default (for example bullets under headings for `Work`, flowing paragraphs for `Personal` or `Journal`). Not decided and not built; until then every folder uses the same structured style.
   - **Fidelity Before Brevity (user requirement 2026-11-22)**: whatever the style, a synthesized note must not lose details that were spoken — who, what, when, how many, and whether something has already happened or is only planned. A shorter note is never worth a missing or altered fact.
+- **FR11.15 (Synthesized Notes Are Markdown, Shown Formatted — decided by the user 2026-11-26)**: the model's note is stored exactly as written, as Markdown (a title, short headings, `- ` bullets, `**bold**`). Every screen that shows a synthesized note renders it formatted: the title and headings in bold, bullets with a hanging indent, no literal `*` or `#` markers. The user's own spoken thoughts are plain text and are never interpreted as Markdown. Keeping notes as `.md` files for easy export is the stated direction (roadmap); only the display is required in R1.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating
 - **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
@@ -263,17 +294,29 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 
 #### FR13: System Observability & Telemetry Visualizers
 - **FR13.1**: The Settings screen must render an interactive 24-hour battery consumption curve showing Eudemonia's background energy draw relative to device drain.
-- **FR13.2**: The Settings screen must render a memory lifecycle timeline graph illustrating baseline idle RAM (<60MB), sequential load spikes during inference (~1.6GB), and the sharp reclamation curve following the 3-minute inactivity eviction.
+- **FR13.2**: The Settings screen must render a memory lifecycle timeline graph illustrating baseline idle RAM (<60MB), sequential load spikes during inference (~1.6GB), and the sharp reclamation curve following the inactivity eviction (FR6.3).
 - **FR13.3**: The queue service and UI state must hydrate synchronously from disk (`queue.json`) on cold app restart within <50ms.
 
 #### FR14: The Action Engine (Tasks & Calendar Time-Blocking)
+> **Deferred until after the first public release (2026-11-26, see R1).** The Action tab is not shown in R1.
+
 - **FR14.1**: During synthesis, the LLM extracts actionable commitments, producing structured action items with description, temporal anchor (`05/11  02:00 PM`), urgency level, and origin note link.
 - **FR14.2**: The **Action** screen organizes commitments with interactive checkboxes, calendar time-block previews, and 1-tap `[ 📅 Push to Calendar ]` dispatch.
 - **FR14.3**: Calendar account and sync configuration is managed in Settings; connection status is reflected live in the Action screen.
 
 #### FR15: Insights Hub (Cognitive Climate & Recurrent Patterns)
+> **Deferred until after the first public release (2026-11-26, see R1).** The Insights tab is not shown in R1.
+
 - **FR15.1**: Evaluates reflective notes for psychological valence (-1.0 to +1.0) and cognitive energy (Low/High).
 - **FR15.2**: The **Insights** screen visualizes a weekly/monthly emotional valence heatmap, topic cognitive density matrix, and surfaces recurrent thought patterns detected across sessions over time.
+
+#### FR16: On-Device Model Delivery & Device-Fit Model Choice (Approved by the User 2026-11-26)
+- **FR16.1 (Download Inside the App)**: The speech model and the language model are downloaded by the app itself, each started by the user, with visible progress, resumption after a lost connection, and a fingerprint (SHA-256) check before a file is ever used. A file that fails the check is discarded and reported. Downloads use Wi-Fi only unless the user allows mobile data.
+- **FR16.2 (Capture Never Waits for a Model)**: Recording works before any model is present. Thoughts recorded without the speech model wait, visibly, and are transcribed as soon as it is ready; they are not marked failed.
+- **FR16.3 (Choice of Language Model)**: The app offers a short list of validated language models. Each entry shows its download size, the memory it uses and a plain description of its quality. Entries too large for the phone's memory are greyed out and cannot be selected, with the reason stated. Only one language model is active at a time; the user can change or delete it in Settings.
+- **FR16.4 (Only Models That Earn Their Place)**: A model is listed only if it has been measured to write notes that keep the spoken details on a phone of the class it is offered to (TASK-065). A smaller model that does not meet that bar is not listed.
+- **FR16.5 (No Model, Honest Message)**: When no listed language model fits the phone, or none has been downloaded, Synthesis says so plainly and Capture and transcription keep working. No fallback output of any kind is produced (FR5.5).
+- **FR16.6 (What the Network Is Used For)**: The network permission is used for these downloads only. No recording, transcript, note, identifier or usage data is sent anywhere.
 
 ---
 
@@ -294,7 +337,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 | **Reliability** | UI Render Fluidity | **Locked 60/120fps** animation on processing indicators during active inference |
 | **Reliability** | Thermal Safeguard | LLM deferred when thermal status >= `THERMAL_STATUS_SEVERE` |
 | **Reliability** | App Crash-Free Rate | **> 99.9%** across background trigger cycles |
-| **Privacy** | Network Transmission | **0 bytes**: Absolute zero outbound traffic for audio, text, or metrics |
+| **Privacy** | Network Transmission | **0 bytes**: Absolute zero outbound traffic for audio, text, or metrics. The only network use is the download of the on-device model files that the user starts (FR16, approved 2026-11-26); no user data is part of that request. |
 
 ---
 
@@ -305,6 +348,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 > For the exhaustive design token dictionary, component sandbox architecture (`previews/`), ASCII wireframes, and component contracts for every screen, refer to [`UX.md`](file:///Users/harshmavani/Documents/Eudemonia/UX.md).
 
 ### A. The 4-Stage Navigation Shell
+> **R1 (2026-11-26)**: the shell shows two stages, Capture and Synthesis, each half of the segmented bar; stages 3 and 4 below return with FR14 and FR15.
+
 The app shell separates machine pipeline tasks from human consumption:
 - **Global Header**: Features the interactive AI Pipeline Status Pill (`[ ⚡ X in Pipeline ▾ ]` or `[ 🌿 In Sync ▾ ]`), opening the Pipeline HUD with stage breakdowns and `[ ⚡ Synthesize Now ]` manual override.
 - **Segmented Bar**: Stage tabs display numbers strictly for **unconsumed human value** with zero-suppression (`Capture (2)`, `Synthesis (1)`, `Insights (1)`, `Action (3)`).
@@ -391,6 +436,8 @@ All visual prototypes and UI design iterations are built in `previews/screens/` 
 ## 9. Future Roadmap & Explicit V1 Non-Goals
 
 ### A. Deferred Features & Roadmap (v1.5 & v2.0)
+- **Returning Right After the First Public Release (decided 2026-11-26, see Section 5 R1)**: the payment flow and the lock that leads to it; note-wording trials; the thermal and battery guard (FR12); the dual-volume-button trigger with its Accessibility declaration (FR1); the Action and Insights stages (FR14, FR15).
+- **Notes as Markdown Files (requested 2026-11-26)**: synthesized notes are already stored as Markdown text; the aim is to keep them as `.md` files so the user can export them easily. Display of the Markdown is in R1 (FR11.15); file export is a later task.
 - **AI-Assisted Topical Merge Suggestions (v1.5)**: Deterministic, zero-LLM entity and keyword set-intersection matching across the last 48 hours to display proactive suggestion pills (`[ 🔗 Similar to #S-01 (Marcus deliverables) • Merge? ]`).
 - **Device-Tier Model Recommendation (v1.5)**: Recommend the on-device model best suited to the user's handset (RAM, chipset) from a small validated set of low, mid and high tier options, each measured for output quality, latency, memory and thermal impact. *(Detailed by the user 2026-11-22)*: on first launch the user chooses from 3–4 validated models, each shown with its memory footprint and a short quality description; models too large for the phone's memory are greyed out and cannot be selected; the chosen model is downloaded only after it is selected. Candidates to benchmark for 6 GB phones include SmolLM3 3B and SmolLM2-1.7B-Instruct.
 - **Several Subjects Within One Folder (open question, parked 2026-11-21)**: Two unrelated subjects in one folder (e.g. two apps under `Work`) currently share a session. The intended answer is a separate single-level folder per subject; secondary tags may help. To be revisited once real synthesis output exists.

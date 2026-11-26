@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/notes/presentation/thought_card.dart';
@@ -141,7 +142,7 @@ void main() {
         createdAt: DateTime(2026, 11, 8, 7, 40),
         dailySequenceNumber: 2,
         state: ThoughtState.failed,
-        failureReason: 'No speech detected in audio recording.',
+        failureReason: 'Speech recognition engine timeout after 30s.',
         isRead: true,
       )..id = 2;
 
@@ -174,6 +175,81 @@ void main() {
       expect(retryFinder, findsOneWidget);
       await tester.tap(retryFinder);
       expect(retried, isTrue);
+      expect(find.text('⚠️ Failed'), findsOneWidget);
+      expect(find.text('Speech recognition engine timeout after 30s.'), findsOneWidget);
+    });
+
+    testWidgets('Silent recording is a calm card: no Failed badge, no Retry, Play and Delete stay', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      bool deleted = false;
+      final silentNote = Note(
+        originalAudioPath: '/path/to/silent.wav',
+        rawText: '',
+        correctedText: '',
+        createdAt: DateTime(2026, 11, 8, 7, 40),
+        dailySequenceNumber: 3,
+        state: ThoughtState.failed,
+        failureReason: silentRecordingMessage,
+        isRead: true,
+      )..id = 3;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ThoughtCard(
+                note: silentNote,
+                sequenceNumber: silentNote.dailySequenceNumber,
+                onDelete: () => deleted = true,
+                onRetry: () {},
+                onPlayAudio: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Nothing was heard in this recording.'), findsOneWidget);
+      expect(find.textContaining('Failed'), findsNothing);
+      expect(find.byKey(const Key('retry_button')), findsNothing);
+      expect(find.byKey(const Key('play_audio_button')), findsOneWidget);
+
+      final text = tester.widget<Text>(find.byKey(const Key('silent_recording_text')));
+      expect(text.style?.color, isNot(const Color(0xFFB91C1C)), reason: 'not the failed red');
+
+      // Neutral card colours, not the failed red.
+      final card = tester.widget<Container>(
+        find.descendant(of: find.byType(ThoughtCard), matching: find.byType(Container)).first,
+      );
+      final decoration = card.decoration! as BoxDecoration;
+      expect(decoration.color, isNot(const Color(0xFFFEE2E2)));
+      expect(decoration.color, isNot(const Color(0xFF271111)));
+
+      await tester.tap(find.byKey(const Key('delete_note_button')));
+      expect(deleted, isTrue);
+    });
+
+    testWidgets('A silent recording written by an older build is also shown as silent', (tester) async {
+      final legacy = Note(
+        originalAudioPath: '/path/to/silent.wav',
+        rawText: '',
+        correctedText: '',
+        createdAt: DateTime(2026, 11, 8, 7, 40),
+        state: ThoughtState.failed,
+        failureReason: 'No speech detected in audio recording.',
+      )..id = 4;
+
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: ThoughtCard(note: legacy, onRetry: () {}))),
+      );
+
+      expect(find.text('Nothing was heard in this recording.'), findsOneWidget);
+      expect(find.byKey(const Key('retry_button')), findsNothing);
     });
   });
 }

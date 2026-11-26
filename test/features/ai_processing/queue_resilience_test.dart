@@ -176,6 +176,46 @@ void main() {
 
       expect(fourth.sequenceNumber, 4);
     });
+
+    test('recordedAt defaults to now and an explicit one is stored as given', () async {
+      final service = buildService();
+      final before = DateTime.now();
+      final automatic = await service.enqueue('/path/to/a.wav', autoProcess: false);
+      expect(automatic.recordedAt.isBefore(before), isFalse);
+
+      final spoken = DateTime.now().subtract(const Duration(minutes: 3));
+      final explicit = await service.enqueue('/path/to/b.wav', autoProcess: false, recordedAt: spoken);
+      expect(explicit.recordedAt, spoken);
+    });
+
+    test('a recording from an earlier day takes that day\'s sequence and leaves today\'s untouched', () async {
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      await notesRepo.saveNote(Note(
+        correctedText: 'old',
+        createdAt: yesterday,
+        dailySequenceNumber: 5,
+      ));
+      final service = buildService();
+
+      final today1 = await service.enqueue('/path/to/t1.wav', autoProcess: false);
+      final past = await service.enqueue('/path/to/p1.wav', autoProcess: false, recordedAt: yesterday);
+      final today2 = await service.enqueue('/path/to/t2.wav', autoProcess: false);
+      final past2 = await service.enqueue('/path/to/p2.wav', autoProcess: false, recordedAt: yesterday);
+
+      expect(today1.sequenceNumber, 1);
+      expect(today2.sequenceNumber, 2);
+      expect(past.sequenceNumber, 6);
+      expect(past2.sequenceNumber, 7);
+    });
+
+    test('concurrent enqueues of the same day never share a sequence number', () async {
+      final service = buildService();
+      final items = await Future.wait([
+        for (var i = 0; i < 5; i++) service.enqueue('/path/to/c$i.wav', autoProcess: false),
+      ]);
+
+      expect(items.map((i) => i.sequenceNumber).toSet().length, 5);
+    });
   });
 
   group('Worker failure handling', () {
@@ -225,6 +265,19 @@ void main() {
 
       expect(service.items.map((i) => i.status), [AudioQueueStatus.failed, AudioQueueStatus.completed]);
       expect((await notesRepo.getAllNotes()).single.originalAudioPath, '/path/to/good.wav');
+    });
+
+    test('an item whose file is not in place yet is skipped until it is released', () async {
+      final service = buildService();
+      final held = await service.enqueue('/path/to/moving.wav', fileReady: false);
+      await service.enqueue('/path/to/good.wav', autoProcess: false);
+
+      await service.processPending();
+      expect(service.items.map((i) => i.status), [AudioQueueStatus.pending, AudioQueueStatus.completed]);
+
+      service.markFileReady(held);
+      await service.processPending();
+      expect(service.items.map((i) => i.status), everyElement(AudioQueueStatus.completed));
     });
   });
 }

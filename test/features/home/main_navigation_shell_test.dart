@@ -10,6 +10,8 @@ import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
 
 import 'package:flutter/services.dart';
+import 'package:eudemonia/features/settings/background_permission_service.dart';
+import '../settings/fake_permission_gateway.dart';
 
 class FakePendingQueueCountNotifier extends PendingQueueCountNotifier {
   final int initial;
@@ -26,10 +28,6 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
       switch (call.method) {
-        case 'isAccessibilityServiceEnabled':
-          return true;
-        case 'isIgnoringBatteryOptimizations':
-          return true;
         case 'isForegroundServiceRunning':
           return true;
         default:
@@ -43,7 +41,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  group('MainNavigationShell 4-Stage UX & Pipeline HUD Tests', () {
+  group('MainNavigationShell 2-Stage UX & Pipeline HUD Tests', () {
     testWidgets(
       'Capture badge ignores thoughts already consumed by a synthesis session',
       (WidgetTester tester) async {
@@ -65,7 +63,7 @@ void main() {
     );
 
     testWidgets(
-      'MainNavigationShell renders branding, HUD pill, and 4-stage tabs with zero-suppression on 360dp narrow viewport',
+      'MainNavigationShell renders branding, HUD pill, and two stage tabs with zero-suppression on 360dp narrow viewport',
       (WidgetTester tester) async {
         tester.view.physicalSize = const Size(360, 800);
         tester.view.devicePixelRatio = 1.0;
@@ -118,7 +116,7 @@ void main() {
           ),
         );
 
-        // HomeScreen renders SmoothProcessingIndicator (infinite repeat animation) when pendingQueueCount > 0.
+        // A pending thought card renders an endlessly animating VoiceWaveIndicator.
         // Use pump with finite duration instead of pumpAndSettle to avoid timeout.
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
@@ -139,18 +137,23 @@ void main() {
         expect(find.text('Capture (3)'), findsOneWidget);
         // Synthesis has 1 unread cluster = 1
         expect(find.text('Synthesis (1)'), findsOneWidget);
-        // Insights and Action show clean labels without zero
-        expect(find.text('Insights'), findsOneWidget);
-        expect(find.text('Action'), findsOneWidget);
 
-        // 5. Insights and Action are greyed out (Opacity 0.38)
-        final opacities = tester.widgetList<Opacity>(find.byType(Opacity));
-        expect(opacities.any((o) => o.opacity == 0.38), isTrue);
+        // 5. Exactly two stages, each half the bar, and no overflow at 360dp
+        expect(find.byType(Tab), findsNWidgets(2));
+        expect(find.text('Insights'), findsNothing);
+        expect(find.text('Action'), findsNothing);
+        // Each stage owns half of the bar: label centres sit at 1/4 and 3/4 of its width
+        final bar = tester.getRect(find.byType(TabBar));
+        final captureX = tester.getCenter(find.widgetWithText(Tab, 'Capture (3)')).dx;
+        final synthesisX = tester.getCenter(find.widgetWithText(Tab, 'Synthesis (1)')).dx;
+        expect(captureX, closeTo(bar.left + bar.width * 0.25, 2));
+        expect(synthesisX, closeTo(bar.left + bar.width * 0.75, 2));
+        expect(tester.takeException(), isNull);
       },
     );
 
     testWidgets(
-      'Tapping Insights or Action does NOT switch tab (unclickable placeholders)',
+      'Tapping a stage tab switches stages; zero counts show clean labels',
       (WidgetTester tester) async {
         await tester.pumpWidget(
           ProviderScope(
@@ -167,29 +170,18 @@ void main() {
 
         await tester.pumpAndSettle();
 
-        // Initially on Capture tab (shows capture floating trigger or capture feed)
+        // Initially on Capture; zero-suppressed labels carry no count
         expect(find.text('Capture'), findsOneWidget);
+        expect(find.text('Synthesis'), findsOneWidget);
+        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
 
-        // Tap Insights tab
-        await tester.tap(find.text('Insights'));
-        await tester.pumpAndSettle();
-
-        // Must still NOT navigate to Insights body
-        expect(find.text('Stage 3: Insights'), findsNothing);
-
-        // Tap Action tab
-        await tester.tap(find.text('Action'));
-        await tester.pumpAndSettle();
-
-        // Must still NOT navigate to Action body
-        expect(find.text('Stage 4: Action Engine'), findsNothing);
-
-        // Tap Synthesis tab
         await tester.tap(find.text('Synthesis'));
         await tester.pumpAndSettle();
-
-        // Navigates to Synthesis screen successfully
         expect(find.text('SYNTHESIS SESSIONS'), findsOneWidget);
+
+        await tester.tap(find.text('Capture'));
+        await tester.pumpAndSettle();
+        expect(find.text('SYNTHESIS SESSIONS'), findsNothing);
       },
     );
 
@@ -227,6 +219,10 @@ void main() {
         expect(find.text('Mind Pipeline Status'), findsOneWidget);
         expect(find.text('Stage 1: Capture'), findsOneWidget);
         expect(find.text('Stage 2: Synthesis'), findsOneWidget);
+        expect(find.textContaining('Insights'), findsNothing);
+        expect(find.textContaining('Action'), findsNothing);
+        expect(find.textContaining('Stage 3'), findsNothing);
+        expect(find.textContaining('Stage 4'), findsNothing);
 
         // Tap Synthesize Now in modal
         final synthBtn = find.byKey(const Key('hud_synthesize_now_button'));
@@ -243,8 +239,11 @@ void main() {
       'Tapping Settings button navigates to SettingsScreen',
       (WidgetTester tester) async {
         await tester.pumpWidget(
-          const ProviderScope(
-            child: MaterialApp(
+          ProviderScope(
+            overrides: [
+              runtimePermissionGatewayProvider.overrideWithValue(FakePermissionGateway()),
+            ],
+            child: const MaterialApp(
               home: MainNavigationShell(),
             ),
           ),

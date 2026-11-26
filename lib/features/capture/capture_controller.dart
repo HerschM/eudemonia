@@ -1,104 +1,143 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
-import 'package:eudemonia/features/ai_processing/batch_pipeline_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/capture/capture_inbox_ingestor.dart';
+import 'package:eudemonia/features/capture/native_capture_channel.dart';
 
-/// Owns the recording toggle driven by native capture triggers (dual volume
-/// press, lock screen notification action). State is `true` while recording.
+/// Mirrors the native recorder: state is `true` while native code is recording.
 ///
-/// Lives outside the widget tree so triggers are handled no matter which
-/// screen is mounted.
+/// Native code owns the microphone and fires every start/stop (capsule, notification, widget);
+/// this notifier only follows its events, issues the capsule's start/stop commands and hands
+/// finished recordings to the [CaptureInboxIngestor]. It lives outside the widget tree so
+/// events are handled no matter which screen is mounted.
 class CaptureController extends Notifier<bool> {
-  static const MethodChannel hardwareChannel = MethodChannel('com.eudemonia/hardware_buttons');
-  static const Duration triggerCooldown = Duration(milliseconds: 500);
+  /// How long a stop waits for native to commit the recording before giving up on a result.
+  static const Duration saveTimeout = Duration(seconds: 5);
 
-  final MethodChannel _channel;
-  DateTime? _lastTriggerTime;
+  DateTime? _startedAt;
   bool _isToggling = false;
+  bool _warmupRequested = false;
+  Completer<AudioQueueItem?>? _saveWaiter;
 
-  CaptureController({this._channel = hardwareChannel});
+  Future<void> _startupSync = Future.value();
+
+  /// Completes once the startup state sync and inbox scan have finished.
+  Future<void> get startupSync => _startupSync;
+
+  /// When the current recording began (native clock), or `null` while idle.
+  DateTime? get startedAt => state ? _startedAt : null;
 
   @override
   bool build() {
-    _channel.setMethodCallHandler(_handleMethodCall);
+    final channel = ref.read(nativeCaptureChannelProvider);
+    channel.setListeners(
+      onStateChanged: _applyNativeState,
+      onCaptureSaved: _onCaptureSaved,
+    );
+    ref.onDispose(() {
+      channel.clearListeners();
+      _completeWaiter(null);
+    });
+    _startupSync = _syncAtStartup(channel);
     return false;
   }
 
-  Future<void> _handleMethodCall(MethodCall call) async {
-    if (call.method != 'onHardwareTrigger') return;
-    final args = call.arguments;
-    final bool isLocked = args is Map ? (args['isLocked'] as bool? ?? false) : false;
-    final bool? desiredRecording = args is Map ? args['desiredRecording'] as bool? : null;
-    await handleTrigger(isLocked: isLocked, desiredRecording: desiredRecording);
+  Future<void> _syncAtStartup(NativeCaptureChannel channel) async {
+    final logger = ref.read(appLoggerProvider);
+    try {
+      _applyNativeState(await channel.getState());
+      if (!ref.mounted) return;
+      await ref.read(captureInboxIngestorProvider).ingestPending();
+    } catch (e, stack) {
+      logger.error('[Capture] Startup sync failed', error: e, stackTrace: stack);
+    }
   }
 
-  /// Toggles recording. When [desiredRecording] is set (explicit start/stop
-  /// actions), a trigger that already matches the current state is a no-op.
+  void _applyNativeState(NativeCaptureState native) {
+    if (!ref.mounted) return;
+    if (native.isRecording) {
+      _startedAt = native.startedAtMs == null
+          ? (_startedAt ?? DateTime.now())
+          : DateTime.fromMillisecondsSinceEpoch(native.startedAtMs!);
+      state = true;
+      // Load the speech model while the user is still speaking, so the first thought is not
+      // held up by a cold load after the recording ends. Fire-and-forget: never awaited here.
+      if (!_warmupRequested) {
+        _warmupRequested = true;
+        ref.read(modelLifecycleManagerProvider).warmupOnRecordingStart();
+      }
+    } else {
+      _startedAt = null;
+      _warmupRequested = false;
+      state = false;
+    }
+  }
+
+  Future<void> _onCaptureSaved(PendingCapture capture) async {
+    if (!ref.mounted) return;
+    final item = await ref
+        .read(captureInboxIngestorProvider)
+        .ingest(capture.path, capture.startedAtMs);
+    _completeWaiter(item);
+  }
+
+  void _completeWaiter(AudioQueueItem? item) {
+    final waiter = _saveWaiter;
+    if (waiter != null && !waiter.isCompleted) waiter.complete(item);
+    _saveWaiter = null;
+  }
+
+  /// Toggles recording from the in-app capsule. When [desiredRecording] is set, a request that
+  /// already matches the current state is a no-op.
   ///
-  /// Returns the queued capture when this trigger finished a recording.
-  Future<AudioQueueItem?> handleTrigger({bool isLocked = false, bool? desiredRecording}) async {
+  /// Returns the queued capture when this call finished a recording.
+  Future<AudioQueueItem?> handleTrigger({bool? desiredRecording}) async {
     final logger = ref.read(appLoggerProvider);
-
-    if (desiredRecording != null && desiredRecording == state) {
-      await _syncNativeRecordingState();
-      return null;
-    }
-
-    final now = DateTime.now();
-    if (_lastTriggerTime != null && now.difference(_lastTriggerTime!) < triggerCooldown) {
-      logger.warning('[Capture] Trigger dropped by debounce (<500ms)');
-      await _syncNativeRecordingState();
-      return null;
-    }
+    if (desiredRecording != null && desiredRecording == state) return null;
     if (_isToggling) {
       logger.warning('[Capture] Trigger dropped: already toggling');
       return null;
     }
 
-    _lastTriggerTime = now;
     _isToggling = true;
-    AudioQueueItem? captured;
-
+    Future<AudioQueueItem?>? saved;
+    Completer<AudioQueueItem?>? waiterOfThisStop;
     try {
-      logger.trigger('Hardware Trigger Received. isLocked: $isLocked, current isRecording: $state');
-      final pipeline = ref.read(batchPipelineProvider);
-
+      final channel = ref.read(nativeCaptureChannelProvider);
       if (!state) {
-        // Flip first so the listening indicator appears without waiting on the recorder.
+        // Flip first so the listening indicator appears without waiting on native code.
+        _startedAt = DateTime.now();
         state = true;
-        final started = await pipeline.startRecording();
-        if (!started) {
-          state = false;
+        final started = await channel.start();
+        _applyNativeState(started);
+        if (!started.isRecording) {
           logger.warning('[Capture] Recording did not start; capture state reverted.');
-        } else {
-          // Load the speech model while the user is still speaking, so the first thought is not
-          // held up by a cold load after the recording ends. Fire-and-forget: never awaited here.
-          ref.read(modelLifecycleManagerProvider).warmupOnRecordingStart();
         }
       } else {
+        // The waiter exists before `stop` is sent, so a fast `onCaptureSaved` cannot be missed.
+        final waiter = waiterOfThisStop = _saveWaiter = Completer<AudioQueueItem?>();
         state = false;
-        captured = await pipeline.stopRecordingAndProcess();
+        _startedAt = null;
+        _warmupRequested = false;
+        _applyNativeState(await channel.stop());
+        saved = waiter.future;
       }
     } catch (e, stack) {
-      state = false;
-      logger.error('[Capture] Error during hardware trigger handling', error: e, stackTrace: stack);
+      logger.error('[Capture] Error during capture trigger handling', error: e, stackTrace: stack);
+      _applyNativeState(NativeCaptureState.idle);
+      _completeWaiter(null);
     } finally {
       _isToggling = false;
-      await _syncNativeRecordingState();
     }
-    return captured;
-  }
+    if (saved == null) return null;
 
-  /// Reports the authoritative state to native code, which mirrors it in the
-  /// lock screen notification and the start/stop haptic pattern.
-  Future<void> _syncNativeRecordingState() async {
-    try {
-      await _channel.invokeMethod('setRecordingState', {'isRecording': state});
-    } catch (_) {
-      // No platform implementation (tests, non-Android hosts).
-    }
+    return saved.timeout(saveTimeout, onTimeout: () {
+      logger.warning('[Capture] No saved recording reported within ${saveTimeout.inSeconds}s of stop.');
+      if (identical(_saveWaiter, waiterOfThisStop)) _saveWaiter = null;
+      return null;
+    });
   }
 }
 

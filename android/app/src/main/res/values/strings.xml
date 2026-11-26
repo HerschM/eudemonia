@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="accessibility_service_description">Eudemonia needs this permission to intercept hardware buttons (like volume keys) globally to start and stop voice recording instantly, even when the app is in the background.</string>
+    <string name="capture_widget_label">Capture thought</string>
+    <string name="capture_widget_description">One tap to record a thought from your home screen. Tap again to stop and save it.</string>
+    <string name="capture_widget_record">Record</string>
 </resources>

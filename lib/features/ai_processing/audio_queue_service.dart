@@ -8,6 +8,7 @@ import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/cpu_wake_lock.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/application/synthesis_trigger_controller.dart';
@@ -27,15 +28,24 @@ class AudioQueueService {
   final void Function(List<AudioQueueItem> items)? _onItemsChanged;
   final void Function()? _onNoteSaved;
 
+  /// While this returns false the worker leaves every item pending: a thought recorded before
+  /// the speech model is downloaded waits, it is never failed (FR16.2). Null = always ready.
+  final bool Function()? _isSpeechModelReady;
+
   final List<AudioQueueItem> _items = [];
   bool _isProcessing = false;
   File? _cachedFile;
   Future<void>? _loadingFuture;
   Future<void> _saveChain = Future.value();
 
-  /// Highest daily sequence number handed out for [_sequenceDayKey].
-  int? _sequenceDayKey;
-  int _sequenceHighWater = 0;
+  /// Highest daily sequence number handed out, per calendar day. A recording ingested late
+  /// belongs to the day it was spoken, so several days can be live at once.
+  final Map<int, int> _sequenceHighWater = {};
+
+  /// Items whose audio file is not at its path yet (a native recording still being moved out
+  /// of the capture inbox). The worker skips them until [markFileReady]. In memory only: after
+  /// a restart the inbox scan completes the move before the worker starts.
+  final Set<String> _awaitingFile = {};
 
   AudioQueueService(
     this._sttService,
@@ -47,6 +57,7 @@ class AudioQueueService {
     this._onQueueChanged,
     this._onItemsChanged,
     this._onNoteSaved,
+    this._isSpeechModelReady,
     bool autoLoad = true,
   }) {
     if (autoLoad) {
@@ -60,7 +71,8 @@ class AudioQueueService {
       i.status == AudioQueueStatus.pending ||
       i.status == AudioQueueStatus.transcribing).length;
 
-  int get failedCount => _items.where((i) => i.status == AudioQueueStatus.failed).length;
+  /// Real failures only: a silent recording is parked as failed internally but is not one for the user.
+  int get failedCount => _items.where((i) => i.status == AudioQueueStatus.failed && !i.isSilent).length;
 
   AudioQueueItem? get currentProcessingItem => _items.cast<AudioQueueItem?>().firstWhere(
         (i) => i?.status == AudioQueueStatus.transcribing,
@@ -165,58 +177,72 @@ class AudioQueueService {
 
   static int _dayKey(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
 
-  Future<void> _refreshSequenceHighWater(DateTime now) async {
-    final key = _dayKey(now);
-    if (_sequenceDayKey == key) return;
+  /// Seeds the high-water mark of [day] from the persisted notes the first time it is needed.
+  Future<void> _refreshSequenceHighWater(DateTime day) async {
+    final key = _dayKey(day);
+    if (_sequenceHighWater.containsKey(key)) return;
     int highWater = 0;
     try {
-      highWater = await _notesRepo.maxDailySequenceFor(now);
+      highWater = await _notesRepo.maxDailySequenceFor(day);
     } catch (_) {}
-    _sequenceDayKey = key;
-    _sequenceHighWater = highWater;
+    // Another caller may have seeded (and advanced) the same day while this one awaited.
+    _sequenceHighWater.putIfAbsent(key, () => highWater);
   }
 
-  /// Next daily sequence number (FR9.4). Numbers are never reissued within a
-  /// day, so deleting a thought leaves a gap instead of renumbering (FR9.5).
-  Future<int> _nextSequenceNumber(DateTime now) async {
-    await _refreshSequenceHighWater(now);
-    final key = _dayKey(now);
+  /// Next daily sequence number (FR9.4) of the calendar day of [day]. Numbers are never
+  /// reissued within a day, so deleting a thought leaves a gap instead of renumbering (FR9.5).
+  Future<int> _nextSequenceNumber(DateTime day) async {
+    await _refreshSequenceHighWater(day);
+    final key = _dayKey(day);
+    var highWater = _sequenceHighWater[key]!;
     for (final item in _items) {
       final seq = item.sequenceNumber;
-      if (seq != null && seq > _sequenceHighWater && _dayKey(item.recordedAt) == key) {
-        _sequenceHighWater = seq;
+      if (seq != null && seq > highWater && _dayKey(item.recordedAt) == key) {
+        highWater = seq;
       }
     }
-    return ++_sequenceHighWater;
+    return _sequenceHighWater[key] = highWater + 1;
   }
 
-  Future<AudioQueueItem> enqueue(String audioFilePath, {bool autoProcess = true}) async {
+  /// Queues a finished recording. [recordedAt] is when it was spoken (defaults to now); the
+  /// daily sequence number is taken from that calendar day.
+  Future<AudioQueueItem> enqueue(
+    String audioFilePath, {
+    bool autoProcess = true,
+    DateTime? recordedAt,
+    bool fileReady = true,
+  }) async {
     // Hydration replaces the in-memory list, so it must settle before a new item joins it.
     await loadFromStorage();
 
     final now = DateTime.now();
-    final nextSeq = await _nextSequenceNumber(now);
+    final spokenAt = recordedAt ?? now;
+    final nextSeq = await _nextSequenceNumber(spokenAt);
 
     final item = AudioQueueItem(
       id: now.microsecondsSinceEpoch.toString(),
       audioFilePath: audioFilePath,
-      recordedAt: now,
+      recordedAt: spokenAt,
       status: AudioQueueStatus.pending,
       sequenceNumber: nextSeq,
     );
 
+    if (!fileReady) _awaitingFile.add(item.id);
     _items.add(item);
     // Surface the card before touching the disk so the UI never waits on I/O.
     _notifyState();
     await _saveToStorage();
     _logger?.info('[AudioQueue] Enqueued new thought: ${item.id} with sequence #$nextSeq (Total pending: $pendingCount)');
 
-    if (autoProcess) {
+    if (autoProcess && fileReady) {
       unawaited(processPending());
     }
 
     return item;
   }
+
+  /// Releases an item queued with `fileReady: false` once its audio file is in place.
+  void markFileReady(AudioQueueItem item) => _awaitingFile.remove(item.id);
 
   Future<void> removeItemByAudioPath(String audioFilePath) async {
     _items.removeWhere((i) => i.audioFilePath == audioFilePath);
@@ -243,7 +269,7 @@ class AudioQueueService {
   Future<void> retryFailed() async {
     bool hasFailed = false;
     for (final item in _items) {
-      if (item.status == AudioQueueStatus.failed) {
+      if (item.status == AudioQueueStatus.failed && !item.isSilent) {
         item.status = AudioQueueStatus.pending;
         item.errorMessage = null;
         hasFailed = true;
@@ -274,7 +300,10 @@ class AudioQueueService {
 
     try {
       while (true) {
-        final pendingItems = _items.where((i) => i.status == AudioQueueStatus.pending).toList();
+        if (_isSpeechModelReady?.call() == false) break;
+        final pendingItems = _items
+            .where((i) => i.status == AudioQueueStatus.pending && !_awaitingFile.contains(i.id))
+            .toList();
         if (pendingItems.isEmpty) break;
 
         final nextItem = pendingItems.first;
@@ -329,7 +358,7 @@ class AudioQueueService {
     if (rawTranscription.trim().isEmpty) {
       _logger?.warning('[AudioQueue] Empty transcript for item ${item.id}');
       item.status = AudioQueueStatus.failed;
-      item.errorMessage = 'No speech detected in audio recording.';
+      item.errorMessage = silentRecordingMessage;
       await _saveToStorage();
       _notifyState();
       return;
@@ -412,10 +441,17 @@ final audioQueueServiceProvider = Provider<AudioQueueService>((ref) {
       ref.read(queueItemsProvider.notifier).setItems(items);
     },
     onNoteSaved: () {
-      ref.invalidate(recentNotesProvider);
       unawaited(ref.read(synthesisTriggerControllerProvider).onThoughtSaved());
     },
+    isSpeechModelReady: () => ref.read(speechModelReadyProvider),
   );
+
+  // Thoughts that waited for the speech model are transcribed as soon as it is ready. A direct
+  // callback, not ref.listen: the download may finish while no screen is mounted, and Riverpod
+  // pauses the listeners of a provider nobody watches.
+  final models = ref.read(modelLibraryControllerProvider.notifier);
+  models.onSpeechModelReady = () => unawaited(service.processPending());
+  ref.onDispose(() => models.onSpeechModelReady = null);
 
   ref.onDispose(() => service.dispose());
   return service;

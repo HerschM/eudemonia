@@ -10,7 +10,11 @@ class NotesRepository {
   final List<Note> _inMemoryNotes = [];
   int _nextId = 1;
 
-  NotesRepository({Isar? isar})
+  /// Called after every mutating method completes: the single "notes changed" signal that
+  /// providers derived from the notes (list, counts) refresh on.
+  final void Function()? onChanged;
+
+  NotesRepository({Isar? isar, this.onChanged})
       : _isar = isar,
         _isInitialized = isar != null;
 
@@ -67,6 +71,7 @@ class NotesRepository {
         _inMemoryNotes.add(note);
       }
     }
+    onChanged?.call();
   }
 
   Future<Note?> getNoteById(Id id) async {
@@ -99,6 +104,7 @@ class NotesRepository {
         // The note is gone either way; a stray recording must not fail the delete.
       }
     }
+    onChanged?.call();
   }
 
   Future<void> updateNoteText(Id id, String newText) async {
@@ -116,6 +122,7 @@ class NotesRepository {
         note.correctedText = newText;
       }
     }
+    onChanged?.call();
   }
 
   Future<void> markAsRead(Id id) async {
@@ -133,6 +140,7 @@ class NotesRepository {
         note.isRead = true;
       }
     }
+    onChanged?.call();
   }
 
   Future<List<Note>> getUnreadNotes() async {
@@ -194,11 +202,33 @@ class NotesRepository {
   }
 }
 
+/// Counts every change made through [NotesRepository]. Providers that derive from the stored
+/// notes watch it, so nothing has to be invalidated by hand when a thought is saved, edited,
+/// read, deleted or moved to another state.
+class NotesRevisionNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final notesRevisionProvider =
+    NotifierProvider<NotesRevisionNotifier, int>(NotesRevisionNotifier.new);
+
 final notesRepositoryProvider = Provider<NotesRepository>((ref) {
-  return NotesRepository(isar: ref.watch(appDatabaseProvider));
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+  return NotesRepository(
+    isar: ref.watch(appDatabaseProvider),
+    // Only ever called after an awaited mutation, never during the provider build.
+    onChanged: () {
+      if (!disposed) ref.read(notesRevisionProvider.notifier).bump();
+    },
+  );
 });
 
 final recentNotesProvider = FutureProvider<List<Note>>((ref) async {
+  ref.watch(notesRevisionProvider);
   final repo = ref.watch(notesRepositoryProvider);
   return repo.getAllNotes();
 });

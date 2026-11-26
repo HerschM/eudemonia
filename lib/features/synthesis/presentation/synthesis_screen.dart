@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
+import 'package:eudemonia/core/formatting/thought_timestamp.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
@@ -9,6 +12,8 @@ import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart'
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_ejection_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_merge_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_markdown_view.dart';
 
 class SynthesisScreen extends ConsumerStatefulWidget {
   const SynthesisScreen({super.key});
@@ -32,6 +37,10 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final pendingRawNotes = rawNotesCountAsync.value ?? 0;
     final synthesisRunning = ref.watch(synthesisRunningProvider);
+    final hasWritingModel = ref.watch(activeSynthesisProfileProvider) != null;
+    // Without a chosen writing model a run cannot start, so the buttons lead to the choice (FR16.5).
+    void synthesizeNow() =>
+        hasWritingModel ? startManualSynthesis(context) : openModelSetup(Navigator.of(context));
 
     final folderFiltered = _activeFolderFilter == 'All Folders'
         ? clusters
@@ -51,6 +60,42 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         children: [
+          if (!hasWritingModel)
+            Container(
+              key: const Key('choose_writing_model_card'),
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.accentAI.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppColors.cardRadius),
+                border: Border.all(color: AppColors.accentAI.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome_outlined, size: 16, color: AppColors.accentAI),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Choose a writing model to turn your thoughts into notes.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    key: const Key('choose_writing_model_button'),
+                    style: TextButton.styleFrom(
+                      backgroundColor: AppColors.accentAction,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      minimumSize: const Size(48, 32),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    ),
+                    onPressed: () => openModelSetup(Navigator.of(context)),
+                    child: const Text('Choose model', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
           // Sub-Header Row: Section Title + Compact Triage & Folder Filter Dropdowns
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -205,7 +250,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '🧩 $pendingRawNotes raw thoughts ready to cluster',
+                      describeThoughtsReadyForSynthesis(pendingRawNotes),
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -218,7 +263,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                     borderRadius: BorderRadius.circular(6),
                     onTap: synthesisRunning
                         ? null
-                        : () => startManualSynthesis(context),
+                        : synthesizeNow,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
@@ -309,7 +354,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                         ),
                         onPressed: synthesisRunning
                             ? null
-                            : () => startManualSynthesis(context),
+                            : synthesizeNow,
                       ),
                     ],
                   ],
@@ -528,14 +573,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
           ),
           const SizedBox(height: 10),
           // Synthesized Text Narrative
-          Text(
-            cluster.synthesizedContent,
-            style: const TextStyle(
-              fontSize: 13.5,
-              height: 1.45,
-              color: AppColors.textPrimary,
-            ),
-          ),
+          NoteMarkdownView(text: cluster.synthesizedContent),
           const SizedBox(height: 12),
           // Footer: Timestamp + Duration + Expandable Raw Notes Pill
           Wrap(
@@ -545,7 +583,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
             runSpacing: 6,
             children: [
               Text(
-                '${_formatDate(cluster.sessionStart)} • ⏱️ ${_formatDuration(cluster.sessionDuration)}',
+                _footerLabel(cluster),
                 style: TextStyle(
                   fontSize: 11,
                   color: AppColors.textSecondary.withValues(alpha: 0.8),
@@ -572,7 +610,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
                           size: 12, color: AppColors.accentAction),
                       const SizedBox(width: 4),
                       Text(
-                        '${cluster.originNotes.length} Raw Notes',
+                        '${cluster.originNotes.length} Raw ${cluster.originNotes.length == 1 ? 'Note' : 'Notes'}',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -736,15 +774,12 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
     );
   }
 
-  String _formatDate(DateTime dt) {
-    return '${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')}  ${_formatTime(dt)}';
-  }
-
-  String _formatTime(DateTime dt) {
-    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
-    final period = dt.hour >= 12 ? 'PM' : 'AM';
-    final minute = dt.minute.toString().padLeft(2, '0');
-    return '$hour:$minute $period';
+  /// Start time, plus the session length once it reaches a minute.
+  String _footerLabel(SynthesisCluster cluster) {
+    final date = formatThoughtTimestamp(cluster.sessionStart);
+    final duration = cluster.sessionDuration;
+    if (duration.inMinutes < 1) return date;
+    return '$date • ⏱️ ${_formatDuration(duration)}';
   }
 
   String _formatDuration(Duration d) {
@@ -754,4 +789,3 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> {
     return '${d.inHours}h ${d.inMinutes % 60}m session';
   }
 }
-

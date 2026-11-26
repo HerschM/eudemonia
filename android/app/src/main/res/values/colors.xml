@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors the in-app floating capture capsule (lib/features/theme/app_colors.dart). -->
+    <color name="capture_widget_surface">#FF1F1F27</color>
+    <color name="capture_widget_surface_recording">#FF0F291E</color>
+    <!-- AppColors.accentCapture, and the same at 45% alpha for the idle border. -->
+    <color name="capture_accent">#FF10B981</color>
+    <color name="capture_accent_soft">#7310B981</color>
+    <!-- AppColors.textPrimary. -->
+    <color name="capture_text_primary">#FFF9FAFB</color>
+    <!-- Text on the accent colour (notification Record button). -->
+    <color name="capture_on_accent">#FF04261A</color>
+</resources>

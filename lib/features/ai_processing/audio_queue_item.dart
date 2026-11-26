@@ -5,6 +5,18 @@ enum AudioQueueStatus {
   failed,
 }
 
+/// What a recording with no recognised speech is reported as. A silent recording is not a
+/// failure: screens show it as a calm note, offer no Retry and leave it out of failure counts.
+const String silentRecordingMessage = 'Nothing was heard in this recording.';
+
+/// Wording used before [silentRecordingMessage]; still found in queue files written by older builds.
+const String _legacySilentRecordingMessage = 'No speech detected in audio recording.';
+
+/// True when [message] (a queue item's `errorMessage` or a note's `failureReason`) says the
+/// recording was silent. The single place that decides this.
+bool isSilentRecordingMessage(String? message) =>
+    message == silentRecordingMessage || message == _legacySilentRecordingMessage;
+
 class AudioQueueItem {
   final String id;
   final String audioFilePath;
@@ -14,6 +26,9 @@ class AudioQueueItem {
   String? correctedText;
   String? errorMessage;
   int? sequenceNumber;
+
+  /// A recording that was transcribed but held no speech.
+  bool get isSilent => status == AudioQueueStatus.failed && isSilentRecordingMessage(errorMessage);
 
   AudioQueueItem({
     required this.id,

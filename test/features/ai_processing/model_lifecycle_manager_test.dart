@@ -40,7 +40,7 @@ void main() {
       manager = ModelLifecycleManager(
         fakeSTT,
         config: const LLMConfig(
-          modelInactivityTtl: Duration(minutes: 3),
+          modelInactivityTtl: Duration(minutes: 2),
         ),
         modelsDirResolver: () async => '/mock/models/dir',
       );
@@ -98,7 +98,7 @@ void main() {
       await tester.pump();
       expect(manager.areModelsLoaded, isTrue);
 
-      await tester.pump(const Duration(minutes: 3, seconds: 1));
+      await tester.pump(const Duration(minutes: 2, seconds: 1));
       expect(manager.areModelsLoaded, isFalse);
       expect(fakeSTT.disposeCallCount, greaterThanOrEqualTo(1));
     });
@@ -110,12 +110,12 @@ void main() {
       // Call touch() to simulate activity completion (e.g. note processed)
       manager.touch(reason: 'note processed');
 
-      // Advance time by 2 minutes (less than 3-minute TTL)
-      await tester.pump(const Duration(minutes: 2));
+      // Advance time by 1 minute (less than 2-minute TTL)
+      await tester.pump(const Duration(minutes: 1));
       expect(manager.areModelsLoaded, isTrue);
       expect(fakeSTT.disposeCallCount, equals(0));
 
-      // Advance past 3 minutes
+      // Advance past 2 minutes
       await tester.pump(const Duration(minutes: 1, seconds: 1));
 
       expect(manager.state, equals(ModelLifecycleState.unloaded));
@@ -127,18 +127,18 @@ void main() {
       await manager.ensureModelsLoaded();
       manager.touch(reason: 'initial note');
 
-      // Advance 2 minutes
-      await tester.pump(const Duration(minutes: 2));
+      // Advance 1 minute
+      await tester.pump(const Duration(minutes: 1));
 
       // Touch again (user records another note)
       manager.touch(reason: 'second note');
 
-      // Advance another 2 minutes (4 minutes total, but only 2m since last touch)
-      await tester.pump(const Duration(minutes: 2));
+      // Advance another minute (2 minutes total, but only 1m since last touch)
+      await tester.pump(const Duration(minutes: 1));
       expect(manager.areModelsLoaded, isTrue);
       expect(fakeSTT.disposeCallCount, equals(0));
 
-      // Advance final 1m1s to expire second timer
+      // Advance the final 1m1s to expire the second timer
       await tester.pump(const Duration(minutes: 1, seconds: 1));
       expect(manager.areModelsLoaded, isFalse);
       expect(fakeSTT.disposeCallCount, equals(1));
@@ -176,7 +176,7 @@ void main() {
 
       expect(dump['state'], equals('ready'));
       expect(dump['isSTTInitialized'], isTrue);
-      expect(dump['inactivityTtlMinutes'], equals(3));
+      expect(dump['inactivityTtlMinutes'], equals(2));
       expect(dump.containsKey('isLLMInitialized'), isFalse);
       expect(dump.containsKey('kvCacheMaxSize'), isFalse);
       expect(dump['lastLoadedTime'], isNotNull);

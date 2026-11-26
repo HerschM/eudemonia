@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:eudemonia/core/formatting/thought_timestamp.dart';
+import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
+import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 import '../data/note_model.dart';
 
 class ThoughtCard extends StatefulWidget {
@@ -46,6 +49,10 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
 
   String get _currentText => _editedText ?? widget.note.correctedText;
 
+  /// A recording that held no speech: shown as a calm note, not as a failure.
+  bool get _isSilent =>
+      widget.note.state == ThoughtState.failed && isSilentRecordingMessage(widget.note.failureReason);
+
   @override
   void initState() {
     super.initState();
@@ -85,6 +92,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
 
   Color _getBackgroundColor(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (_isSilent) return isDark ? const Color(0xFF161B22) : const Color(0xFFF3F4F6);
     switch (widget.note.state) {
       case ThoughtState.enqueued:
         return isDark ? const Color(0xFF26200A) : const Color(0xFFFEF3C7);
@@ -98,6 +106,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
   }
 
   Color _getBorderColor(BuildContext context) {
+    if (_isSilent) return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15);
     switch (widget.note.state) {
       case ThoughtState.enqueued:
         return const Color(0xFFF59E0B).withValues(alpha: 0.4);
@@ -259,6 +268,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
   }
 
   Color _getActionColor() {
+    if (_isSilent) return const Color(0xFF6B7280);
     switch (widget.note.state) {
       case ThoughtState.enqueued:
         return const Color(0xFFD97706);
@@ -279,6 +289,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
       case ThoughtState.enqueued:
         return _buildStateBadge('⏳ Enqueued', const Color(0xFFF59E0B), const Color(0xFFB45309));
       case ThoughtState.failed:
+        if (_isSilent) return const SizedBox.shrink();
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -355,14 +366,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         opacity: _shimmerAnimation,
         child: Row(
           children: [
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Color(0xFFD97706),
-              ),
-            ),
+            const VoiceWaveIndicator(height: 14, bars: 5, color: Color(0xFFD97706)),
             const SizedBox(width: 10),
             Text(
               'Transcribing & organizing speech...',
@@ -373,6 +377,18 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
               ),
             ),
           ],
+        ),
+      );
+    }
+
+    if (_isSilent) {
+      return Text(
+        silentRecordingMessage,
+        key: const Key('silent_recording_text'),
+        style: TextStyle(
+          fontSize: 14,
+          fontStyle: FontStyle.italic,
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
         ),
       );
     }
@@ -445,14 +461,5 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
     );
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return '';
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final hour = date.hour == 0 ? 12 : (date.hour > 12 ? date.hour - 12 : date.hour);
-    final hourStr = hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    final period = date.hour >= 12 ? 'PM' : 'AM';
-    return '$day/$month  $hourStr:$minute $period';
-  }
+  String _formatDate(DateTime? date) => date == null ? '' : formatThoughtTimestamp(date);
 }

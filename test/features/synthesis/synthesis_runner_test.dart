@@ -222,7 +222,7 @@ void main() {
   late LLMService llm;
   late bool captureActive;
   late List<bool> runningChanges;
-  late int notesChanged;
+  SynthesisModelProfile? activeProfile;
   ProviderContainer? container;
 
   setUp(() {
@@ -236,7 +236,7 @@ void main() {
     llm = LLMService(engineFactory: () => engine, stopTimeout: const Duration(seconds: 2));
     captureActive = false;
     runningChanges = [];
-    notesChanged = 0;
+    activeProfile = SynthesisModelProfile.qwen3_4b;
     container = null;
   });
 
@@ -263,12 +263,12 @@ void main() {
       llm: llm,
       lifecycle: lifecycle,
       arbiter: arbiter,
+      profile: () => activeProfile,
       isCaptureActive: () => captureActive,
       modelsDir: () async => '/models',
       wakeLock: wakeLock,
       logger: logger,
       onRunningChanged: runningChanges.add,
-      onNotesChanged: () => notesChanged++,
     );
   }
 
@@ -332,7 +332,6 @@ void main() {
         expect(r.synthesisAttempts, 0);
       }
       expect(runningChanges, [true, false]);
-      expect(notesChanged, greaterThan(0));
       expectModelReleased();
     });
 
@@ -449,13 +448,56 @@ void main() {
       expect(log, isEmpty);
     });
 
+    test('no chosen language model: noModel before anything is evicted, loaded or counted', () async {
+      final a = await thought('Refactor the queue.', 0);
+      await lifecycle.ensureModelsLoaded();
+      log.clear();
+      activeProfile = null;
+      final saves = notes.saves.length;
+
+      expect(await runner().run(manual: true), SynthesisRunResult.noModel);
+      expect(await runner().run(manual: false), SynthesisRunResult.noModel);
+
+      expect(log, isEmpty, reason: 'the speech model stays resident and nothing is loaded');
+      expect(lifecycle.state, ModelLifecycleState.ready);
+      expect(arbiter.holder, HeavyModel.speech, reason: 'the resident speech model was not evicted');
+      expect(runningChanges, isEmpty);
+      expect(notes.saves.length, saves, reason: 'no attempt was counted');
+      expect((await reload(a)).synthesisAttempts, 0);
+      expect(sessions(), isEmpty);
+    });
+
+    test('the profile is resolved once per run and names the file that is loaded', () async {
+      await thought('Refactor the queue.', 0);
+      var resolved = 0;
+      final r = SynthesisRunner(
+        notes: notes,
+        sessions: app().read(synthesisRepositoryProvider.notifier),
+        readSessions: () => app().read(synthesisRepositoryProvider),
+        llm: llm,
+        lifecycle: lifecycle,
+        arbiter: arbiter,
+        profile: () {
+          resolved++;
+          return SynthesisModelProfile.qwen3_1_7b;
+        },
+        isCaptureActive: () => false,
+        modelsDir: () async => '/models',
+      );
+
+      expect(await r.run(manual: true), SynthesisRunResult.completed);
+
+      expect(resolved, 1);
+      expect(log, contains('llm-load:/models/qwen3-1.7b.gguf'));
+    });
+
     test('evicts the speech model before loading the language model', () async {
       await thought('Refactor the queue.', 0);
       await lifecycle.ensureModelsLoaded();
 
       expect(await runner().run(manual: false), SynthesisRunResult.completed);
 
-      expect(log.indexOf('stt-dispose'), lessThan(log.indexOf('llm-load:/models/${SynthesisModelProfile.current.modelFileName}')));
+      expect(log.indexOf('stt-dispose'), lessThan(log.indexOf('llm-load:/models/${SynthesisModelProfile.qwen3_4b.modelFileName}')));
       expect(lifecycle.state, ModelLifecycleState.unloaded);
     });
 
@@ -482,6 +524,7 @@ void main() {
         llm: llm,
         lifecycle: lifecycle,
         arbiter: arbiter,
+        profile: () => SynthesisModelProfile.qwen3_4b,
         isCaptureActive: () => false,
         modelsDir: () async => null,
       );

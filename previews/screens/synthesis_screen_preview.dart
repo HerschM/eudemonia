@@ -399,7 +399,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '🧩 $_pendingRawNotesToCluster raw thoughts ready to cluster',
+                      '$_pendingRawNotesToCluster ${_pendingRawNotesToCluster == 1 ? 'thought' : 'thoughts'} ready for Synthesis',
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -745,7 +745,9 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '${cluster.formattedTimeSpan} • ⏱️ ${cluster.sessionDuration.inMinutes}m session',
+                    cluster.sessionDuration.inMinutes < 1
+                        ? cluster.formattedTimeSpan
+                        : '${cluster.formattedTimeSpan} • ⏱️ ${cluster.sessionDuration.inMinutes}m session',
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
@@ -775,7 +777,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '[ 🧩 ${cluster.originNotes.length} Raw Notes Included (Tap to ${cluster.isExpanded ? 'Collapse' : 'Expand'}) ]',
+                          '[ 🧩 ${cluster.originNotes.length} Raw ${cluster.originNotes.length == 1 ? 'Note' : 'Notes'} Included (Tap to ${cluster.isExpanded ? 'Collapse' : 'Expand'}) ]',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,

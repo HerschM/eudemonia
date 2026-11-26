@@ -1,19 +1,24 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 
 /// Floating in-app capture trigger (FR9.3).
 ///
-/// Idle: `[ 🎙️ / Press Vol Up + Down to Capture ]`. While recording it morphs
-/// into a listening waveform with an elapsed timer. Pure presentational widget.
+/// Idle: `[ 🎙️ / Tap to capture ]`. While recording it morphs into a listening
+/// waveform with an elapsed timer counted from [startedAt], so a recording started from the
+/// notification or the home-screen widget shows the right time. Pure presentational widget.
 class FloatingCaptureCapsule extends StatefulWidget {
   final bool isRecording;
+
+  /// When the current recording began; defaults to the moment the capsule starts listening.
+  final DateTime? startedAt;
   final VoidCallback onTap;
 
   const FloatingCaptureCapsule({
     super.key,
     required this.isRecording,
+    this.startedAt,
     required this.onTap,
   });
 
@@ -21,16 +26,13 @@ class FloatingCaptureCapsule extends StatefulWidget {
   State<FloatingCaptureCapsule> createState() => _FloatingCaptureCapsuleState();
 }
 
-class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _waveform;
-  final Stopwatch _elapsed = Stopwatch();
+class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule> {
+  late DateTime _listeningSince;
   Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _waveform = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     if (widget.isRecording) _startListening();
   }
 
@@ -41,14 +43,13 @@ class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule>
       _startListening();
     } else if (!widget.isRecording && oldWidget.isRecording) {
       _stopListening();
+    } else if (widget.isRecording && widget.startedAt != oldWidget.startedAt) {
+      _listeningSince = widget.startedAt ?? _listeningSince;
     }
   }
 
   void _startListening() {
-    _elapsed
-      ..reset()
-      ..start();
-    _waveform.repeat(reverse: true);
+    _listeningSince = widget.startedAt ?? DateTime.now();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -57,19 +58,17 @@ class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule>
   void _stopListening() {
     _ticker?.cancel();
     _ticker = null;
-    _elapsed.stop();
-    _waveform.stop();
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
-    _waveform.dispose();
     super.dispose();
   }
 
   String get _elapsedLabel {
-    final seconds = _elapsed.elapsed.inSeconds;
+    final elapsed = DateTime.now().difference(_listeningSince);
+    final seconds = elapsed.isNegative ? 0 : elapsed.inSeconds;
     final mm = (seconds ~/ 60).toString().padLeft(2, '0');
     final ss = (seconds % 60).toString().padLeft(2, '0');
     return '$mm:$ss';
@@ -124,7 +123,7 @@ class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule>
         ),
         SizedBox(width: 8),
         Text(
-          'Press Vol Up + Down to Capture',
+          'Tap to capture',
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w600,
@@ -142,28 +141,7 @@ class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule>
       children: [
         const Icon(Icons.stop_circle, color: AppColors.accentCapture, size: 22),
         const SizedBox(width: 10),
-        AnimatedBuilder(
-          animation: _waveform,
-          builder: (context, _) {
-            const barCount = 7;
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(barCount, (i) {
-                final phase = (i / barCount) * math.pi;
-                final height = 6.0 + 14.0 * math.sin(_waveform.value * math.pi + phase).abs();
-                return Container(
-                  width: 3,
-                  height: height,
-                  margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                  decoration: BoxDecoration(
-                    color: AppColors.accentCapture,
-                    borderRadius: BorderRadius.circular(1.5),
-                  ),
-                );
-              }),
-            );
-          },
-        ),
+        const VoiceWaveIndicator(),
         const SizedBox(width: 10),
         Text(
           '$_elapsedLabel • Tap to Stop',

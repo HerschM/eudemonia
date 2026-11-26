@@ -59,6 +59,16 @@ class SynthesisModelProfile {
     maxOutputRatio: 1.3,
   );
 
-  /// The model the app runs.
-  static const current = qwen3_4b;
+  /// Qwen3-1.7B Q4_K_M: the smaller language model on offer. Same prompts and chat format as the
+  /// 4B; the write limit is lower because a smaller model loses track of a long input sooner.
+  /// Not yet measured on the sessions the 4B was validated on (TASK-065).
+  static const qwen3_1_7b = SynthesisModelProfile(
+    modelFileName: 'qwen3-1.7b.gguf',
+    chatFormat: ChatFormat.chatmlNoThink,
+    noteStyle: NoteStyle.structured,
+    organiseBatchSize: 5,
+    writeWordLimit: 400,
+    minOutputRatio: 0.4,
+    maxOutputRatio: 1.3,
+  );
 }

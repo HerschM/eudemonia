@@ -10,6 +10,35 @@ import 'package:eudemonia/features/notes/data/notes_repository.dart';
 
 void main() {
   group('SynthesisScreen Widget & Contract Tests', () {
+    testWidgets('batch banner appears when a thought is saved while the screen is mounted', (tester) async {
+      final repoHolder = <NotesRepository>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            synthesisRepositoryProvider.overrideWith(() => SynthesisRepository(const [])),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              repoHolder.add(ref.read(notesRepositoryProvider));
+              return const MaterialApp(home: Scaffold(body: SynthesisScreen()));
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsNothing);
+
+      // Saved through the repository only: no manual invalidation anywhere.
+      await tester.runAsync(() => repoHolder.first.saveNote(Note(
+            correctedText: 'A fresh thought',
+            state: ThoughtState.processed,
+          )));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('pending_synthesis_batch_banner')), findsOneWidget);
+      expect(find.text('1 thought ready for Synthesis'), findsOneWidget);
+    });
+
     testWidgets(
       'renders compact dual dropdown filters, batch banner, and cluster cards on 360dp narrow viewport',
       (WidgetTester tester) async {
@@ -100,8 +129,8 @@ void main() {
         // 2. Pending Batch Synthesis Banner
         expect(
             find.byKey(const Key('pending_synthesis_batch_banner')), findsOneWidget);
-        expect(find.textContaining('1 raw thoughts ready to cluster'),
-            findsOneWidget);
+        expect(find.text('1 thought ready for Synthesis'), findsOneWidget);
+        expect(find.textContaining('🧩'), findsNothing);
         expect(find.byKey(const Key('synthesize_now_banner_button')),
             findsOneWidget);
 
@@ -144,7 +173,8 @@ void main() {
         await tester.tap(expandPill2);
         await tester.pumpAndSettle();
 
-        expect(find.text('1 Raw Notes'), findsOneWidget);
+        expect(find.text('1 Raw Note'), findsOneWidget);
+        expect(find.text('1 Raw Notes'), findsNothing);
         // [Move Out] must be hidden for 1-note cluster to prevent orphaned sessions
         expect(find.byKey(const Key('move_out_note_3')), findsNothing);
       },
@@ -289,6 +319,55 @@ void main() {
               'Thoughts captured in close proximity or sharing similar context will be automatically clustered here.'),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'card renders the note Markdown without asterisks and keeps the stored text intact',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        const stored = '**Flat and Contract Updates**\n\n'
+            "**Daniel's contract**\n"
+            '- I signed the contract with Daniel on Monday.\n';
+        final cluster = SynthesisCluster(
+          clusterId: 'cluster_md',
+          sequenceNumber: '#S-09',
+          folder: 'Work',
+          synthesizedContent: stored,
+          sessionStart: DateTime.now().subtract(const Duration(minutes: 30)),
+          sessionEnd: DateTime.now(),
+          sessionDuration: const Duration(minutes: 30),
+          originNotes: const [],
+          isUnread: false,
+          isActionExtracted: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              notesRepositoryProvider.overrideWithValue(NotesRepository()),
+              synthesisRepositoryProvider.overrideWith(
+                () => SynthesisRepository([cluster]),
+              ),
+            ],
+            child: const MaterialApp(
+              home: Scaffold(body: SynthesisScreen()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Flat and Contract Updates'), findsOneWidget);
+        expect(find.text("Daniel's contract"), findsOneWidget);
+        expect(find.text('I signed the contract with Daniel on Monday.'),
+            findsOneWidget);
+        expect(find.textContaining('*'), findsNothing);
+        expect(tester.takeException(), isNull);
+        expect(cluster.synthesizedContent, stored);
       },
     );
   });

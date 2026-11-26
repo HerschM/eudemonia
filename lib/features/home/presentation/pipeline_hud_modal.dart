@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 
 class PipelineHudModal extends StatelessWidget {
   final int captureTranscribingCount;
   final int synthesisReadyCount;
-  final String insightsNextRefresh;
-  final int actionPendingCount;
   final VoidCallback onSynthesizeNow;
   /// Live memory line. Resolves after the sheet is already on screen so opening never waits on it.
   final Future<String> memoryTelemetry;
@@ -14,8 +13,6 @@ class PipelineHudModal extends StatelessWidget {
     super.key,
     required this.captureTranscribingCount,
     required this.synthesisReadyCount,
-    this.insightsNextRefresh = '14h',
-    this.actionPendingCount = 0,
     required this.onSynthesizeNow,
     required this.memoryTelemetry,
   });
@@ -24,8 +21,6 @@ class PipelineHudModal extends StatelessWidget {
     BuildContext context, {
     required int captureTranscribingCount,
     required int synthesisReadyCount,
-    String insightsNextRefresh = '14h',
-    int actionPendingCount = 0,
     required VoidCallback onSynthesizeNow,
     required Future<String> memoryTelemetry,
   }) {
@@ -41,8 +36,6 @@ class PipelineHudModal extends StatelessWidget {
       builder: (context) => PipelineHudModal(
         captureTranscribingCount: captureTranscribingCount,
         synthesisReadyCount: synthesisReadyCount,
-        insightsNextRefresh: insightsNextRefresh,
-        actionPendingCount: actionPendingCount,
         onSynthesizeNow: onSynthesizeNow,
         memoryTelemetry: memoryTelemetry,
       ),
@@ -96,7 +89,7 @@ class PipelineHudModal extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'On-Device AI Inference Engine (Sherpa-ONNX STT & Qwen 2.5)',
+              'Everything is processed on this phone',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary.withValues(alpha: 0.8),
@@ -125,7 +118,7 @@ class PipelineHudModal extends StatelessWidget {
               stageNumber: '2',
               stageName: 'Synthesis',
               description: synthesisReadyCount > 0
-                  ? '$synthesisReadyCount raw thoughts ready to cluster'
+                  ? describeThoughtsReadyForSynthesis(synthesisReadyCount)
                   : 'All sessions consolidated',
               statusColor: synthesisReadyCount > 0
                   ? AppColors.accentAction
@@ -156,33 +149,6 @@ class PipelineHudModal extends StatelessWidget {
                       ),
                     )
                   : null,
-            ),
-            const SizedBox(height: 10),
-
-            // Stage 3: Insights Mining
-            _buildStageTile(
-              stageNumber: '3',
-              stageName: 'Insights',
-              description:
-                  'Next daily refresh in $insightsNextRefresh (periodic compute guard)',
-              statusColor: AppColors.accentAI,
-              icon: Icons.auto_awesome,
-            ),
-            const SizedBox(height: 10),
-
-            // Stage 4: Action Extraction
-            _buildStageTile(
-              stageNumber: '4',
-              stageName: 'Action',
-              description: actionPendingCount > 0
-                  ? '$actionPendingCount sessions awaiting task extraction'
-                  : 'All action commitments extracted',
-              statusColor: actionPendingCount > 0
-                  ? AppColors.accentWarning
-                  : AppColors.accentCapture,
-              icon: actionPendingCount > 0
-                  ? Icons.schedule
-                  : Icons.check_circle_outline,
             ),
             const SizedBox(height: 18),
 

@@ -170,7 +170,7 @@ void main() {
     expect(runner.runs, 0);
   });
 
-  for (final result in [SynthesisRunResult.failed, SynthesisRunResult.completed]) {
+  for (final result in [SynthesisRunResult.failed, SynthesisRunResult.completed, SynthesisRunResult.noModel]) {
     test('no reschedule after a ${result.name} run', () async {
       eligible = 3;
       runner.results.add(result);

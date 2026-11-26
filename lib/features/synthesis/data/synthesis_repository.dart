@@ -250,8 +250,6 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
       note.state = ThoughtState.processed;
       await notesRepo.saveNote(note);
     }
-    ref.invalidate(recentNotesProvider);
-    ref.invalidate(rawNotesReadyToClusterCountProvider);
   }
 
   /// Adds a session whose note the write turn produced. Called by the synthesis runner only
@@ -328,6 +326,7 @@ final synthesisRepositoryProvider =
 });
 
 final rawNotesReadyToClusterCountProvider = FutureProvider<int>((ref) async {
+  ref.watch(notesRevisionProvider);
   final notes = await ref.watch(notesRepositoryProvider).getAllNotes();
   return notes.where((n) => n.state == ThoughtState.processed).length;
 });

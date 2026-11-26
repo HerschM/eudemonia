@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of the capture notification: one status line and one button, so a thought can be
+     recorded with a single tap without expanding the notification (also on the lock screen). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <Chronometer
+        android:id="@+id/capture_notification_chronometer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Title"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/capture_notification_status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Compat.Notification" />
+
+    <TextView
+        android:id="@+id/capture_notification_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/capture_notification_button_bg"
+        android:maxLines="1"
+        android:minHeight="36dp"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:textColor="@color/capture_on_accent"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+</LinearLayout>

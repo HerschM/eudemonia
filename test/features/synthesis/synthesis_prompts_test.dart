@@ -49,11 +49,23 @@ void main() {
       expect(buildWritePrompt(['One.']), endsWith('<|im_start|>assistant\n'));
     });
 
-    test('the current profile is Qwen3-4B with structured notes and thinking off', () {
-      const p = SynthesisModelProfile.current;
+    test('the Qwen3-4B profile has structured notes and thinking off', () {
+      const p = SynthesisModelProfile.qwen3_4b;
       expect(p.modelFileName, 'qwen3-4b.gguf');
       expect(p.chatFormat, ChatFormat.chatmlNoThink);
       expect(p.noteStyle, NoteStyle.structured);
+    });
+
+    test('the Qwen3-1.7B profile differs from the 4B only in its file and shorter write limit', () {
+      const small = SynthesisModelProfile.qwen3_1_7b;
+      const big = SynthesisModelProfile.qwen3_4b;
+      expect(small.modelFileName, 'qwen3-1.7b.gguf');
+      expect(small.chatFormat, big.chatFormat);
+      expect(small.noteStyle, big.noteStyle);
+      expect(small.writeWordLimit, 400);
+      expect(small.organiseBatchSize, big.organiseBatchSize);
+      expect(small.minOutputRatio, big.minOutputRatio);
+      expect(small.maxOutputRatio, big.maxOutputRatio);
     });
   });
 

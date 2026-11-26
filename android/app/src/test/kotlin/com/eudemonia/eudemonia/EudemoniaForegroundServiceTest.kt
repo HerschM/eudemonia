@@ -1,7 +1,7 @@
 package com.eudemonia.eudemonia
 
+import android.app.Service
 import android.content.Intent
-import io.flutter.plugin.common.MethodChannel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,228 +10,137 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.mock
-import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 
 class EudemoniaForegroundServiceTest {
 
+    /** Stands in for [CaptureCore]; records calls in order with the foreground entries. */
+    private class FakeCaptureControl(private val calls: MutableList<String>) : CaptureControl {
+        val listeners = mutableListOf<CaptureListener>()
+        override var state = CaptureState(isRecording = false, startedAtMs = null)
+
+        override fun start(onResult: (CaptureState) -> Unit) { calls.add("start") }
+        override fun stop(onResult: (CaptureState) -> Unit) { calls.add("stop") }
+        override fun listCommitted(onResult: (List<CommittedCapture>) -> Unit) {}
+        override fun addListener(listener: CaptureListener) { listeners.add(listener) }
+        override fun removeListener(listener: CaptureListener) { listeners.remove(listener) }
+    }
+
+    private val calls = mutableListOf<String>()
+    private lateinit var capture: FakeCaptureControl
     private lateinit var service: EudemoniaForegroundService
+    private var foregroundSucceeds = true
 
     @Before
     fun setUp() {
         EudemoniaForegroundService.isRunning = false
-        TriggerDebouncer.shared.reset()
+        calls.clear()
+        foregroundSucceeds = true
+        capture = FakeCaptureControl(calls)
         service = EudemoniaForegroundService()
+        service.captureProvider = { capture }
+        service.foregroundStarter = { _ ->
+            calls.add("foreground")
+            foregroundSucceeds
+        }
+        service.onCreate()
     }
 
     @After
     fun tearDown() {
         EudemoniaForegroundService.isRunning = false
-        TriggerDebouncer.shared.reset()
+    }
+
+    private fun intentFor(action: String): Intent {
+        val intent = mock(Intent::class.java)
+        `when`(intent.action).thenReturn(action)
+        return intent
     }
 
     @Test
     fun testServiceConstants() {
-        assertEquals("eudemonia_background_channel", EudemoniaForegroundService.CHANNEL_ID)
+        assertEquals("eudemonia_capture", EudemoniaForegroundService.CHANNEL_ID)
+        assertEquals("eudemonia_background_channel", EudemoniaForegroundService.LEGACY_CHANNEL_ID)
         assertEquals(1001, EudemoniaForegroundService.NOTIFICATION_ID)
-        assertEquals("com.eudemonia.eudemonia.HARDWARE_TRIGGER", EudemoniaForegroundService.TRIGGER_ACTION)
-        assertEquals("com.eudemonia.eudemonia.START_FOREGROUND", ForegroundServiceCoordinator.ACTION_START)
-        assertEquals("com.eudemonia.eudemonia.STOP_FOREGROUND", ForegroundServiceCoordinator.ACTION_STOP)
-        assertEquals("com.eudemonia.eudemonia.ACTION_START_CAPTURE", ForegroundServiceCoordinator.ACTION_START_CAPTURE)
-        assertEquals("com.eudemonia.eudemonia.ACTION_STOP_CAPTURE", ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
-        assertEquals("com.eudemonia.eudemonia.ACTION_UPDATE_RECORDING_STATE", ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE)
     }
 
     @Test
-    fun testInitialServiceStateNotRunning() {
-        assertFalse(EudemoniaForegroundService.isRunning)
-    }
-
-    @Test
-    fun testOnCreateInitializesCoordinatorAndUpdatesRunningState() {
-        service.onCreate()
-
-        assertFalse(EudemoniaForegroundService.isRunning)
-
-        // Starting foreground sets isRunning = true
-        service.coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        assertTrue(EudemoniaForegroundService.isRunning)
-
-        // Stopping foreground sets isRunning = false
-        service.coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_STOP)
-        assertFalse(EudemoniaForegroundService.isRunning)
-    }
-
-    @Test
-    fun testTriggerReceiverDispatchesHardwareTriggerWhenLocked() {
-        service.onCreate()
-        service.registerTriggerReceiver()
-
-        var receivedIsLocked: Boolean? = null
-        var triggerDispatched = false
-
-        val testCoordinator = ForegroundServiceCoordinator(
-            onTriggerDelivered = { isLocked ->
-                triggerDispatched = true
-                receivedIsLocked = isLocked
-            }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
-
-        val intent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(intent.action).thenReturn(EudemoniaForegroundService.TRIGGER_ACTION)
-        org.mockito.Mockito.`when`(intent.getBooleanExtra("isLocked", false)).thenReturn(true)
-
-        service.triggerReceiver?.onReceive(null, intent)
-
-        assertTrue(triggerDispatched)
-        assertEquals(true, receivedIsLocked)
-    }
-
-    @Test
-    fun testTriggerReceiverDispatchesHardwareTriggerWhenUnlocked() {
-        TriggerDebouncer.shared.reset()
-        service.onCreate()
-        service.registerTriggerReceiver()
-
-        var receivedIsLocked: Boolean? = null
-        var triggerDispatched = false
-
-        val testCoordinator = ForegroundServiceCoordinator(
-            onTriggerDelivered = { isLocked ->
-                triggerDispatched = true
-                receivedIsLocked = isLocked
-            }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
-
-        val intent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(intent.action).thenReturn(EudemoniaForegroundService.TRIGGER_ACTION)
-        org.mockito.Mockito.`when`(intent.getBooleanExtra("isLocked", false)).thenReturn(false)
-
-        service.triggerReceiver?.onReceive(null, intent)
-
-        assertTrue(triggerDispatched)
-        assertEquals(false, receivedIsLocked)
-    }
-
-    @Test
-    fun testTriggerReceiverIgnoresUnrelatedIntentAction() {
-        service.onCreate()
-        service.registerTriggerReceiver()
-
-        var triggerDispatched = false
-
-        val testCoordinator = ForegroundServiceCoordinator(
-            onTriggerDelivered = {
-                triggerDispatched = true
-            }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
-
-        val intent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(intent.action).thenReturn("com.unrelated.ACTION")
-
-        service.triggerReceiver?.onReceive(null, intent)
-
-        assertFalse(triggerDispatched)
-    }
-
-    @Test
-    fun testDeliverTriggerInvokesMethodChannelWhenActive() {
-        val mockChannel = mock(MethodChannel::class.java)
-
-        val result = service.deliverTrigger(isLocked = true, channel = mockChannel)
-
-        assertTrue(result)
-        verify(mockChannel).invokeMethod("onHardwareTrigger", mapOf("isLocked" to true))
-    }
-
-    @Test
-    fun testDeliverTriggerFallsBackToLaunchIntentWhenChannelNull() {
-        // When channel is null, deliverTrigger returns false (attempting activity launch)
-        val result = service.deliverTrigger(isLocked = false, channel = null)
-
-        assertFalse(result)
-    }
-
-    @Test
-    fun testOnDestroyCleansUpReceiverAndResetsState() {
-        service.onCreate()
-        service.registerTriggerReceiver()
-        service.coordinator.handleCommand(ForegroundServiceCoordinator.ACTION_START)
-        assertTrue(EudemoniaForegroundService.isRunning)
+    fun testOnCreateRegistersAsCaptureListenerAndOnDestroyRemovesIt() {
+        assertEquals(1, capture.listeners.size)
 
         service.onDestroy()
 
+        assertTrue(capture.listeners.isEmpty())
         assertFalse(EudemoniaForegroundService.isRunning)
-        assertNull(service.triggerReceiver)
     }
 
     @Test
-    fun testOnStartCommandWithStartCaptureDispatchesTrigger() {
-        var startCaptureTriggered = false
-        val testCoordinator = ForegroundServiceCoordinator(
-            onStartCaptureTriggered = { startCaptureTriggered = true }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
+    fun testPlainStartEntersForegroundWithoutRecording() {
+        val result = service.onStartCommand(null, 0, 1)
 
-        val intent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(intent.action).thenReturn(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
-
-        service.onStartCommand(intent, 0, 1)
-
-        assertTrue(startCaptureTriggered)
-        assertTrue(testCoordinator.isRecording)
+        assertEquals(Service.START_STICKY, result)
+        assertEquals(listOf("foreground"), calls)
+        assertTrue(EudemoniaForegroundService.isRunning)
     }
 
     @Test
-    fun testOnStartCommandWithStopCaptureDispatchesTrigger() {
-        var stopCaptureTriggered = false
-        val testCoordinator = ForegroundServiceCoordinator(
-            onStopCaptureTriggered = { stopCaptureTriggered = true }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
+    fun testStartCaptureEntersForegroundBeforeRecording() {
+        val result = service.onStartCommand(intentFor(ForegroundServiceCoordinator.ACTION_START_CAPTURE), 0, 1)
 
-        val startIntent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(startIntent.action).thenReturn(ForegroundServiceCoordinator.ACTION_START_CAPTURE)
-        service.onStartCommand(startIntent, 0, 1)
-        assertTrue(testCoordinator.isRecording)
-
-        val stopIntent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(stopIntent.action).thenReturn(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE)
-        service.onStartCommand(stopIntent, 0, 2)
-
-        assertTrue(stopCaptureTriggered)
-        assertFalse(testCoordinator.isRecording)
+        assertEquals(Service.START_STICKY, result)
+        assertEquals(listOf("foreground", "start"), calls)
+        assertTrue(EudemoniaForegroundService.isRunning)
     }
 
     @Test
-    fun testOnStartCommandWithUpdateRecordingStateUpdatesCoordinator() {
-        var updatedState: Boolean? = null
-        val testCoordinator = ForegroundServiceCoordinator(
-            onRecordingStateUpdated = { isRecording -> updatedState = isRecording }
-        )
-        service.setCoordinatorForTesting(testCoordinator)
+    fun testStopCaptureEntersForegroundBeforeStopping() {
+        val result = service.onStartCommand(intentFor(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE), 0, 1)
 
-        val intent = mock(Intent::class.java)
-        org.mockito.Mockito.`when`(intent.action).thenReturn(ForegroundServiceCoordinator.ACTION_UPDATE_RECORDING_STATE)
-        org.mockito.Mockito.`when`(intent.getBooleanExtra("isRecording", false)).thenReturn(true)
-
-        service.onStartCommand(intent, 0, 1)
-
-        assertEquals(true, updatedState)
-        assertTrue(testCoordinator.isRecording)
+        assertEquals(Service.START_STICKY, result)
+        assertEquals(listOf("foreground", "stop"), calls)
     }
 
     @Test
-    fun testDeliverTriggerForwardsDesiredRecordingForExplicitNotificationActions() {
-        val mockChannel = mock(MethodChannel::class.java)
+    fun testForegroundFailureNeverRecordsAndIsNotSticky() {
+        foregroundSucceeds = false
 
-        service.deliverTrigger(isLocked = true, channel = mockChannel, desiredRecording = false)
+        val result = service.onStartCommand(intentFor(ForegroundServiceCoordinator.ACTION_START_CAPTURE), 0, 1)
 
-        verify(mockChannel).invokeMethod(
-            "onHardwareTrigger",
-            mapOf("isLocked" to true, "desiredRecording" to false)
-        )
+        assertEquals(Service.START_NOT_STICKY, result)
+        assertEquals(listOf("foreground"), calls)
+        assertFalse(EudemoniaForegroundService.isRunning)
+    }
+
+    @Test
+    fun testStopActionEndsAnyRecordingWithoutEnteringForeground() {
+        service.onStartCommand(null, 0, 1)
+        calls.clear()
+
+        val result = service.onStartCommand(intentFor(ForegroundServiceCoordinator.ACTION_STOP), 0, 2)
+
+        assertEquals(Service.START_NOT_STICKY, result)
+        // No foreground entry; any recording is ended so it cannot outlive the service.
+        assertEquals(listOf("stop"), calls)
+        assertFalse(EudemoniaForegroundService.isRunning)
+    }
+
+    @Test
+    fun testForegroundEntryUsesCurrentCaptureState() {
+        var notifiedState: CaptureState? = null
+        service.foregroundStarter = { state ->
+            notifiedState = state
+            true
+        }
+        capture.state = CaptureState(isRecording = true, startedAtMs = 99L)
+
+        service.onStartCommand(null, 0, 1)
+
+        assertEquals(CaptureState(isRecording = true, startedAtMs = 99L), notifiedState)
+    }
+
+    @Test
+    fun testServiceNeverHoldsCaptureBeforeOnCreate() {
+        val fresh = EudemoniaForegroundService()
+        assertNull(fresh.capture)
     }
 }

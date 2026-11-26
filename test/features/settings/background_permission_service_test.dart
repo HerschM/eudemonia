@@ -1,84 +1,60 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
+
+import 'fake_permission_gateway.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('BackgroundPermissionStatus', () {
-    test('areAllGranted returns true only when both are true', () {
-      const allTrue = BackgroundPermissionStatus(
-        isAccessibilityEnabled: true,
-        isBatteryOptimizationIgnored: true,
-        isForegroundServiceRunning: true,
-      );
-      expect(allTrue.areAllGranted, isTrue);
-
-      const onlyAccess = BackgroundPermissionStatus(
-        isAccessibilityEnabled: true,
-        isBatteryOptimizationIgnored: false,
-      );
-      expect(onlyAccess.areAllGranted, isFalse);
-
-      const onlyBattery = BackgroundPermissionStatus(
-        isAccessibilityEnabled: false,
-        isBatteryOptimizationIgnored: true,
-      );
-      expect(onlyBattery.areAllGranted, isFalse);
-
-      const allFalse = BackgroundPermissionStatus(
-        isAccessibilityEnabled: false,
-        isBatteryOptimizationIgnored: false,
-      );
-      expect(allFalse.areAllGranted, isFalse);
-    });
-
-    test('copyWith updates fields correctly', () {
+    test('copyWith updates only the named fields', () {
       const initial = BackgroundPermissionStatus(
-        isAccessibilityEnabled: false,
-        isBatteryOptimizationIgnored: false,
+        isMicrophoneGranted: false,
+        areNotificationsEnabled: false,
         isForegroundServiceRunning: false,
       );
       final updated = initial.copyWith(
-        isBatteryOptimizationIgnored: true,
+        isMicrophoneGranted: true,
         isForegroundServiceRunning: true,
       );
-      expect(updated.isAccessibilityEnabled, isFalse);
-      expect(updated.isBatteryOptimizationIgnored, isTrue);
+      expect(updated.isMicrophoneGranted, isTrue);
+      expect(updated.areNotificationsEnabled, isFalse);
       expect(updated.isForegroundServiceRunning, isTrue);
+    });
+
+    test('equality covers every field', () {
+      const a = BackgroundPermissionStatus(
+        isMicrophoneGranted: true,
+        areNotificationsEnabled: true,
+      );
+      expect(a, a.copyWith());
+      expect(a.hashCode, a.copyWith().hashCode);
+      expect(a, isNot(a.copyWith(areNotificationsEnabled: false)));
     });
   });
 
   group('BackgroundPermissionService', () {
     const channel = MethodChannel('test_hardware_buttons');
     late BackgroundPermissionService service;
+    late FakePermissionGateway permissions;
     late List<MethodCall> methodCalls;
 
     setUp(() {
       methodCalls = [];
+      permissions = FakePermissionGateway();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
         methodCalls.add(call);
         switch (call.method) {
-          case 'isAccessibilityServiceEnabled':
-            return true;
-          case 'isIgnoringBatteryOptimizations':
-            return true;
           case 'isForegroundServiceRunning':
             return true;
-          case 'startForegroundService':
-          case 'stopForegroundService':
-          case 'openBatteryOptimizationSettings':
-          case 'requestIgnoreBatteryOptimizations':
-          case 'openAccessibilitySettings':
-          case 'requestSimultaneousPermissions':
-            return null;
           default:
             return null;
         }
       });
-
-      service = const BackgroundPermissionService(channel: channel);
+      service = BackgroundPermissionService(channel: channel, permissions: permissions);
     });
 
     tearDown(() {
@@ -86,34 +62,66 @@ void main() {
           .setMockMethodCallHandler(channel, null);
     });
 
-    test('checkStatus returns correct status when all are true', () async {
+    test('checkStatus reports every prerequisite and never asks native about accessibility', () async {
       final status = await service.checkStatus();
-      expect(status.isAccessibilityEnabled, isTrue);
-      expect(status.isBatteryOptimizationIgnored, isTrue);
-      expect(status.isForegroundServiceRunning, isTrue);
-      expect(status.areAllGranted, isTrue);
 
-      expect(
-        methodCalls.map((m) => m.method),
-        containsAll([
-          'isAccessibilityServiceEnabled',
-          'isIgnoringBatteryOptimizations',
-          'isForegroundServiceRunning',
-        ]),
-      );
+      expect(status.isMicrophoneGranted, isTrue);
+      expect(status.areNotificationsEnabled, isTrue);
+      expect(status.isForegroundServiceRunning, isTrue);
+      expect(methodCalls.map((m) => m.method), ['isForegroundServiceRunning']);
     });
 
-    test('checkStatus handles exceptions gracefully and returns false', () async {
+    test('checkStatus reflects denied runtime permissions', () async {
+      permissions = FakePermissionGateway(
+        microphone: PermissionStatus.denied,
+        notification: PermissionStatus.permanentlyDenied,
+      );
+      service = BackgroundPermissionService(channel: channel, permissions: permissions);
+
+      final status = await service.checkStatus();
+
+      expect(status.isMicrophoneGranted, isFalse);
+      expect(status.areNotificationsEnabled, isFalse);
+    });
+
+    test('a failing query reports false for that prerequisite only', () async {
+      permissions.throwOn.add(Permission.notification);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'ERROR', message: 'Failed');
+        if (call.method == 'isForegroundServiceRunning') {
+          throw PlatformException(code: 'ERROR', message: 'Failed');
+        }
+        return true;
       });
 
       final status = await service.checkStatus();
-      expect(status.isAccessibilityEnabled, isFalse);
-      expect(status.isBatteryOptimizationIgnored, isFalse);
+
+      expect(status.isMicrophoneGranted, isTrue);
+      expect(status.areNotificationsEnabled, isFalse);
       expect(status.isForegroundServiceRunning, isFalse);
-      expect(status.areAllGranted, isFalse);
+    });
+
+    test('requestMicrophone asks once when denied and does nothing when already granted', () async {
+      permissions.statuses[Permission.microphone] = PermissionStatus.denied;
+      await service.requestMicrophone();
+      expect(permissions.requested, [Permission.microphone]);
+      expect(permissions.settingsOpened, 0);
+
+      await service.requestMicrophone();
+      expect(permissions.requested, [Permission.microphone]);
+    });
+
+    test('a permanently denied permission opens the system settings instead of asking', () async {
+      permissions.statuses[Permission.microphone] = PermissionStatus.permanentlyDenied;
+      await service.requestMicrophone();
+      expect(permissions.requested, isEmpty);
+      expect(permissions.settingsOpened, 1);
+    });
+
+    test('requestNotifications asks for the notification permission', () async {
+      permissions.statuses[Permission.notification] = PermissionStatus.denied;
+      await service.requestNotifications();
+      expect(permissions.requested, [Permission.notification]);
     });
 
     test('startForegroundService and stopForegroundService invoke native methods', () async {
@@ -122,26 +130,6 @@ void main() {
 
       await service.stopForegroundService();
       expect(methodCalls.any((m) => m.method == 'stopForegroundService'), isTrue);
-    });
-
-    test('openBatteryOptimizationSettings invokes native method', () async {
-      await service.openBatteryOptimizationSettings();
-      expect(methodCalls.any((m) => m.method == 'openBatteryOptimizationSettings'), isTrue);
-    });
-
-    test('requestSimultaneousPermissions invokes native method', () async {
-      await service.requestSimultaneousPermissions();
-      expect(methodCalls.any((m) => m.method == 'requestSimultaneousPermissions'), isTrue);
-    });
-
-    test('requestBatteryOptimizationExemption invokes native method', () async {
-      await service.requestBatteryOptimizationExemption();
-      expect(methodCalls.any((m) => m.method == 'requestIgnoreBatteryOptimizations'), isTrue);
-    });
-
-    test('openAccessibilitySettings invokes native method', () async {
-      await service.openAccessibilitySettings();
-      expect(methodCalls.any((m) => m.method == 'openAccessibilitySettings'), isTrue);
     });
   });
 }

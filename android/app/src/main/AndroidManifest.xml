@@ -1,14 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only used to download the on-device model files (speech and language models). No user data is ever sent. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Only used to put the Record notification back after the phone restarts. Nothing is started or recorded at boot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     
     <application
-        android:label="eudemonia"
+        android:label="Eudemonia"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -19,8 +22,6 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
@@ -42,22 +43,30 @@
             android:value="2" />
 
         <service
-            android:name=".ButtonInterceptorService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:process=":interceptor"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
-
-        <service
             android:name=".EudemoniaForegroundService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
+
+        <receiver
+            android:name=".CaptureNotificationRestorer"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".CaptureWidgetProvider"
+            android:label="@string/capture_widget_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/capture_widget_info" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

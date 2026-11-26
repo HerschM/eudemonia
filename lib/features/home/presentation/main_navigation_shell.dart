@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
+import 'package:eudemonia/features/models/application/model_settings.dart';
+import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
@@ -11,8 +14,6 @@ import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
-import 'package:eudemonia/features/insights/presentation/insights_placeholder_screen.dart';
-import 'package:eudemonia/features/action/presentation/action_placeholder_screen.dart';
 import 'package:eudemonia/features/home/presentation/pipeline_hud_modal.dart';
 
 /// Live memory line for the Pipeline HUD, built from an OS reading taken when the HUD opens.
@@ -38,7 +39,7 @@ class MainNavigationShell extends ConsumerStatefulWidget {
 class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _stages = ['Capture', 'Synthesis', 'Insights', 'Action'];
+  final List<String> _stages = ['Capture', 'Synthesis'];
   int _currentIndex = 0;
 
   @override
@@ -52,16 +53,20 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     );
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
-        if (_tabController.index >= 2) {
-          // Insights and Action are placeholders, greyed out and unclickable
-          _tabController.animateTo(_currentIndex);
-        } else {
-          setState(() {
-            _currentIndex = _tabController.index;
-          });
-        }
+        setState(() {
+          _currentIndex = _tabController.index;
+        });
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(shouldOfferModelSetupProvider)) _offerModelSetup();
+    });
+  }
+
+  /// First launch without a speech model: open the setup screen once, never again on its own.
+  void _offerModelSetup() {
+    ref.read(modelSettingsProvider.notifier).markSetupShown();
+    openModelSetup(Navigator.of(context));
   }
 
   @override
@@ -99,9 +104,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
   }
 
   String _formatTabTitle(String stage, int unreadCount) {
-    if (stage == 'Insights' || stage == 'Action') {
-      return stage;
-    }
     // Zero-Suppression Rule: omit count if zero to avoid clutter
     if (unreadCount <= 0) {
       return stage;
@@ -111,6 +113,9 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(shouldOfferModelSetupProvider, (previous, offer) {
+      if (offer) _offerModelSetup();
+    });
     final pendingQueueCount = ref.watch(pendingQueueCountProvider);
     final notesAsync = ref.watch(recentNotesProvider);
     final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
@@ -259,30 +264,13 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
               ),
               labelPadding: EdgeInsets.zero,
               onTap: (index) {
-                if (index >= 2) {
-                  // Keep on active tab, do not switch to unclickable placeholder tabs
-                  _tabController.animateTo(_currentIndex);
-                } else {
-                  setState(() {
-                    _currentIndex = index;
-                  });
-                }
+                setState(() {
+                  _currentIndex = index;
+                });
               },
               tabs: [
                 Tab(text: _formatTabTitle('Capture', totalCaptureUnread)),
                 Tab(text: _formatTabTitle('Synthesis', totalSynthesisUnread)),
-                const Tab(
-                  child: Opacity(
-                    opacity: 0.38,
-                    child: Text('Insights'),
-                  ),
-                ),
-                const Tab(
-                  child: Opacity(
-                    opacity: 0.38,
-                    child: Text('Action'),
-                  ),
-                ),
               ],
             ),
           ),
@@ -293,8 +281,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
         children: const [
           CaptureScreen(),
           SynthesisScreen(),
-          InsightsPlaceholderScreen(),
-          ActionPlaceholderScreen(),
         ],
       ),
     );

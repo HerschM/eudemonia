@@ -9,7 +9,9 @@ import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
 
 class FakeNotesRepository implements NotesRepository {
   final List<Note> notes;
-  FakeNotesRepository(this.notes);
+  @override
+  final void Function()? onChanged;
+  FakeNotesRepository(this.notes, {this.onChanged});
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -23,6 +25,7 @@ class FakeNotesRepository implements NotesRepository {
     if (note != null) {
       note.isRead = true;
     }
+    onChanged?.call();
   }
 
   @override
@@ -31,6 +34,7 @@ class FakeNotesRepository implements NotesRepository {
     if (note != null) {
       note.correctedText = newText;
     }
+    onChanged?.call();
   }
 }
 
@@ -67,8 +71,8 @@ void main() {
             notesRepositoryProvider.overrideWithValue(fakeRepo),
             backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
               const BackgroundPermissionStatus(
-                isAccessibilityEnabled: true,
-                isBatteryOptimizationIgnored: true,
+                isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                 isForegroundServiceRunning: true,
               ),
             )),
@@ -96,16 +100,18 @@ void main() {
         isRead: false,
       )..id = 1;
 
-      final fakeRepo = FakeNotesRepository([unreadNote]);
-
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            notesRepositoryProvider.overrideWithValue(fakeRepo),
+            // Same wiring as production: a change made through the repository bumps the revision.
+            notesRepositoryProvider.overrideWith((ref) => FakeNotesRepository(
+                  [unreadNote],
+                  onChanged: () => ref.read(notesRevisionProvider.notifier).bump(),
+                )),
             backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
               const BackgroundPermissionStatus(
-                isAccessibilityEnabled: true,
-                isBatteryOptimizationIgnored: true,
+                isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                 isForegroundServiceRunning: true,
               ),
             )),
@@ -152,8 +158,8 @@ void main() {
             notesRepositoryProvider.overrideWithValue(fakeRepo),
             backgroundPermissionStatusProvider.overrideWith((ref) => Future.value(
               const BackgroundPermissionStatus(
-                isAccessibilityEnabled: true,
-                isBatteryOptimizationIgnored: true,
+                isMicrophoneGranted: true,
+                areNotificationsEnabled: true,
                 isForegroundServiceRunning: true,
               ),
             )),

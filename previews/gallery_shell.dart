@@ -347,7 +347,7 @@ class PipelineHudModal extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'On-Device AI Inference Engine (Sherpa-ONNX STT & Qwen 2.5)',
+              'Everything is processed on this phone',
               style: TextStyle(
                 fontSize: 12,
                 color: PreviewTheme.textSecondary.withValues(alpha: 0.8),
@@ -376,7 +376,7 @@ class PipelineHudModal extends StatelessWidget {
               stageNumber: '2',
               stageName: 'Synthesis',
               description: pipelineStatus.synthesisReadyCount > 0
-                  ? '${pipelineStatus.synthesisReadyCount} raw thoughts ready to cluster'
+                  ? '${pipelineStatus.synthesisReadyCount} ${pipelineStatus.synthesisReadyCount == 1 ? 'thought' : 'thoughts'} ready for Synthesis'
                   : 'All sessions consolidated',
               statusColor: pipelineStatus.synthesisReadyCount > 0
                   ? PreviewTheme.accentAction
@@ -451,7 +451,7 @@ class PipelineHudModal extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Ready: ~1.58 GB RAM • 3m Inactivity Eviction Active',
+                      'Ready: ~1.58 GB RAM • 2m Inactivity Eviction Active',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,

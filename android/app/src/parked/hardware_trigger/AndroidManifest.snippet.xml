@@ -1,0 +1,14 @@
+<!-- Removed from android/app/src/main/AndroidManifest.xml (inside <application>).
+     Restore together with res/xml/accessibility_service_config.xml and strings.snippet.xml. -->
+<service
+    android:name=".ButtonInterceptorService"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+    android:process=":interceptor"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/accessibility_service_config" />
+</service>

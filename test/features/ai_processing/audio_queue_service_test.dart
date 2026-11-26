@@ -25,6 +25,9 @@ class FakeNotesRepository implements NotesRepository {
 class FakeSTTService implements STTService {
   String stubTranscript = 'Hello world thought';
   bool wasCalled = false;
+
+  /// Runs while an item is being transcribed.
+  void Function()? onTranscribe;
   @override
   bool isInitialized = false;
 
@@ -44,6 +47,7 @@ class FakeSTTService implements STTService {
       throw Exception('STT Service not initialized');
     }
     wasCalled = true;
+    onTranscribe?.call();
     return stubTranscript;
   }
 
@@ -82,6 +86,20 @@ class LoggingSTTService extends FakeSTTService {
   Future<String> transcribe(String audioFilePath) async {
     events.add('transcribe');
     if (failNext || audioFilePath.contains('corrupt')) throw Exception('Unreadable audio');
+    return super.transcribe(audioFilePath);
+  }
+}
+
+/// Returns silence for a path containing `silent`, throws for one containing `corrupt`.
+class _ScriptedSTTService extends FakeSTTService {
+  bool failCorrupt = true;
+
+  @override
+  Future<String> transcribe(String audioFilePath) async {
+    if (failCorrupt && audioFilePath.contains('corrupt')) {
+      throw Exception('Unreadable audio');
+    }
+    stubTranscript = audioFilePath.contains('silent') ? '' : 'Hello world thought';
     return super.transcribe(audioFilePath);
   }
 }
@@ -194,9 +212,112 @@ void main() {
     await service.processPending();
 
     expect(service.items.first.status, AudioQueueStatus.failed);
+    expect(service.items.first.errorMessage, silentRecordingMessage);
+    expect(service.items.first.isSilent, isTrue);
     expect(service.pendingCount, 0);
     service.dispose();
     customLifecycle.dispose();
+  });
+
+  test('a silent recording is not counted as failed and is left alone by Retry; a real failure is and is retried',
+      () async {
+    final stt = _ScriptedSTTService();
+    final lifecycle = ModelLifecycleManager(stt, modelsDirResolver: () async => tempDir.path);
+    final reported = <(int, int)>[];
+    final service = AudioQueueService(
+      stt,
+      fakeNotesRepo,
+      lifecycle,
+      storageFileResolver: () async => queueStorageFile,
+      onQueueChanged: (pending, failed) => reported.add((pending, failed)),
+    );
+
+    await service.enqueue('/path/to/silent.m4a', autoProcess: false);
+    await service.processPending();
+    expect(service.items.single.status, AudioQueueStatus.failed, reason: 'parked as failed internally');
+    expect(service.failedCount, 0, reason: 'a silent recording is not a failure for the user');
+    expect(reported.last.$2, 0);
+
+    await service.enqueue('/path/to/corrupt.m4a', autoProcess: false);
+    await service.processPending();
+    expect(service.failedCount, 1);
+    expect(reported.last.$2, 1);
+
+    // Retry re-queues the real failure only; the silent recording stays as it is.
+    stt.failCorrupt = false;
+    await service.retryFailed();
+    await service.processPending();
+    final byPath = {for (final i in service.items) i.audioFilePath: i};
+    expect(byPath['/path/to/silent.m4a']!.status, AudioQueueStatus.failed);
+    expect(byPath['/path/to/silent.m4a']!.errorMessage, silentRecordingMessage);
+    expect(byPath['/path/to/corrupt.m4a']!.status, AudioQueueStatus.completed);
+    expect(service.failedCount, 0);
+
+    service.dispose();
+    lifecycle.dispose();
+  });
+
+  test('isSilentRecordingMessage recognises the current and the older wording only', () {
+    expect(isSilentRecordingMessage(silentRecordingMessage), isTrue);
+    expect(isSilentRecordingMessage('No speech detected in audio recording.'), isTrue);
+    expect(isSilentRecordingMessage('Speech recognition engine timeout after 30s.'), isFalse);
+    expect(isSilentRecordingMessage(null), isFalse);
+  });
+
+  group('speech model not downloaded (FR16.2)', () {
+    late bool speechReady;
+    late AudioQueueService service;
+
+    setUp(() {
+      speechReady = false;
+      service = AudioQueueService(
+        fakeSTT,
+        fakeNotesRepo,
+        modelLifecycle,
+        storageFileResolver: () async => queueStorageFile,
+        isSpeechModelReady: () => speechReady,
+      );
+    });
+
+    tearDown(() => service.dispose());
+
+    test('items stay pending, untouched and never failed, while the model is missing', () async {
+      await service.enqueue('/path/to/a.m4a');
+      await service.enqueue('/path/to/b.m4a', autoProcess: false);
+
+      await service.processPending();
+
+      expect(service.items.map((i) => i.status), [AudioQueueStatus.pending, AudioQueueStatus.pending]);
+      expect(service.items.every((i) => i.errorMessage == null), isTrue);
+      expect(service.pendingCount, 2);
+      expect(fakeSTT.isInitialized, isFalse, reason: 'no model load was attempted');
+      expect(fakeNotesRepo.savedNotes, isEmpty);
+    });
+
+    test('the same items are transcribed once the model is ready', () async {
+      await service.enqueue('/path/to/a.m4a', autoProcess: false);
+      await service.enqueue('/path/to/b.m4a', autoProcess: false);
+      await service.processPending();
+      expect(service.pendingCount, 2);
+
+      speechReady = true;
+      await service.processPending();
+
+      expect(service.pendingCount, 0);
+      expect(fakeNotesRepo.savedNotes, hasLength(2));
+      expect(service.items.every((i) => i.status == AudioQueueStatus.completed), isTrue);
+    });
+
+    test('a model deleted mid-drain stops the worker without failing what is left', () async {
+      speechReady = true;
+      fakeSTT.onTranscribe = () => speechReady = false;
+      await service.enqueue('/path/to/a.m4a', autoProcess: false);
+      await service.enqueue('/path/to/b.m4a', autoProcess: false);
+
+      await service.processPending();
+
+      expect(service.items.map((i) => i.status), [AudioQueueStatus.completed, AudioQueueStatus.pending]);
+    });
   });
 
   group('CPU wake lock', () {

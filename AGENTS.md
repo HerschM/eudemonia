@@ -47,7 +47,7 @@ To maintain world-class engineering rigor, every agent must adhere to these stru
 Eudemonia is an on-device, zero-friction, voice-first thought capture system for Android. It captures fleeting thoughts instantaneously via physical hardware buttons, enqueues audio without blocking the user, transcribes speech on-device, and categorizes thoughts locally.
 
 - **Frontend**: Flutter / Dart (State management: Riverpod)
-- **Native Android**: Kotlin (Accessibility Service for hardware triggers, Foreground Service for process keep-alive)
+- **Native Android**: Kotlin (native capture core that records from the notification, the home-screen widget and the in-app button; Foreground Service for process keep-alive; the Accessibility Service for the volume-button trigger is parked until after the first public release)
 - **On-Device AI**: Local Speech-to-Text (STT) and Large Language Model (LLM) inference runtimes
 - **Persistence**: Local database (Isar, via the maintained `isar_community` fork) & file storage
 
@@ -96,6 +96,8 @@ Future agents may evolve algorithms, models, and UI screens, but must **NEVER** 
 - Recording start/stop must **never** block on model loading, disk conversion, or AI inference.
 
 ### B. Hardware Button & Audio Safety
+> **First public release (2026-11-26)**: the volume-button trigger is parked (`android/app/src/parked/hardware_trigger/`, `PRODUCT_SPEC.md` Section 5 R1). *Pass-Through* applies again when it returns; *Native Haptics* and *No Rogue Launches* apply now to every capture trigger: haptics fire in the native capture core, and no service or receiver ever starts an activity — a capture never brings the app to the front or shows it over the lock screen.
+
 - **Pass-Through**: Standard volume adjustment (single clicks, continuous holds) must pass through to system audio transparently. Avoid runaway volume loops or unhandled key consumption.
 - **Native Haptics**: Trigger haptic feedback must execute directly in Android native code upon event confirmation. Never defer haptics across asynchronous bridges.
 - **No Rogue Launches**: Background hardware interceptors must never launch activities directly from the background; dispatch events via intent broadcasts.
@@ -107,7 +109,7 @@ Future agents may evolve algorithms, models, and UI screens, but must **NEVER** 
 - **Stateless Inference**: A turn's result must never depend on earlier turns. Within one synthesis run the model's cached reading of an identical prompt start (the fixed instructions) may be reused; nothing of an earlier turn's thoughts or replies is kept. All inference context and KV cache allocations are released when the run ends or is preempted.
 
 ### D. Background Reliability
-- Reliable background operation requires both Accessibility Service (button interception) and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+- Reliable background operation requires both Accessibility Service (button interception) and Battery Optimization Exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). *First public release (user decisions 2026-11-26)*: neither is requested — the Accessibility Service is parked and the battery exemption is removed (Google Play restricts it). Capture relies on the microphone and notification permissions and on the foreground service; processing with the screen off relies on that service plus a bounded wake lock; a recording must be saved even when no Flutter engine is alive.
 - Keep-alive foreground services must be used responsibly to prevent OS hibernation without draining unnecessary battery.
 
 ---
@@ -210,8 +212,8 @@ lib/
 ├── core/                # Core utilities, logging, shared database
 ├── features/
 │   ├── ai_processing/   # STT, LLM inference, model lifecycle & queues
-│   ├── capture/         # Capture controller, capture screen & floating capture trigger
-│   ├── home/            # Four-stage navigation shell & pipeline HUD
+│   ├── capture/         # Native capture channel, inbox ingestor, capture controller, capture screen & capsule
+│   ├── home/            # Navigation shell (Capture & Synthesis in the first release) & pipeline HUD
 │   ├── notes/           # Note models, repositories & database storage
 │   ├── synthesis/       # Synthesis sessions, persistence & screen
 │   └── settings/        # Permissions, diagnostics, system telemetry & configuration
@@ -223,7 +225,8 @@ previews/                # Isolated UI/UX Component Sandbox (0 prod boilerplate)
 .agents/
 └── skills/              # Model-agnostic procedural skills & standard operating procedures
 android/
-└── app/src/main/kotlin/ # Accessibility service, foreground service & debouncers
+├── app/src/main/kotlin/ # Native capture core, foreground service, notification & home-screen widget
+└── app/src/parked/      # Not compiled: the volume-button trigger and its Accessibility service
 test/                    # Unit, widget, and architecture tests mirroring lib/
 ```
 

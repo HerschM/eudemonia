@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
 
 class NoteEjectionModal extends StatefulWidget {
   final SynthesisOriginNote rawNote;
@@ -196,7 +197,7 @@ class _NoteEjectionModalState extends State<NoteEjectionModal> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        target.synthesizedContent,
+                                        plainNotePreview(target.synthesizedContent),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(

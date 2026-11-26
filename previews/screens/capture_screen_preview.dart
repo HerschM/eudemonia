@@ -487,7 +487,7 @@ class _CaptureScreenPreviewState extends State<CaptureScreenPreview>
                 ),
                 SizedBox(width: 8),
                 Text(
-                  'Press Vol Up + Down to Capture',
+                  'Tap to capture',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
