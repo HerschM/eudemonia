@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
+import 'package:eudemonia/features/models/domain/model_catalogue.dart';
 import 'llm_config.dart';
 import 'model_file_validator.dart';
 import 'model_load_guard.dart';
@@ -22,7 +23,7 @@ enum ModelLifecycleState {
 }
 
 /// Central orchestrator managing the memory lifecycle, inactivity eviction, and
-/// on-demand pre-warming of the on-device STT (Parakeet) model the user chose.
+/// on-demand pre-warming of the on-device STT (Parakeet) model the app uses.
 class ModelLifecycleManager {
   final STTService _sttService;
   final LLMConfig _config;
@@ -30,7 +31,7 @@ class ModelLifecycleManager {
   final Future<String?> Function()? _modelsDirResolver;
 
   /// The folder, below the models directory, of the chosen speech model; `null` when none is
-  /// chosen. Without a resolver the first release's folder, `parakeet`, is used.
+  /// chosen. Without a resolver the catalogue's only speech model (Parakeet v2, `parakeet-v2`) is used.
   final String? Function()? _speechModelDirName;
   final void Function(ModelLifecycleState state)? _onStateChanged;
   final ModelFileValidator? _fileValidator;
@@ -100,7 +101,7 @@ class ModelLifecycleManager {
 
   String? _speechModelDir() {
     final resolve = _speechModelDirName;
-    return resolve == null ? 'parakeet' : resolve();
+    return resolve == null ? ModelCatalogue.parakeetV2.directory : resolve();
   }
 
   Future<void> _loadModels(String reason) async {

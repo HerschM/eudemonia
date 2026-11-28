@@ -401,6 +401,104 @@ void main() {
           styleId: styleId,
         );
 
+    test('the parts of a split thought get the long-thought text; the short thoughts around them do not', () async {
+      final sentences = [for (var k = 0; k < 175; k++) 'Sentence $k has a few more words in it now.'];
+      final parts = [
+        sentences.sublist(0, 70).join(' '),
+        sentences.sublist(70, 140).join(' '),
+        sentences.sublist(140).join(' '),
+      ];
+      final texts = ['First short thought.', ...parts, 'Last short thought.'];
+      final model = FakeModel((p, i) => ok(texts[i]));
+      final all = [th(1, 0, texts.first), th(2, 1, sentences.join(' ')), th(3, 2, texts.last)];
+      final journal = noteStyleById('journal');
+      final result = await SynthesisEngine(generate: model.call, profile: structured).write(styled(all, 'journal'));
+      expect(model.prompts, [
+        buildStyleWritePrompt([texts[0]], journal),
+        for (final part in parts) buildStyleWritePrompt([part], journal, longThoughtText: true),
+        buildStyleWritePrompt([texts[4]], journal),
+      ]);
+      expect([for (final p in model.prompts) p.contains(longThoughtRules)], [false, true, true, true, false]);
+      expect(result, texts.reduce(journal.join));
+    });
+
+    // Orchestrator decision 2026-11-28: long text only for split parts or as a retry. An unsplit
+    // long thought is written with the plain text first; only a reply that left something out is
+    // retried, once, with the long-thought text.
+    group('a long thought that is not split', () {
+      List<String> numbers(int n) => [for (var i = 0; i < n; i++) '${1000 + i}'];
+      final organised = noteStyleById('organised');
+
+      SynthesisEngine engine(FakeModel model, List<String> rejected) => SynthesisEngine(
+          generate: model.call, profile: structured, onRejected: (kind, ids, reason) => rejected.add('$kind $ids $reason'));
+
+      test('is written with the plain text when its reply is valid: one call', () async {
+        final thought = numbers(275).join(' ');
+        final model = FakeModel((p, _) => ok(thought));
+        final rejected = <String>[];
+        expect(await engine(model, rejected).write(styled([th(4, 0, thought)], 'organised')), thought);
+        expect(model.prompts, [buildStyleWritePrompt([thought], organised)]);
+        expect(model.prompts.single, isNot(contains(longThoughtRules)));
+        expect(rejected, isEmpty);
+      });
+
+      test('a reply too short is retried exactly once with the long-thought text, whose valid reply is the note', () async {
+        final thought = numbers(275).join(' ');
+        final model = FakeModel((p, i) => i == 0 ? ok(numbers(10).join(' ')) : ok(thought));
+        final rejected = <String>[];
+        expect(await engine(model, rejected).write(styled([th(4, 0, thought)], 'organised')), thought);
+        expect(model.prompts, [
+          buildStyleWritePrompt([thought], organised),
+          buildStyleWritePrompt([thought], organised, longThoughtText: true),
+        ]);
+        expect(rejected, ['write [4] 10 words written from 275; retrying with the long-thought rules']);
+      });
+
+      test('a note that drops a stretch is retried; rejected twice, the turn has no note and is never tried a third time',
+          () async {
+        final thought = numbers(464);
+        final model = FakeModel((p, _) => ok(thought.sublist(0, 232).join(' ')));
+        final rejected = <String>[];
+        expect(await engine(model, rejected).write(styled([th(4, 0, thought.join(' '))], 'organised')), isNull);
+        expect(model.prompts, hasLength(2));
+        expect(model.prompts.last, contains(longThoughtRules));
+        expect(rejected, [
+          'write [4] the note leaves out a stretch of thought(s) [1]; retrying with the long-thought rules',
+          'write [4] the note leaves out a stretch of thought(s) [1]',
+        ]);
+      });
+
+      test('a turn whose thoughts are all under longThoughtWords words is never retried', () async {
+        for (final (n, calls) in [(149, 1), (150, 2)]) {
+          final model = FakeModel((p, _) => ok(numbers(10).join(' ')));
+          expect(await engine(model, []).write(styled([th(4, 0, numbers(n).join(' '))], 'organised')), isNull);
+          expect(model.prompts, hasLength(calls), reason: '$n words');
+        }
+      });
+
+      test('a rejection for the form, the output limit or a timeout is not retried', () async {
+        final thought = numbers(275).join(' ');
+        final heading = FakeModel((p, _) => ok('**Title**\n\n**Heading**\n- $thought'));
+        expect(await engine(heading, []).write(styled([th(4, 0, thought)], 'bullets')), isNull);
+        expect(heading.prompts, hasLength(1));
+        final capped = FakeModel((p, _) => (text: thought, hitOutputCap: true));
+        expect(await engine(capped, []).write(styled([th(4, 0, thought)], 'organised')), isNull);
+        expect(capped.prompts, hasLength(1));
+        final timeout = FakeModel((p, _) => throw TimeoutException('slow'));
+        expect(await engine(timeout, []).write(styled([th(4, 0, thought)], 'organised')), isNull);
+        expect(timeout.prompts, hasLength(1));
+      });
+
+      test('a style without a long-thought text is not retried', () async {
+        // Too long for the input: rejected by the length check, but actionable has no other text.
+        final model = FakeModel((p, _) => ok('**Plan**\n\n- [ ] ${numbers(500).join(' ')}'));
+        final rejected = <String>[];
+        expect(await engine(model, rejected).write(styled([th(4, 0, numbers(275).join(' '))], 'actionable')), isNull);
+        expect(model.prompts, hasLength(1));
+        expect(rejected, ['write [4] 504 words written from 275']);
+      });
+    });
+
     test('a plan is organised unless it names a style', () {
       final plan = SessionPlan(existingSessionId: null, folder: 'Work', currentNote: null, thoughts: const [], newThoughts: const []);
       expect(plan.styleId, 'organised');

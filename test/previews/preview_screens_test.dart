@@ -278,17 +278,18 @@ void main() {
       testWidgets('Edit text: an empty text is refused, a text is saved and marks the note edited by hand', (tester) async {
         await pumpPreview(tester, scenario: 2);
 
+        // User decision 2026-11-28 (TASK-108 A): the text is edited in place; keys renamed to note_edit_*.
         await tester.tap(find.byKey(const Key('edit_text_button_n24')));
         await tester.pumpAndSettle();
-        await tester.enterText(find.byKey(const Key('note_text_field')), '   ');
-        await tester.tap(find.byKey(const Key('note_text_save_button')));
+        await tester.enterText(find.byKey(const Key('note_edit_field')), '   ');
+        await tester.tap(find.byKey(const Key('note_edit_save')));
         await tester.pumpAndSettle();
         expect(find.text('A note cannot be empty.'), findsOneWidget);
 
-        await tester.enterText(find.byKey(const Key('note_text_field')), '**My own title**\n\nMy own words.');
-        await tester.tap(find.byKey(const Key('note_text_save_button')));
+        await tester.enterText(find.byKey(const Key('note_edit_field')), '**My own title**\n\nMy own words.');
+        await tester.tap(find.byKey(const Key('note_edit_save')));
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key('note_text_field')), findsNothing);
+        expect(find.byKey(const Key('note_edit_field')), findsNothing);
         expect(find.text('My own words.'), findsOneWidget);
         expect(find.byKey(const Key('hand_edited_notice_n24')), findsOneWidget);
       });
@@ -548,15 +549,18 @@ void main() {
       }
     });
 
-    testWidgets('nothing downloaded offers Download for all four models, with no Testing tag', (tester) async {
+    testWidgets('nothing downloaded offers Download for all three models, with no Testing tag', (tester) async {
       await pumpScenario(tester, 0);
-      expect(find.text('Download'), findsNWidgets(4));
+      // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+      // parakeet v3 since we've not tested the european languages model writing cleanup." Was: four models.
+      expect(find.text('Download'), findsNWidgets(3));
       expect(find.text('Testing'), findsNothing);
     });
 
-    testWidgets('speech downloading shows 312 MB of 671 MB', (tester) async {
+    testWidgets('speech downloading shows 312 MB of 661 MB', (tester) async {
       await pumpScenario(tester, 1);
-      expect(find.text('312 MB of 671 MB'), findsOneWidget);
+      // User decision 2026-11-28 (v3 removed; v2 is 661 MB): was '312 MB of 671 MB'.
+      expect(find.text('312 MB of 661 MB'), findsOneWidget);
     });
 
     testWidgets('4B ready and in use', (tester) async {

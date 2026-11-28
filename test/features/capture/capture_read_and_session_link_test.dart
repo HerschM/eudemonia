@@ -17,6 +17,7 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 import '../settings/fake_permission_gateway.dart';
 import 'capture_test_doubles.dart';
+import 'capture_view_test_helpers.dart';
 
 class _NoQueueItems extends QueueItemsNotifier {
   @override
@@ -116,18 +117,14 @@ void main() {
         Note(correctedText: 'Seen processed', isRead: true),
       ]);
 
-      await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Unread').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, show: 'unread');
       expect(find.text('Unseen synthesized'), findsOneWidget);
       expect(find.text('Seen synthesized'), findsNothing);
       expect(find.text('Seen processed'), findsNothing);
 
-      await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Read').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, show: 'read');
       expect(find.text('Unseen synthesized'), findsNothing);
       expect(find.text('Seen synthesized'), findsOneWidget);
       expect(find.text('Seen processed'), findsOneWidget);

@@ -56,7 +56,7 @@ class ModelSpec {
   int get totalBytes => files.fold(0, (sum, f) => sum + f.sizeBytes);
 
   /// The folder (below the app's external files directory) that holds every file of the model:
-  /// `parakeet` for `parakeet/encoder.int8.onnx`. A file at the top level gives an empty string.
+  /// `parakeet-v2` for `parakeet-v2/encoder.int8.onnx`. A file at the top level gives an empty string.
   String get directory {
     final path = files.first.relativePath;
     final slash = path.lastIndexOf('/');
@@ -67,54 +67,13 @@ class ModelSpec {
 class ModelCatalogue {
   const ModelCatalogue._();
 
-  static const String _parakeetV3Base =
-      'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/'
-      'ed5d745623472f97cfc2e6c2916ee248798fc5a8';
-
   static const String _parakeetV2Base =
       'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/'
       '84b478d541cdbf0c296a7ab5f1e20a6f8f998114';
 
-  /// Parakeet v3: 25 European languages. The first speech model Eudemonia shipped, so its files
-  /// stay in `parakeet/`.
-  static const ModelSpec parakeetV3 = ModelSpec(
-    id: 'parakeet-tdt-0.6b-v3-int8',
-    kind: ModelKind.speech,
-    displayName: 'Parakeet v3 (25 languages)',
-    qualityLine: '25 European languages. Good for mixed-language speakers.',
-    memoryLine: 'Loaded only while transcribing',
-    minDeviceRamMb: 0,
-    requiredNominalGb: 0,
-    files: [
-      ModelFileSpec(
-        relativePath: 'parakeet/encoder.int8.onnx',
-        url: '$_parakeetV3Base/encoder.int8.onnx',
-        sha256: '1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479',
-        sizeBytes: 652282294,
-      ),
-      ModelFileSpec(
-        relativePath: 'parakeet/decoder.int8.onnx',
-        url: '$_parakeetV3Base/decoder.int8.onnx',
-        sha256: '0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5',
-        sizeBytes: 11845274,
-      ),
-      ModelFileSpec(
-        relativePath: 'parakeet/joiner.int8.onnx',
-        url: '$_parakeetV3Base/joiner.int8.onnx',
-        sha256: 'cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98',
-        sizeBytes: 6355277,
-      ),
-      ModelFileSpec(
-        relativePath: 'parakeet/tokens.txt',
-        url: '$_parakeetV3Base/tokens.txt',
-        sha256: 'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d',
-        sizeBytes: 93939,
-      ),
-    ],
-  );
-
-  /// Parakeet v2: English only, and the most accurate of the two for English (2.0 % against
-  /// 10.5 % word error rate on 22 real recordings, 2026-11-27). Same size and memory as v3.
+  /// Parakeet v2: English only, and the app's only speech model (user decision 2026-11-28). It
+  /// beat Parakeet v3 on English (2.0 % against 10.5 % word error rate on 22 real recordings,
+  /// 2026-11-27); v3's European-language model is not offered because it has not been tested.
   static const ModelSpec parakeetV2 = ModelSpec(
     id: 'parakeet-tdt-0.6b-v2-int8',
     kind: ModelKind.speech,
@@ -152,7 +111,7 @@ class ModelCatalogue {
   );
 
   /// The order of the list on screen.
-  static const List<ModelSpec> speechModels = [parakeetV3, parakeetV2];
+  static const List<ModelSpec> speechModels = [parakeetV2];
 
   static const ModelSpec qwen3_4b = ModelSpec(
     id: 'qwen3-4b',
@@ -197,7 +156,7 @@ class ModelCatalogue {
   /// Largest first: the order of the list on screen.
   static const List<ModelSpec> languageModels = [qwen3_4b, qwen3_1_7b];
 
-  static const List<ModelSpec> all = [parakeetV3, parakeetV2, qwen3_4b, qwen3_1_7b];
+  static const List<ModelSpec> all = [parakeetV2, qwen3_4b, qwen3_1_7b];
 
   /// The spec with [id], or `null` when the catalogue has none.
   static ModelSpec? byId(String? id) {

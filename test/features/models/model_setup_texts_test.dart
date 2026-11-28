@@ -7,7 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('formatModelBytes', () {
     test('decimal units, whole MB and one decimal GB', () {
-      expect(formatModelBytes(ModelCatalogue.parakeetV3.totalBytes), '671 MB');
+      // User decision 2026-11-28 (v3 removed; v2 is the speech model): was parakeetV3 -> '671 MB'.
+      expect(formatModelBytes(ModelCatalogue.parakeetV2.totalBytes), '661 MB');
       expect(formatModelBytes(ModelCatalogue.qwen3_4b.totalBytes), '2.5 GB');
       expect(formatModelBytes(ModelCatalogue.qwen3_1_7b.totalBytes), '1.1 GB');
       expect(formatModelBytes(312000000), '312 MB');
@@ -80,11 +81,13 @@ void main() {
       expect(data.noModelFitsMessage, isNotNull);
     });
 
-    test('the speech models are listed in catalogue order, the chosen one flagged', () {
-      expect(build().speechModels.map((c) => c.spec.id), ['parakeet-tdt-0.6b-v3-int8', 'parakeet-tdt-0.6b-v2-int8']);
+    // User decision 2026-11-28 (v3 removed; v2 is the only speech model). Was: both v3 and v2 listed, either one flaggable.
+    test('the only speech model is listed, flagged when it is the chosen one', () {
+      expect(build().speechModels.map((c) => c.spec.id), ['parakeet-tdt-0.6b-v2-int8']);
       expect(build().speechModels.every((c) => c.fits && !c.selected), isTrue);
-      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v2-int8').speechModels.map((c) => c.selected), [false, true]);
-      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v3-int8').speechModels.map((c) => c.selected), [true, false]);
+      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v2-int8').speechModels.map((c) => c.selected), [true]);
+      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v3-int8').speechModels.map((c) => c.selected), [false],
+          reason: 'a stored choice naming the removed model flags nothing');
     });
 
     test('the selected model is flagged', () {
@@ -115,10 +118,6 @@ void main() {
           describeSpeechModelSummary(
               selected: ModelCatalogue.parakeetV2, availability: ready(ModelCatalogue.parakeetV2), anyDownloaded: true),
           'Parakeet v2 (English)');
-      expect(
-          describeSpeechModelSummary(
-              selected: ModelCatalogue.parakeetV3, availability: ready(ModelCatalogue.parakeetV3), anyDownloaded: true),
-          'Parakeet v3 (25 languages)');
     });
 
     test('a chosen model that is not ready shows its state', () {

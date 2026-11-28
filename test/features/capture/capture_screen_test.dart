@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../settings/fake_permission_gateway.dart';
 import 'capture_test_doubles.dart';
+import 'capture_view_test_helpers.dart';
 
 class FakeQueueItemsNotifier extends QueueItemsNotifier {
   final List<AudioQueueItem> initial;
@@ -81,16 +82,18 @@ void main() {
   }
 
   group('CaptureScreen layout (FR9, FR11.2) on a 360dp viewport', () {
-    testWidgets('renders dual dropdown filters and the floating capsule, without the legacy folder carousel',
+    testWidgets('renders the view bar and the floating capsule, without the legacy folder carousel',
         (tester) async {
       await pumpCapture(tester, inShell: true);
 
-      expect(find.byKey(const Key('capture_triage_filter_dropdown')), findsOneWidget);
-      expect(find.byKey(const Key('capture_status_filter_dropdown')), findsOneWidget);
-      expect(find.text('All Triage'), findsOneWidget);
-      expect(find.text('All Statuses'), findsOneWidget);
+      // Decision A (2026-11-28): one view control (bar title opening a panel) replaces the two dropdowns.
+      expect(find.byKey(const Key('capture_view_title')), findsOneWidget);
+      expect(find.text('All thoughts'), findsOneWidget);
+      expect(find.byKey(const Key('capture_triage_filter_dropdown')), findsNothing);
+      expect(find.byKey(const Key('capture_status_filter_dropdown')), findsNothing);
       expect(find.byKey(const Key('floating_capture_button')), findsOneWidget);
-      expect(find.text('Tap to capture'), findsOneWidget);
+      // User decision 7 (2026-11-28): the `Tap to capture` text is gone, only the mic symbol stays.
+      expect(find.text('Tap to capture'), findsNothing);
 
       // Removed: horizontal folder carousel, legacy headings and chip filters.
       expect(find.text('Folders'), findsNothing);
@@ -199,10 +202,8 @@ void main() {
       expect(find.text('Network timeout during transcription.'), findsOneWidget);
       expect(find.byKey(const Key('retry_button')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Failed').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, status: 'failed');
 
       expect(find.text('Network timeout during transcription.'), findsOneWidget);
       expect(find.text('Healthy thought.'), findsNothing);
@@ -233,10 +234,8 @@ void main() {
       expect(find.byKey(const Key('retry_button')), findsOneWidget, reason: 'only the real failure');
       expect(find.text('⚠️ Failed'), findsOneWidget, reason: 'only the real failure');
 
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Failed').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, status: 'failed');
 
       expect(find.text('Network timeout during transcription.'), findsOneWidget);
       expect(find.text('Nothing was heard in this recording.'), findsNothing);
@@ -260,10 +259,8 @@ void main() {
 
       await pumpCapture(tester, notesRepo: repo, clusters: [cluster]);
 
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Synthesized').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, status: 'synthesized');
 
       expect(find.text('Clubbed thought.'), findsOneWidget);
       expect(find.text('Loose thought.'), findsNothing);
@@ -300,10 +297,8 @@ void main() {
       await repo.saveNote(Note(correctedText: 'Unread thought.'));
 
       await pumpCapture(tester, notesRepo: repo);
-      await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Read').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, show: 'read');
 
       expect(find.text('No thoughts matching active filters'), findsOneWidget);
     });
@@ -322,7 +317,8 @@ void main() {
 
       expect(channel.state.isRecording, isTrue);
       expect(find.byKey(const Key('floating_capture_button_active')), findsOneWidget);
-      expect(find.text('00:00 • Tap to Stop'), findsOneWidget);
+      // User decision 13 (2026-11-28): `00:00 • Tap to Stop` became the timer text in the middle bubble.
+      expect(find.text('00:00'), findsOneWidget);
       expect(find.text('Tap to capture'), findsNothing);
 
       await tester.tap(find.byKey(const Key('floating_capture_button_active')));
@@ -345,7 +341,8 @@ void main() {
       await pumpCapture(tester, channel: channel, settle: false, inShell: true);
 
       expect(find.byKey(const Key('floating_capture_button_active')), findsOneWidget);
-      expect(find.text('01:05 • Tap to Stop'), findsOneWidget);
+      // User decision 13 (2026-11-28): the timer text alone, in the middle bubble.
+      expect(find.text('01:05'), findsOneWidget);
     });
   });
 }

@@ -243,11 +243,10 @@ void main() {
 
         expect(tester.takeException(), isNull);
         for (var i = 0; i < names.length; i++) {
-          final dropdown = find.descendant(
-            of: find.byKey(Key('cluster_folder_dropdown_cluster_$i')),
-            matching: find.byType(DropdownButton<String>),
-          );
-          expect(tester.widget<DropdownButton<String>>(dropdown).value, names[i]);
+          // User decision 2026-11-28 (point 9): the folder menu is a chip that opens a chooser sheet;
+          // it still shows the note's folder.
+          final chip = find.byKey(Key('cluster_folder_dropdown_cluster_$i'));
+          expect(find.descendant(of: chip, matching: find.text(names[i])), findsOneWidget);
         }
 
         // Every assignable folder can be chosen in the folder panel, and so can a folder that is
@@ -455,12 +454,14 @@ void main() {
       await tester.tap(find.byKey(const Key('note_row_c1')));
       await tester.pumpAndSettle();
 
-      final menu = find.descendant(
-        of: find.byKey(const Key('cluster_folder_dropdown_c1')),
-        matching: find.byType(DropdownButton<String>),
-      );
-      expect(tester.widget<DropdownButton<String>>(menu).items!.map((i) => i.value),
-          ['Garden', 'Work', 'Uncategorized']);
+      // User decision 2026-11-28 (point 9): the chooser is a sheet; it offers the same folders.
+      await tester.tap(find.byKey(const Key('cluster_folder_dropdown_c1')));
+      await tester.pumpAndSettle();
+      final offered = [
+        for (final e in find.byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key as ValueKey<String>).value.startsWith('folder_option_')).evaluate())
+          (e.widget.key as ValueKey<String>).value.substring('folder_option_'.length),
+      ];
+      expect(offered, ['Garden', 'Work', 'Uncategorized']);
       expect(tester.takeException(), isNull);
     });
   });

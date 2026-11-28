@@ -41,6 +41,9 @@ class SynthesisView extends StatelessWidget {
   final bool tabActive;
   final bool hasWritingModel;
   final int pendingThoughts;
+
+  /// How many of the waiting thoughts already failed a run (the banner's second line, FR11.28).
+  final int unwrittenThoughts;
   final bool synthesisBusy;
   final ScrollController? scrollController;
 
@@ -55,6 +58,7 @@ class SynthesisView extends StatelessWidget {
   final ValueChanged<String> onSelectFolder;
   final ValueChanged<SynthesisTriage> onTriageChanged;
   final VoidCallback onManageFolders;
+  final VoidCallback onAddFolder;
   final VoidCallback onChooseModel;
   final VoidCallback onSynthesizeNow;
   final ValueChanged<SynthesisCluster> onToggleNote;
@@ -67,6 +71,17 @@ class SynthesisView extends StatelessWidget {
   final ValueChanged<SynthesisCluster> onMerge;
   final ValueChanged<SynthesisCluster> onDelete;
   final void Function(SynthesisCluster note, SynthesisOriginNote thought) onMoveOut;
+
+  /// The note whose text is being edited in place (at most one), with what is typed so far
+  /// ([draftText], kept by the owner so it survives the note being scrolled away or closed).
+  final String? editingId;
+  final String? draftText;
+  final Future<bool> Function(SynthesisCluster note, String text)? onSaveText;
+  final VoidCallback? onCancelEdit;
+  final ValueChanged<String>? onDraftChanged;
+
+  /// A thought of a note was tapped: go to it in Capture (by its id).
+  final ValueChanged<int>? onOpenThought;
 
   const SynthesisView({
     super.key,
@@ -88,6 +103,7 @@ class SynthesisView extends StatelessWidget {
     required this.onSelectFolder,
     required this.onTriageChanged,
     required this.onManageFolders,
+    required this.onAddFolder,
     required this.onChooseModel,
     required this.onSynthesizeNow,
     required this.onToggleNote,
@@ -100,6 +116,13 @@ class SynthesisView extends StatelessWidget {
     required this.onMerge,
     required this.onDelete,
     required this.onMoveOut,
+    this.unwrittenThoughts = 0,
+    this.editingId,
+    this.draftText,
+    this.onSaveText,
+    this.onCancelEdit,
+    this.onDraftChanged,
+    this.onOpenThought,
     this.keptIds = const {},
     this.highlightedId,
     this.buildAll = false,
@@ -118,7 +141,12 @@ class SynthesisView extends StatelessWidget {
     final leading = <Widget>[
       if (!hasWritingModel) ChooseWritingModelCard(onChoose: onChooseModel),
       if (pendingThoughts > 0)
-        PendingThoughtsBanner(pendingThoughts: pendingThoughts, busy: synthesisBusy, onSynthesizeNow: onSynthesizeNow),
+        PendingThoughtsBanner(
+          pendingThoughts: pendingThoughts,
+          unwrittenThoughts: unwrittenThoughts,
+          busy: synthesisBusy,
+          onSynthesizeNow: onSynthesizeNow,
+        ),
       if (visible.isEmpty)
         EmptySynthesisState(pendingThoughts: pendingThoughts, busy: synthesisBusy, onSynthesizeNow: onSynthesizeNow),
     ];
@@ -174,6 +202,7 @@ class SynthesisView extends StatelessWidget {
                 onSelectAll: onSelectAllNotes,
                 onSelectFolder: onSelectFolder,
                 onManageFolders: onManageFolders,
+                onAddFolder: onAddFolder,
               ),
               child: list,
             ),
@@ -186,6 +215,7 @@ class SynthesisView extends StatelessWidget {
   Widget _buildRow(BuildContext context, SynthesisCluster note) {
     final id = note.clusterId;
     final open = isOpen(id);
+    final editing = editingId == id && onSaveText != null && onCancelEdit != null;
     final tone = note.isReprocessing
         ? NoteRowTone.rewriting
         : (note.isActionExtracted ? NoteRowTone.synthesized : NoteRowTone.processed);
@@ -229,6 +259,12 @@ class SynthesisView extends StatelessWidget {
                     onMerge: () => onMerge(note),
                     onDelete: () => onDelete(note),
                     onMoveOut: (thought) => onMoveOut(note, thought),
+                    editing: editing,
+                    draftText: draftText,
+                    onSaveText: editing ? (text) => onSaveText!(note, text) : null,
+                    onCancelEdit: onCancelEdit,
+                    onDraftChanged: onDraftChanged,
+                    onOpenThought: onOpenThought,
                   ),
                 )
               : null,

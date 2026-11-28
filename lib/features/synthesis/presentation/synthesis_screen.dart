@@ -5,16 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/home/application/shell_state.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
+import 'package:eudemonia/features/settings/presentation/folder_editor_sheet.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
 import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
 import 'package:eudemonia/features/synthesis/application/session_actions.dart';
+import 'package:eudemonia/features/synthesis/application/unwritten_thoughts.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_ejection_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_merge_sheet.dart';
-import 'package:eudemonia/features/synthesis/presentation/note_text_editor_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/notes_view_prefs.dart';
 import 'package:eudemonia/features/synthesis/presentation/rewrite_confirmation.dart';
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
@@ -30,7 +31,8 @@ export 'package:eudemonia/features/synthesis/presentation/note_row.dart' show se
 
 /// The Synthesis tab: connects the providers (notes, folders, view preferences, runs) to
 /// [SynthesisView] and runs what its controls ask for. Holds only what the user chose in this
-/// visit: the folder and triage selection, which notes are open and the open folder panel.
+/// visit: the folder and triage selection, which notes are open, the open folder panel and the
+/// note whose text is being edited in place.
 class SynthesisScreen extends ConsumerStatefulWidget {
   const SynthesisScreen({super.key});
 
@@ -45,6 +47,11 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
   String? _folder;
   SynthesisTriage _triage = SynthesisTriage.all;
   bool _panelOpen = false;
+
+  /// The note whose text is being edited in place (one at a time) and what is typed in it so far,
+  /// kept here so the draft survives the note being scrolled away or closed.
+  String? _editingId;
+  String _draft = '';
 
   /// The notes listed under the Unread or Read filter so far: they stay listed after their read
   /// state changes (a note being read does not vanish). Dropped when a filter chip is picked, the
@@ -195,16 +202,40 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
     );
   }
 
-  void _editText(SynthesisCluster note) {
-    NoteTextEditorSheet.show(
-      context,
-      sequenceLabel: note.sequenceNumber,
-      initialText: note.synthesizedContent,
-      onSave: (text) async {
-        final outcome = await ref.read(sessionActionsProvider).editNoteText(note.clusterId, text);
-        return outcome.accepted;
-      },
-    );
+  /// Turns the note's text into the in-place editor. A note being rewritten may be edited too (Save
+  /// makes it hand-edited and clears its rewrite, FR11.19); a second note while one is being edited
+  /// is refused (its typing would be lost).
+  void _editText(SynthesisCluster note, List<SynthesisCluster> notes) {
+    final editing = _liveEditingId(notes);
+    if (editing == note.clusterId) return;
+    if (editing != null) {
+      _showMessage(finishEditingFirstNotice);
+      return;
+    }
+    // Editing a note reads it.
+    _markRead(note.clusterId);
+    setState(() {
+      _editingId = note.clusterId;
+      _draft = note.synthesizedContent;
+    });
+  }
+
+  /// The edited note, unless it was deleted meanwhile.
+  String? _liveEditingId(List<SynthesisCluster> notes) =>
+      notes.any((c) => c.clusterId == _editingId) ? _editingId : null;
+
+  void _stopEditing() => setState(() => _editingId = null);
+
+  /// Saves the edited text through [SessionActions.editNoteText] (a changed text makes the note
+  /// hand-edited, FR11.19). Text equal to the note's (apart from trailing whitespace) changes nothing
+  /// and just ends the editing. False when the text was refused (empty): the editor stays.
+  Future<bool> _saveText(SynthesisCluster note, String text) async {
+    if (text.trimRight() != note.synthesizedContent.trimRight()) {
+      final outcome = await ref.read(sessionActionsProvider).editNoteText(note.clusterId, text);
+      if (!outcome.accepted) return false;
+    }
+    if (mounted) _stopEditing();
+    return true;
   }
 
   void _merge(SynthesisCluster note, List<SynthesisCluster> notes) {
@@ -249,6 +280,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
     final prefs = ref.watch(notesViewPrefsProvider);
     final repo = ref.read(synthesisRepositoryProvider.notifier);
     final pendingThoughts = ref.watch(rawNotesReadyToClusterCountProvider).value ?? 0;
+    final unwrittenThoughts = ref.watch(unwrittenThoughtsCountProvider).value ?? 0;
     final synthesisBusy = ref.watch(synthesisBusyProvider);
     final hasWritingModel = ref.watch(activeSynthesisProfileProvider) != null;
     final tabActive = ref.watch(shellTabActiveProvider(ShellTab.synthesis));
@@ -288,6 +320,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
         tabActive: tabActive,
         hasWritingModel: hasWritingModel,
         pendingThoughts: pendingThoughts,
+        unwrittenThoughts: unwrittenThoughts,
         synthesisBusy: synthesisBusy,
         scrollController: _scrollController,
         rowKeyFor: (id) => _rowKeys.putIfAbsent(id, () => GlobalKey(debugLabel: id)),
@@ -314,6 +347,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
           _triage = triage;
         }),
         onManageFolders: _manageFolders,
+        onAddFolder: () => unawaited(FolderEditorSheet.show(context)),
         onChooseModel: () => openModelSetup(Navigator.of(context)),
         onSynthesizeNow: synthesizeNow,
         onToggleNote: _toggleNote,
@@ -322,7 +356,13 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
         onToggleThoughts: repo.toggleExpand,
         onFolderChanged: (id, name) => unawaited(ref.read(sessionActionsProvider).moveToFolder(id, name)),
         onStyle: _chooseStyle,
-        onEditText: _editText,
+        onEditText: (note) => _editText(note, notes),
+        editingId: _liveEditingId(notes),
+        draftText: _draft,
+        onSaveText: _saveText,
+        onCancelEdit: _stopEditing,
+        onDraftChanged: (text) => _draft = text,
+        onOpenThought: (id) => ref.read(captureFocusRequestProvider.notifier).request(id),
         onMerge: (note) => _merge(note, notes),
         onDelete: (note) => unawaited(_delete(note)),
         onMoveOut: (note, thought) => _moveOut(note, thought, notes),

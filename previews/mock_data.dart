@@ -693,7 +693,7 @@ class MockData {
 
   /// The five states the model setup screen must handle (FR16).
   static List<MockModelScenario> get modelScenarios {
-    final speech = ModelCatalogue.parakeetV3;
+    final speech = ModelCatalogue.parakeetV2;
     final big = ModelCatalogue.qwen3_4b;
     ModelAvailability ready(ModelSpec m) =>
         ModelAvailability(ModelAvailabilityKind.ready, downloadedBytes: m.totalBytes, totalBytes: m.totalBytes);

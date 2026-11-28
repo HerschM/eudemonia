@@ -3,9 +3,14 @@ import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
+import 'package:eudemonia/features/synthesis/presentation/sheet_search_field.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 
 /// Modal bottom sheet allowing users to explicitly merge one synthesis session into another.
-class NoteMergeModal extends StatelessWidget {
+/// A search field (`merge_search_field`, hint `Search notes`) narrows the candidates by a
+/// case-insensitive text match over each note's title and text; nothing matching shows
+/// `No note matches`.
+class NoteMergeModal extends StatefulWidget {
   final SynthesisCluster sourceCluster;
   final List<SynthesisCluster> availableClusters;
   final ValueChanged<SynthesisCluster> onMergeToTargetCluster;
@@ -40,15 +45,47 @@ class NoteMergeModal extends StatelessWidget {
     );
   }
 
+  /// The notes whose title or text contains [query], ignoring case.
+  static List<SynthesisCluster> matching(List<SynthesisCluster> notes, String query) {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return notes;
+    return [
+      for (final n in notes)
+        // The plain text carries the title and the body, without Markdown marks in the way.
+        if (noteTextForClipboard(noteHeadingTitle(n.synthesizedContent) ?? '', n.synthesizedContent)
+            .toLowerCase()
+            .contains(needle))
+          n,
+    ];
+  }
+
+  @override
+  State<NoteMergeModal> createState() => _NoteMergeModalState();
+}
+
+class _NoteMergeModalState extends State<NoteMergeModal> {
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  SynthesisCluster get sourceCluster => widget.sourceCluster;
+  ValueChanged<SynthesisCluster> get onMergeToTargetCluster => widget.onMergeToTargetCluster;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final targets = availableClusters
+    final candidates = widget.availableClusters
         .where((c) => c.clusterId != sourceCluster.clusterId)
         .toList();
+    final targets = NoteMergeModal.matching(candidates, _query);
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.viewInsetsOf(context).bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -99,7 +136,16 @@ class NoteMergeModal extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            if (targets.isEmpty)
+            if (candidates.isNotEmpty) ...[
+              SheetSearchField(
+                fieldKey: const Key('merge_search_field'),
+                hint: 'Search notes',
+                controller: _search,
+                onChanged: (q) => setState(() => _query = q),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (candidates.isEmpty)
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -113,6 +159,17 @@ class NoteMergeModal extends StatelessWidget {
                       fontSize: 13,
                       color: AppColors.textSecondary,
                     ),
+                  ),
+                ),
+              )
+            else if (targets.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: Text(
+                    'No note matches',
+                    key: Key('merge_no_match'),
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
                   ),
                 ),
               )

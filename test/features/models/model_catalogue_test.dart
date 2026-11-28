@@ -30,18 +30,22 @@ void main() {
       expect(ids.toSet().length, ids.length);
     });
 
-    test('the first speech model has four files and totals their sizes', () {
-      expect(ModelCatalogue.parakeetV3.files, hasLength(4));
-      expect(ModelCatalogue.parakeetV3.totalBytes, 652282294 + 11845274 + 6355277 + 93939);
-      expect(ModelCatalogue.parakeetV3.kind, ModelKind.speech);
-      expect(ModelCatalogue.parakeetV3.profile, isNull);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the
+    // option of parakeet v3 since we've not tested the european languages model writing cleanup."
+    test('the speech model has four files and totals their sizes', () {
+      expect(ModelCatalogue.parakeetV2.files, hasLength(4));
+      expect(ModelCatalogue.parakeetV2.totalBytes, 652282309 + 7257753 + 1739080 + 9384);
+      expect(ModelCatalogue.parakeetV2.kind, ModelKind.speech);
+      expect(ModelCatalogue.parakeetV2.profile, isNull);
     });
 
-    test('two speech models are offered, the shipped v3 first, with their quality lines', () {
-      expect(ModelCatalogue.speechModels, [ModelCatalogue.parakeetV3, ModelCatalogue.parakeetV2]);
-      expect(ModelCatalogue.parakeetV3.id, 'parakeet-tdt-0.6b-v3-int8');
-      expect(ModelCatalogue.parakeetV3.qualityLine, '25 European languages. Good for mixed-language speakers.');
+    // User decision 2026-11-28 (see above): v3 was removed, v2 is the only speech model.
+    test('exactly one speech model is offered: Parakeet v2, English only, with its quality line', () {
+      expect(ModelCatalogue.speechModels, [ModelCatalogue.parakeetV2]);
+      expect(ModelCatalogue.all.where((m) => m.kind == ModelKind.speech), [ModelCatalogue.parakeetV2]);
+      expect(ModelCatalogue.byId('parakeet-tdt-0.6b-v3-int8'), isNull);
       expect(ModelCatalogue.parakeetV2.id, 'parakeet-tdt-0.6b-v2-int8');
+      expect(ModelCatalogue.parakeetV2.displayName, contains('English'));
       expect(ModelCatalogue.parakeetV2.qualityLine, 'English only. The most accurate for English.');
       for (final model in ModelCatalogue.speechModels) {
         expect(model.kind, ModelKind.speech);
@@ -52,8 +56,7 @@ void main() {
       }
     });
 
-    test('the speech models keep their files in distinct directories; v3 stays where it always was', () {
-      expect(ModelCatalogue.parakeetV3.directory, 'parakeet');
+    test('the speech model keeps its files in its own directory', () {
       expect(ModelCatalogue.parakeetV2.directory, 'parakeet-v2');
       for (final model in ModelCatalogue.speechModels) {
         expect(model.files.every((f) => f.relativePath.startsWith('${model.directory}/')), isTrue);
@@ -77,26 +80,6 @@ void main() {
         'parakeet-v2/tokens.txt': 'ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d',
       });
       expect(ModelCatalogue.parakeetV2.totalBytes, 652282309 + 7257753 + 1739080 + 9384);
-    });
-
-    test('v3 is unchanged: its files, hashes and pinned commit', () {
-      const repo = 'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/'
-          'ed5d745623472f97cfc2e6c2916ee248798fc5a8';
-      expect({for (final f in ModelCatalogue.parakeetV3.files) f.relativePath: (f.url, f.sha256)}, {
-        'parakeet/encoder.int8.onnx': (
-          '$repo/encoder.int8.onnx',
-          '1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479'
-        ),
-        'parakeet/decoder.int8.onnx': (
-          '$repo/decoder.int8.onnx',
-          '0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5'
-        ),
-        'parakeet/joiner.int8.onnx': (
-          '$repo/joiner.int8.onnx',
-          'cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98'
-        ),
-        'parakeet/tokens.txt': ('$repo/tokens.txt', 'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d'),
-      });
     });
 
     test('language models carry the profile that loads their file', () {
@@ -139,7 +122,6 @@ void main() {
 
     test('unknown memory fits only a model with no requirement', () {
       expect(ModelCatalogue.fitsDevice(ModelCatalogue.qwen3_4b, null), isFalse);
-      expect(ModelCatalogue.fitsDevice(ModelCatalogue.parakeetV3, null), isTrue);
       expect(ModelCatalogue.fitsDevice(ModelCatalogue.parakeetV2, null), isTrue);
     });
 

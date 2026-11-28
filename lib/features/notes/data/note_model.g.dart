@@ -38,20 +38,25 @@ const NoteSchema = CollectionSchema(
       type: IsarType.string,
     ),
     r'isRead': PropertySchema(id: 4, name: r'isRead', type: IsarType.bool),
-    r'originalAudioPath': PropertySchema(
+    r'isWritten': PropertySchema(
       id: 5,
+      name: r'isWritten',
+      type: IsarType.bool,
+    ),
+    r'originalAudioPath': PropertySchema(
+      id: 6,
       name: r'originalAudioPath',
       type: IsarType.string,
     ),
-    r'rawText': PropertySchema(id: 6, name: r'rawText', type: IsarType.string),
+    r'rawText': PropertySchema(id: 7, name: r'rawText', type: IsarType.string),
     r'state': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'state',
       type: IsarType.string,
       enumMap: _NotestateEnumValueMap,
     ),
     r'synthesisAttempts': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'synthesisAttempts',
       type: IsarType.long,
     ),
@@ -107,10 +112,11 @@ void _noteSerialize(
   writer.writeLong(offsets[2], object.dailySequenceNumber);
   writer.writeString(offsets[3], object.failureReason);
   writer.writeBool(offsets[4], object.isRead);
-  writer.writeString(offsets[5], object.originalAudioPath);
-  writer.writeString(offsets[6], object.rawText);
-  writer.writeString(offsets[7], object.state.name);
-  writer.writeLong(offsets[8], object.synthesisAttempts);
+  writer.writeBool(offsets[5], object.isWritten);
+  writer.writeString(offsets[6], object.originalAudioPath);
+  writer.writeString(offsets[7], object.rawText);
+  writer.writeString(offsets[8], object.state.name);
+  writer.writeLong(offsets[9], object.synthesisAttempts);
 }
 
 Note _noteDeserialize(
@@ -125,14 +131,15 @@ Note _noteDeserialize(
     dailySequenceNumber: reader.readLongOrNull(offsets[2]),
     failureReason: reader.readStringOrNull(offsets[3]),
     isRead: reader.readBoolOrNull(offsets[4]) ?? false,
-    originalAudioPath: reader.readStringOrNull(offsets[5]),
-    rawText: reader.readStringOrNull(offsets[6]) ?? '',
+    isWritten: reader.readBoolOrNull(offsets[5]) ?? false,
+    originalAudioPath: reader.readStringOrNull(offsets[6]),
+    rawText: reader.readStringOrNull(offsets[7]) ?? '',
     state:
-        _NotestateValueEnumMap[reader.readStringOrNull(offsets[7])] ??
+        _NotestateValueEnumMap[reader.readStringOrNull(offsets[8])] ??
         ThoughtState.processed,
   );
   object.id = id;
-  object.synthesisAttempts = reader.readLong(offsets[8]);
+  object.synthesisAttempts = reader.readLong(offsets[9]);
   return object;
 }
 
@@ -154,14 +161,16 @@ P _noteDeserializeProp<P>(
     case 4:
       return (reader.readBoolOrNull(offset) ?? false) as P;
     case 5:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBoolOrNull(offset) ?? false) as P;
     case 6:
-      return (reader.readStringOrNull(offset) ?? '') as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 7:
+      return (reader.readStringOrNull(offset) ?? '') as P;
+    case 8:
       return (_NotestateValueEnumMap[reader.readStringOrNull(offset)] ??
               ThoughtState.processed)
           as P;
-    case 8:
+    case 9:
       return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -794,6 +803,14 @@ extension NoteQueryFilter on QueryBuilder<Note, Note, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterFilterCondition> isWrittenEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isWritten', value: value),
+      );
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterFilterCondition> originalAudioPathIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -1374,6 +1391,18 @@ extension NoteQuerySortBy on QueryBuilder<Note, Note, QSortBy> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterSortBy> sortByIsWritten() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isWritten', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> sortByIsWrittenDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isWritten', Sort.desc);
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterSortBy> sortByOriginalAudioPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'originalAudioPath', Sort.asc);
@@ -1496,6 +1525,18 @@ extension NoteQuerySortThenBy on QueryBuilder<Note, Note, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Note, Note, QAfterSortBy> thenByIsWritten() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isWritten', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Note, Note, QAfterSortBy> thenByIsWrittenDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isWritten', Sort.desc);
+    });
+  }
+
   QueryBuilder<Note, Note, QAfterSortBy> thenByOriginalAudioPath() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'originalAudioPath', Sort.asc);
@@ -1586,6 +1627,12 @@ extension NoteQueryWhereDistinct on QueryBuilder<Note, Note, QDistinct> {
     });
   }
 
+  QueryBuilder<Note, Note, QDistinct> distinctByIsWritten() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isWritten');
+    });
+  }
+
   QueryBuilder<Note, Note, QDistinct> distinctByOriginalAudioPath({
     bool caseSensitive = true,
   }) {
@@ -1654,6 +1701,12 @@ extension NoteQueryProperty on QueryBuilder<Note, Note, QQueryProperty> {
   QueryBuilder<Note, bool, QQueryOperations> isReadProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'isRead');
+    });
+  }
+
+  QueryBuilder<Note, bool, QQueryOperations> isWrittenProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isWritten');
     });
   }
 

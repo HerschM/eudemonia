@@ -50,8 +50,11 @@ class ChooseWritingModelCard extends StatelessWidget {
 }
 
 /// `N thoughts ready for Synthesis` with its `Synthesize Now` button, which shows the run while one is on.
+/// With [unwrittenThoughts] above zero (waiting thoughts that already failed a run, and no run on
+/// now) a second line in the warning colour (`synthesis_unwritten_notice`) says why nothing was written.
 class PendingThoughtsBanner extends StatelessWidget {
   final int pendingThoughts;
+  final int unwrittenThoughts;
   final bool busy;
   final VoidCallback onSynthesizeNow;
 
@@ -60,10 +63,13 @@ class PendingThoughtsBanner extends StatelessWidget {
     required this.pendingThoughts,
     required this.busy,
     required this.onSynthesizeNow,
+    this.unwrittenThoughts = 0,
   });
 
   @override
   Widget build(BuildContext context) {
+    // While a run is on, the thoughts are being tried again: last time's failure is not news.
+    final showUnwritten = unwrittenThoughts > 0 && !busy;
     return Container(
       key: const Key('pending_synthesis_batch_banner'),
       margin: const EdgeInsets.only(top: 4, bottom: 10),
@@ -73,24 +79,50 @@ class PendingThoughtsBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppColors.cardRadius),
         border: Border.all(color: AppColors.accentAI.withValues(alpha: 0.3)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.extension_outlined, size: 16, color: AppColors.accentAI),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              describeThoughtsReadyForSynthesis(pendingThoughts),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+          Row(
+            children: [
+              const Icon(Icons.extension_outlined, size: 16, color: AppColors.accentAI),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  describeThoughtsReadyForSynthesis(pendingThoughts),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+              ),
+              BusyActionButton(
+                key: const Key('synthesize_now_banner_button'),
+                label: 'Synthesize Now',
+                busyLabel: 'Synthesizing…',
+                icon: Icons.bolt,
+                busy: busy,
+                onPressed: onSynthesizeNow,
+              ),
+            ],
+          ),
+          if (showUnwritten)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 1),
+                    child: Icon(Icons.info_outline, size: 14, color: AppColors.accentWarning),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      describeUnwrittenThoughts(unwrittenThoughts),
+                      key: const Key('synthesis_unwritten_notice'),
+                      style: const TextStyle(fontSize: 11.5, height: 1.35, color: AppColors.accentWarning),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          BusyActionButton(
-            key: const Key('synthesize_now_banner_button'),
-            label: 'Synthesize Now',
-            busyLabel: 'Synthesizing…',
-            icon: Icons.bolt,
-            busy: busy,
-            onPressed: onSynthesizeNow,
-          ),
         ],
       ),
     );

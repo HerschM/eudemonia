@@ -4,9 +4,9 @@ import 'package:eudemonia/features/theme/app_colors.dart';
 
 /// The content of the folder panel: the triage chips (All / Unread / Read) at the top, `All
 /// notes` with its counts, one row per folder with its note count and a badge with its unread
-/// count, and the footer link `Manage folders`. Pure presentational widget. Keys: `folder_panel`,
-/// `folder_panel_all_notes`, `folder_panel_row_<name>`, `triage_chip_<all|unread|read>` and
-/// `manage_folders_link`.
+/// count, and the footer: the link `Manage folders` and a `+` that adds a folder. Pure presentational widget. Keys: `folder_panel`,
+/// `folder_panel_all_notes`, `folder_panel_row_<name>`, `triage_chip_<all|unread|read>`,
+/// `manage_folders_link` and `folder_panel_add`.
 class FolderPanel extends StatelessWidget {
   final SynthesisTriage triage;
   final ValueChanged<SynthesisTriage> onTriageChanged;
@@ -20,6 +20,9 @@ class FolderPanel extends StatelessWidget {
   final ValueChanged<String> onSelectFolder;
   final VoidCallback onManageFolders;
 
+  /// Opens the editor for a new folder, the one Settings' `Add folder` opens.
+  final VoidCallback onAddFolder;
+
   const FolderPanel({
     super.key,
     required this.triage,
@@ -31,6 +34,7 @@ class FolderPanel extends StatelessWidget {
     required this.onSelectAll,
     required this.onSelectFolder,
     required this.onManageFolders,
+    required this.onAddFolder,
   });
 
   @override
@@ -102,22 +106,38 @@ class FolderPanel extends StatelessWidget {
               ),
             ),
             const Divider(color: AppColors.borderSubtle, height: 1),
-            InkWell(
-              key: const Key('manage_folders_link'),
-              onTap: onManageFolders,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Row(
-                  children: [
-                    Icon(Icons.tune, size: 16, color: AppColors.accentAction),
-                    SizedBox(width: 8),
-                    Text(
-                      'Manage folders',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentAction),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    key: const Key('manage_folders_link'),
+                    onTap: onManageFolders,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Icon(Icons.tune, size: 16, color: AppColors.accentAction),
+                          SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Manage folders',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentAction),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+                IconButton(
+                  key: const Key('folder_panel_add'),
+                  tooltip: 'New folder',
+                  icon: const Icon(Icons.add, size: 20, color: AppColors.accentAction),
+                  onPressed: onAddFolder,
+                ),
+              ],
             ),
           ],
         ),

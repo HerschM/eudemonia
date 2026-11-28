@@ -66,7 +66,7 @@ class _NoModelRunner implements SynthesisRunner {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const speech = ModelCatalogue.parakeetV3;
+  const speech = ModelCatalogue.parakeetV2;
 
   group('audio queue and the speech model (FR16.2)', () {
     late FakeModelFilesChannel files;

@@ -4,10 +4,11 @@ import 'package:eudemonia/features/capture/native_capture_channel.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
+import 'keep_recordings_row.dart';
 import 'settings_card.dart';
 
 /// Ways to start a capture without opening the app: the home-screen widget and the background
-/// keep-alive that keeps the lock-screen Record button ready.
+/// keep-alive that keeps the lock-screen Record button ready, and how long original recordings are kept.
 class CaptureSection extends ConsumerWidget {
   const CaptureSection({super.key});
 
@@ -97,6 +98,8 @@ class CaptureSection extends ConsumerWidget {
                   subtitle: Text(err.toString()),
                 ),
               ),
+              const Divider(color: AppColors.borderSubtle, height: 16),
+              const KeepRecordingsRow(),
             ],
           ),
         ),

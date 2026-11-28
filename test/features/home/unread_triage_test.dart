@@ -6,6 +6,7 @@ import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
+import '../capture/capture_view_test_helpers.dart';
 
 class FakeNotesRepository implements NotesRepository {
   final List<Note> notes;
@@ -178,13 +179,10 @@ void main() {
       expect(find.text('Only unread note'), findsOneWidget);
       expect(find.text('Read note that should be filtered'), findsOneWidget);
 
-      // Select 'Unread' in the triage dropdown
-      final triageDropdown = find.byKey(const Key('capture_triage_filter_dropdown'));
-      expect(triageDropdown, findsOneWidget);
-      await tester.tap(triageDropdown);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Unread').last);
-      await tester.pumpAndSettle();
+      // Select 'Unread' in the view panel.
+      // Decision A (2026-11-28): one view control (bar title opening a panel) replaces the two dropdowns.
+      expect(find.byKey(const Key('capture_view_title')), findsOneWidget);
+      await pickCaptureView(tester, show: 'unread');
 
       // Only unread note should be visible
       expect(find.text('Only unread note'), findsOneWidget);

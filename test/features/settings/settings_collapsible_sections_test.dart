@@ -123,7 +123,7 @@ void main() {
       await pumpSettingsScreen(
         tester,
         permissions: FakePermissionGateway(notification: PermissionStatus.denied),
-        height: 3000,
+        height: 3600,
       );
       expect(find.text('Needs attention'), findsOneWidget);
 

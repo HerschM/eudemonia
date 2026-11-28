@@ -297,76 +297,100 @@ class SynthesisEngine {
 
   /// Packs [thoughts] into pieces of at most one write turn, in order. A thought longer than one
   /// turn is written as its own consecutive pieces, cut at sentence ends (see
-  /// [splitAtSentenceEnds]); each part keeps the thought's id and time.
+  /// [splitAtSentenceEnds]); each part keeps the thought's id and time, and its turn is told it
+  /// is a part of a long thought (see [buildStyleWritePrompt]).
   Future<String?> _writePieces(List<SynthesisThought> thoughts, NoteStyleSpec style) async {
     final limit = profile.writeWordLimit;
-    final pieces = <List<SynthesisThought>>[];
+    final pieces = <({List<SynthesisThought> thoughts, bool isPart})>[];
     var current = <SynthesisThought>[];
     var words = 0;
     for (final t in thoughts) {
       final w = _words(t.text);
       if (current.isNotEmpty && words + w > limit) {
-        pieces.add(current);
+        pieces.add((thoughts: current, isPart: false));
         current = [];
         words = 0;
       }
       if (w > limit && style.splittable) {
         for (final part in splitAtSentenceEnds(t.text, limit)) {
-          pieces.add([SynthesisThought(id: t.id, text: part, time: t.time)]);
+          pieces.add((thoughts: [SynthesisThought(id: t.id, text: part, time: t.time)], isPart: true));
         }
         continue;
       }
       current.add(t);
       words += w;
     }
-    if (current.isNotEmpty) pieces.add(current);
+    if (current.isNotEmpty) pieces.add((thoughts: current, isPart: false));
     final notes = <String>[];
     for (final piece in pieces) {
-      final n = await _writePiece(piece, style);
+      final n = await _writePiece(piece.thoughts, style, isPart: piece.isPart);
       if (n == null) return null;
       notes.add(n);
     }
     return notes.isEmpty ? null : notes.reduce(style.join);
   }
 
-  Future<String?> _writePiece(List<SynthesisThought> thoughts, NoteStyleSpec style) async {
+  Future<String?> _writePiece(List<SynthesisThought> thoughts, NoteStyleSpec style, {bool isPart = false}) async {
     final texts = [for (final t in thoughts) t.text];
-    final inputWords = texts.fold<int>(0, (n, t) => n + _words(t));
+    final ids = [for (final t in thoughts) t.id];
     // A small model writes organised notes with the clean-up prompt; every other style has its own.
     final cleanUp = profile.noteStyle == NoteStyle.cleanUp && style.id == defaultNoteStyleId;
-    final prompt = cleanUp
-        ? buildWritePrompt(texts, format: profile.chatFormat)
-        : buildStyleWritePrompt(texts, style, format: profile.chatFormat);
-    final budget = cleanUp ? writeOutputBudget(inputWords) : structuredOutputBudget(inputWords);
-    final reply = await _call(prompt, budget);
-    if (reply != null && !reply.hitOutputCap) {
-      final text = reply.text.trim();
-      final out = _words(text);
-      final minRatio = style.minOutputRatio ?? profile.minOutputRatio;
-      final maxRatio = style.maxOutputRatio ?? profile.maxOutputRatio;
-      final ok = text.isNotEmpty &&
-          out <= maxRatio * inputWords + 30 &&
-          (inputWords < 30 || out >= minRatio * inputWords);
-      final missing = ok && style.requiresEveryThought ? thoughtsMissingFrom(text, texts) : const <int>[];
-      final form = ok && missing.isEmpty ? style.formProblem(text) : null;
-      if (ok && missing.isEmpty && form == null) return text;
-      _onRejected?.call(
-          'write',
-          [for (final t in thoughts) t.id],
-          !ok
-              ? '$out words written from $inputWords'
-              : missing.isNotEmpty
-                  ? 'the note leaves out thought(s) $missing'
-                  : 'not in the ${style.label} form: $form');
-    } else {
-      _onRejected?.call('write', [for (final t in thoughts) t.id],
-          reply == null ? 'timed out' : 'reached the output limit');
+    var turn = await _writeTurn(texts, style, cleanUp: cleanUp, longThoughtText: isPart);
+    // A turn with a long thought whose plain reply left something out is retried once with the
+    // long-thought rules (a long story can be read as its opening sentence alone). The retry meets
+    // every check unchanged; on ordinary sessions the rules change the form, so they are never
+    // the first try (TASK-104).
+    final retry = turn.note == null &&
+        turn.leftSomethingOut &&
+        !isPart &&
+        !cleanUp &&
+        style.longThoughtSystemPrompt != null &&
+        texts.any((t) => _words(t) >= longThoughtWords);
+    if (turn.note == null) _onRejected?.call('write', ids, retry ? '${turn.reason}; retrying with the long-thought rules' : turn.reason);
+    if (retry) {
+      turn = await _writeTurn(texts, style, cleanUp: false, longThoughtText: true);
+      if (turn.note == null) _onRejected?.call('write', ids, turn.reason);
     }
+    final note = turn.note;
+    if (note != null) return note;
     if (thoughts.length == 1 || !style.splittable) return null;
     final mid = (thoughts.length + 1) ~/ 2;
     final a = await _writePiece(thoughts.sublist(0, mid), style);
     if (a == null) return null;
     final b = await _writePiece(thoughts.sublist(mid), style);
     return b == null ? null : style.join(a, b);
+  }
+
+  /// One write turn of [texts]: the note, or why the reply was rejected and whether that was for
+  /// leaving something out (the length, every-thought or stretch check).
+  Future<({String? note, String reason, bool leftSomethingOut})> _writeTurn(List<String> texts, NoteStyleSpec style,
+      {required bool cleanUp, required bool longThoughtText}) async {
+    final inputWords = texts.fold<int>(0, (n, t) => n + _words(t));
+    final prompt = cleanUp
+        ? buildWritePrompt(texts, format: profile.chatFormat)
+        : buildStyleWritePrompt(texts, style, format: profile.chatFormat, longThoughtText: longThoughtText);
+    final budget = cleanUp ? writeOutputBudget(inputWords) : structuredOutputBudget(inputWords);
+    final reply = await _call(prompt, budget);
+    if (reply == null) return (note: null, reason: 'timed out', leftSomethingOut: false);
+    if (reply.hitOutputCap) return (note: null, reason: 'reached the output limit', leftSomethingOut: false);
+    final text = reply.text.trim();
+    final out = _words(text);
+    final minRatio = style.minOutputRatio ?? profile.minOutputRatio;
+    final maxRatio = style.maxOutputRatio ?? profile.maxOutputRatio;
+    final ok = text.isNotEmpty && out <= maxRatio * inputWords + 30 && (inputWords < 30 || out >= minRatio * inputWords);
+    if (!ok) return (note: null, reason: '$out words written from $inputWords', leftSomethingOut: true);
+    if (style.requiresEveryThought) {
+      final missing = thoughtsMissingFrom(text, texts);
+      if (missing.isNotEmpty) return (note: null, reason: 'the note leaves out thought(s) $missing', leftSomethingOut: true);
+      // A long thought is also judged stretch by stretch: a note can keep half of it and still
+      // pass as a whole.
+      final stretch = longThoughtsWithMissingStretch(text, texts);
+      if (stretch.isNotEmpty) {
+        return (note: null, reason: 'the note leaves out a stretch of thought(s) $stretch', leftSomethingOut: true);
+      }
+    }
+    final form = style.formProblem(text);
+    if (form != null) return (note: null, reason: 'not in the ${style.label} form: $form', leftSomethingOut: false);
+    return (note: text, reason: '', leftSomethingOut: false);
   }
 }

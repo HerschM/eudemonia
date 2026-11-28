@@ -80,6 +80,10 @@ String _seconds(Duration duration) => (duration.inMilliseconds / 1000).toStringA
 
 enum _SttOp { load, transcribe, dispose }
 
+/// Sent to the worker by the Dart VM when the isolate that owns it exits without unloading (the
+/// Flutter engine was destroyed). A plain string: exit-listener responses must be simple values.
+const String sttOwnerGone = 'stt-owner-gone';
+
 /// Main-isolate handle to the STT worker isolate.
 class _SttWorker {
   final Isolate _isolate;
@@ -105,6 +109,9 @@ class _SttWorker {
     final events = StreamIterator<dynamic>(replies);
     await events.moveNext();
     final worker = _SttWorker._(isolate, events.current as SendPort, replies, exit);
+    // The worker outlives this isolate when the Flutter engine is destroyed (the capture service
+    // keeps the process, and the Dart VM, alive): it must be told, or it holds the model forever.
+    Isolate.current.addOnExitListener(worker._commands, response: sttOwnerGone);
     worker._listen(events);
     return worker;
   }
@@ -124,6 +131,7 @@ class _SttWorker {
     }();
 
     _exit.first.then((_) {
+      Isolate.current.removeOnExitListener(_commands);
       _replies.close();
       _exit.close();
       for (final completer in _pending.values) {
@@ -165,6 +173,15 @@ void _sttWorkerMain(List<dynamic> args) {
   replies.send(commands.sendPort);
 
   commands.listen((dynamic message) {
+    if (message == sttOwnerGone) {
+      // Nobody is left to ask for a transcription or an unload: free the model and end.
+      try {
+        engine?.dispose();
+      } catch (_) {}
+      engine = null;
+      commands.close();
+      return;
+    }
     final request = message as List<dynamic>;
     final id = request[0] as int;
     final op = _SttOp.values[request[1] as int];

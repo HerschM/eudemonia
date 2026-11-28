@@ -35,3 +35,18 @@ class SynthesisFocusRequestNotifier extends Notifier<String?> {
 
 final synthesisFocusRequestProvider =
     NotifierProvider<SynthesisFocusRequestNotifier, String?>(SynthesisFocusRequestNotifier.new);
+
+/// A request to bring one thought into view on the Capture screen, by note id: set when the user
+/// taps a raw thought inside a Synthesis note or a thought in the search results, consumed (and
+/// cleared) by the Capture screen. The shell switches to the Capture tab while a request is pending.
+class CaptureFocusRequestNotifier extends Notifier<int?> {
+  @override
+  int? build() => null;
+
+  void request(int noteId) => state = noteId;
+
+  void clear() => state = null;
+}
+
+final captureFocusRequestProvider =
+    NotifierProvider<CaptureFocusRequestNotifier, int?>(CaptureFocusRequestNotifier.new);

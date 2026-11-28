@@ -39,7 +39,9 @@ class _Stt extends STTService {
 }
 
 void main() {
-  const v3 = ModelCatalogue.parakeetV3;
+  // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+  // parakeet v3 since we've not tested the european languages model writing cleanup." Parakeet v2 is the only
+  // speech model; the tests below that used two speech models now use this one.
   const v2 = ModelCatalogue.parakeetV2;
   const big = ModelCatalogue.qwen3_4b;
 
@@ -75,14 +77,28 @@ void main() {
   });
 
   group('which speech model is chosen', () {
-    test('an install that has the v3 files and no stored choice ends up with v3 chosen', () async {
-      channel.setModel(v3, ModelFileState.ready);
+    // Was: v3 files and no stored choice ends up with v3 chosen.
+    test('an install that has the v2 files and no stored choice ends up with v2 chosen', () async {
+      channel.setModel(v2, ModelFileState.ready);
       await start();
 
-      expect(settings().selectedSpeechModelId, v3.id);
+      expect(settings().selectedSpeechModelId, v2.id);
       expect(ready(), isTrue);
-      expect(container.read(selectedSpeechModelProvider), v3);
-      expect(store.stored.selectedSpeechModelId, v3.id, reason: 'the automatic choice is stored');
+      expect(container.read(selectedSpeechModelProvider), v2);
+      expect(store.stored.selectedSpeechModelId, v2.id, reason: 'the automatic choice is stored');
+    });
+
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // No migration code: a stored choice naming the removed v3 model is simply no choice, and v2 is chosen.
+    test('a stored choice naming the removed v3 model is replaced by the downloaded v2', () async {
+      store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v3-int8');
+      channel.setModel(v2, ModelFileState.ready);
+      await start();
+
+      expect(settings().selectedSpeechModelId, v2.id);
+      expect(ready(), isTrue);
+      expect(store.stored.selectedSpeechModelId, v2.id);
     });
 
     test('a lone downloaded v2 is chosen automatically', () async {
@@ -93,21 +109,29 @@ void main() {
       expect(ready(), isTrue);
     });
 
-    test('two usable models and no stored choice: nothing is chosen and nothing is ready', () async {
-      channel.setModel(v3, ModelFileState.ready);
-      channel.setModel(v2, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: two usable models and no stored choice: nothing is chosen and nothing is ready.
+    test('exactly one speech model is offered and it is chosen automatically once its files are present', () async {
+      expect(ModelCatalogue.speechModels, [v2]);
       await start();
-
       expect(settings().selectedSpeechModelId, isNull);
-      expect(container.read(selectedSpeechModelProvider), isNull);
       expect(ready(), isFalse);
-      expect(container.read(speechModelAvailabilityProvider).isReady, isFalse,
-          reason: 'the Capture banner keeps asking for a choice');
+
+      channel.setModel(v2, ModelFileState.ready);
+      await filesChanged();
+
+      expect(settings().selectedSpeechModelId, v2.id);
+      expect(container.read(selectedSpeechModelProvider), v2);
+      expect(ready(), isTrue);
+      expect(container.read(speechModelAvailabilityProvider).isReady, isTrue);
     });
 
-    test('a stored choice is kept when both models are ready', () async {
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: a stored choice is kept when both models are ready.
+    test('a stored choice is kept when its model is ready', () async {
       store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
-      channel.setModel(v3, ModelFileState.ready);
       channel.setModel(v2, ModelFileState.ready);
       await start();
 
@@ -117,7 +141,6 @@ void main() {
 
     test('a stored choice is kept even when its files are missing, and then nothing is ready', () async {
       store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
-      channel.setModel(v3, ModelFileState.ready);
       await start();
 
       expect(settings().selectedSpeechModelId, v2.id, reason: 'a stored choice is never replaced automatically');
@@ -133,16 +156,18 @@ void main() {
       expect(container.read(shouldOfferModelSetupProvider), isTrue);
     });
 
-    test('a model that arrives while another is in use does not take over', () async {
-      channel.setModel(v3, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: a model that arrives while another is in use does not take over.
+    test('a files change while the chosen model stays ready changes nothing and tells no one', () async {
+      channel.setModel(v2, ModelFileState.ready);
       await start();
       var readyCalls = 0;
       controller().onSpeechModelReady = () => readyCalls++;
 
-      channel.setModel(v2, ModelFileState.ready);
       await filesChanged();
 
-      expect(settings().selectedSpeechModelId, v3.id);
+      expect(settings().selectedSpeechModelId, v2.id);
       expect(ready(), isTrue);
       expect(readyCalls, 0, reason: 'no recording was waiting: the chosen model was ready all along');
     });
@@ -161,8 +186,7 @@ void main() {
     });
 
     test('while no model is chosen the banner follows the transfer furthest along', () async {
-      channel.setModel(v3, ModelFileState.ready);
-      channel.setModel(v2, ModelFileState.ready);
+      // Was: both models ready and none chosen. With one speech model, none chosen means none downloaded.
       await start();
       expect(container.read(speechModelAvailabilityProvider), ModelAvailability.absent);
 
@@ -182,7 +206,6 @@ void main() {
 
   group('choosing and deleting speech models', () {
     test('selectSpeech accepts a ready speech model only', () async {
-      channel.setModel(v3, ModelFileState.ready);
       channel.setModel(big, ModelFileState.ready);
       channel.setModel(v2, ModelFileState.running);
       await start();
@@ -190,7 +213,8 @@ void main() {
       expect(controller().selectSpeech(v2.id), isFalse, reason: 'still downloading');
       expect(controller().selectSpeech(big.id), isFalse, reason: 'a writing model');
       expect(controller().selectSpeech('nope'), isFalse);
-      expect(settings().selectedSpeechModelId, v3.id);
+      expect(controller().selectSpeech('parakeet-tdt-0.6b-v3-int8'), isFalse, reason: 'the removed model');
+      expect(settings().selectedSpeechModelId, isNull);
 
       channel.setModel(v2, ModelFileState.ready);
       await filesChanged();
@@ -201,38 +225,42 @@ void main() {
     });
 
     test('the writing-model select does not accept a speech model, as before', () async {
-      channel.setModel(v3, ModelFileState.ready);
+      channel.setModel(v2, ModelFileState.ready);
       await start();
-      expect(controller().select(v3.id), isFalse);
+      expect(controller().select(v2.id), isFalse);
     });
 
     test('choosing the model already in use changes nothing and unloads nothing', () async {
-      channel.setModel(v3, ModelFileState.ready);
+      channel.setModel(v2, ModelFileState.ready);
       await start();
       var changes = 0;
       controller().onSpeechSelectionChanged = () => changes++;
 
-      expect(controller().selectSpeech(v3.id), isTrue);
+      expect(controller().selectSpeech(v2.id), isTrue);
       expect(changes, 0);
     });
 
-    test('choosing a model while none was chosen tells the queue once', () async {
-      channel.setModel(v3, ModelFileState.ready);
-      channel.setModel(v2, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: choosing a model while none was chosen tells the queue once (two ready models, the user picks).
+    test('the speech model chosen automatically tells the queue once; choosing it again waits for no one', () async {
       await start();
       var readyCalls = 0;
       controller().onSpeechModelReady = () => readyCalls++;
 
-      expect(controller().selectSpeech(v2.id), isTrue);
+      channel.setModel(v2, ModelFileState.ready);
+      await filesChanged();
       expect(ready(), isTrue);
       expect(readyCalls, 1);
 
-      expect(controller().selectSpeech(v3.id), isTrue);
-      expect(readyCalls, 1, reason: 'switching between ready models waits for no one');
+      expect(controller().selectSpeech(v2.id), isTrue);
+      expect(readyCalls, 1, reason: 'choosing the model already in use waits for no one');
     });
 
-    test('deleting the chosen model clears the choice and, with one other ready, chooses that one', () async {
-      channel.setModel(v3, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: deleting the chosen model clears the choice and, with one other ready, chooses that one.
+    test('deleting the chosen model clears the choice and tells the owner of the loaded model once', () async {
       channel.setModel(v2, ModelFileState.ready);
       store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
       await start();
@@ -243,17 +271,17 @@ void main() {
       await pumpEventQueue(times: 50);
 
       expect(channel.deletes, v2.files.map((f) => f.relativePath).toList());
-      expect(settings().selectedSpeechModelId, v3.id);
-      expect(ready(), isTrue);
-      expect(changes, 2, reason: 'cleared, then v3 chosen');
+      expect(settings().selectedSpeechModelId, isNull);
+      expect(ready(), isFalse);
+      expect(changes, 1, reason: 'cleared; no other speech model exists to be chosen');
     });
 
     test('deleting the only model clears the choice and nothing is ready', () async {
-      channel.setModel(v3, ModelFileState.ready);
+      channel.setModel(v2, ModelFileState.ready);
       await start();
-      expect(settings().selectedSpeechModelId, v3.id);
+      expect(settings().selectedSpeechModelId, v2.id);
 
-      await controller().delete(v3.id);
+      await controller().delete(v2.id);
       await pumpEventQueue(times: 50);
 
       expect(settings().selectedSpeechModelId, isNull);
@@ -261,21 +289,24 @@ void main() {
       expect(ready(), isFalse);
     });
 
-    test('deleting a model that is not chosen leaves the choice and unloads nothing', () async {
-      channel.setModel(v3, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: deleting a speech model that is not chosen leaves the choice (two speech models).
+    test('deleting a writing model leaves the speech choice and unloads nothing', () async {
       channel.setModel(v2, ModelFileState.ready);
-      store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v3-int8');
+      channel.setModel(big, ModelFileState.ready);
       await start();
       var changes = 0;
       controller().onSpeechSelectionChanged = () => changes++;
 
-      await controller().delete(v2.id);
+      await controller().delete(big.id);
       await pumpEventQueue(times: 50);
 
-      expect(settings().selectedSpeechModelId, v3.id);
+      expect(settings().selectedSpeechModelId, v2.id);
       expect(changes, 0);
       expect(ready(), isTrue);
     });
+
   });
 
   group('switching the speech model while one is in memory', () {
@@ -303,68 +334,61 @@ void main() {
       expect(stt.loadedFrom, ['/models/parakeet-v2']);
     });
 
-    test('choosing another model unloads the loaded one, and the next load reads the new directory', () async {
-      channel.setModel(v3, ModelFileState.ready);
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: choosing another model unloads the loaded one, and the next load reads the new directory (v3 -> v2).
+    test('a stored choice naming the removed v3 model loads the v2 directory', () async {
       channel.setModel(v2, ModelFileState.ready);
       store.stored = const ModelSettings(selectedSpeechModelId: 'parakeet-tdt-0.6b-v3-int8');
       await startWithManager();
-      await manager.ensureModelsLoaded();
-      expect(stt.loadedFrom, ['/models/parakeet']);
-      expect(manager.state, ModelLifecycleState.ready);
-
-      expect(controller().selectSpeech(v2.id), isTrue);
-      await pumpEventQueue(times: 20);
-
-      expect(manager.state, ModelLifecycleState.unloaded);
-      expect(stt.isInitialized, isFalse);
-      expect(stt.disposals, greaterThanOrEqualTo(1));
 
       await manager.ensureModelsLoaded();
-      expect(stt.loadedFrom, ['/models/parakeet', '/models/parakeet-v2']);
+
+      expect(stt.loadedFrom, ['/models/parakeet-v2']);
       expect(manager.state, ModelLifecycleState.ready);
     });
 
     test('re-choosing the loaded model keeps it in memory', () async {
-      channel.setModel(v3, ModelFileState.ready);
+      channel.setModel(v2, ModelFileState.ready);
       await startWithManager();
       await manager.ensureModelsLoaded();
 
-      expect(controller().selectSpeech(v3.id), isTrue);
+      expect(controller().selectSpeech(v2.id), isTrue);
       await pumpEventQueue(times: 20);
 
       expect(manager.state, ModelLifecycleState.ready);
-      expect(stt.loadedFrom, ['/models/parakeet']);
+      expect(stt.loadedFrom, ['/models/parakeet-v2']);
     });
 
     test('deleting the loaded model unloads it', () async {
-      channel.setModel(v3, ModelFileState.ready);
+      channel.setModel(v2, ModelFileState.ready);
       await startWithManager();
       await manager.ensureModelsLoaded();
 
-      await controller().delete(v3.id);
+      await controller().delete(v2.id);
       await pumpEventQueue(times: 50);
 
       expect(manager.state, ModelLifecycleState.unloaded);
     });
 
     test('with no model chosen a load fails like a missing model, and recordings wait', () async {
-      channel.setModel(v3, ModelFileState.ready);
-      channel.setModel(v2, ModelFileState.ready);
+      // Was: both models ready and none chosen. With one speech model, none chosen means none downloaded.
       await startWithManager();
       expect(settings().selectedSpeechModelId, isNull);
 
       await expectLater(manager.ensureModelsLoaded(), throwsA(isA<Exception>()));
 
-      expect(stt.loadedFrom, isEmpty, reason: 'neither model is mapped when none is chosen');
+      expect(stt.loadedFrom, isEmpty, reason: 'no model is mapped when none is chosen');
       expect(manager.state, ModelLifecycleState.unloaded);
     });
 
-    test('without a resolver the manager keeps loading the first release\'s folder', () async {
+    test('without a resolver the manager loads the catalogue\'s speech model folder', () async {
       final plain = _Stt();
       final unresolved = ModelLifecycleManager(plain, modelsDirResolver: () async => '/models');
       addTearDown(unresolved.dispose);
       await unresolved.ensureModelsLoaded();
-      expect(plain.loadedFrom, ['/models/parakeet']);
+      expect(plain.loadedFrom, ['/models/${ModelCatalogue.parakeetV2.directory}']);
+      expect(plain.loadedFrom, ['/models/parakeet-v2']);
     });
   });
 
@@ -396,10 +420,10 @@ void main() {
   });
 
   test('copyWith keeps and clears the two choices independently', () {
-    const both = ModelSettings(selectedLanguageModelId: 'qwen3-4b', selectedSpeechModelId: 'parakeet-tdt-0.6b-v3-int8');
+    const both = ModelSettings(selectedLanguageModelId: 'qwen3-4b', selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
     expect(both.copyWith(clearSpeechSelection: true).selectedSpeechModelId, isNull);
     expect(both.copyWith(clearSpeechSelection: true).selectedLanguageModelId, 'qwen3-4b');
-    expect(both.copyWith(clearSelection: true).selectedSpeechModelId, 'parakeet-tdt-0.6b-v3-int8');
+    expect(both.copyWith(clearSelection: true).selectedSpeechModelId, 'parakeet-tdt-0.6b-v2-int8');
     expect(both.copyWith(clearSelection: true).selectedLanguageModelId, isNull);
   });
 }

@@ -124,7 +124,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
 
         // 1. App Branding
-        expect(find.text('Eudemonia'), findsOneWidget);
+        // User decision 16 (2026-11-28): the app name at the top is removed to give the notes the space.
+        expect(find.text('Eudemonia'), findsNothing);
 
         // 2. Settings button
         expect(find.byKey(const Key('settings_gear_button')), findsOneWidget);

@@ -23,6 +23,7 @@ class LlamaIsolateEngine implements LlmEngine {
   SendPort? _commands;
   ReceivePort? _replies;
   ReceivePort? _exit;
+  SendPort? _exitListenerPort;
   Completer<String?>? _loadReply;
   Completer<void>? _disposeAck;
   _IsolatePromptSession? _current;
@@ -54,6 +55,11 @@ class LlamaIsolateEngine implements LlmEngine {
       _isolate = await Isolate.spawn(_llamaWorkerMain, replies.sendPort,
           onExit: exit.sendPort, errorsAreFatal: true, debugName: 'llm-worker');
       final commands = _commands = await ready.future;
+      // The worker outlives this isolate when the Flutter engine is destroyed (the capture
+      // service keeps the process, and the Dart VM, alive): it must be told, or it holds the
+      // model and its context forever.
+      Isolate.current.addOnExitListener(commands, response: llamaOwnerGone);
+      _exitListenerPort = commands;
       commands.send(<Object?>[
         _Op.load.index,
         libraryPath,
@@ -157,6 +163,9 @@ class LlamaIsolateEngine implements LlmEngine {
   }
 
   void _closePorts() {
+    final commands = _exitListenerPort;
+    if (commands != null) Isolate.current.removeOnExitListener(commands);
+    _exitListenerPort = null;
     _replies?.close();
     _exit?.close();
     _replies = null;
@@ -191,6 +200,10 @@ class _IsolatePromptSession implements LlmPromptSession {
 }
 
 enum _Op { load, prompt, stop, dispose }
+
+/// Sent to the worker by the Dart VM when the isolate that owns it exits without disposing (the
+/// Flutter engine was destroyed). A plain string: exit-listener responses must be simple values.
+const String llamaOwnerGone = 'llama-owner-gone';
 
 enum _Reply { loaded, done, disposed }
 
@@ -242,6 +255,18 @@ void _llamaWorkerMain(SendPort replies) {
   replies.send(commands.sendPort);
 
   commands.listen((dynamic message) async {
+    if (message == llamaOwnerGone) {
+      // Nobody is left to read a reply or unload: stop, free the model and end.
+      stopRequested = true;
+      await running;
+      try {
+        backend?.dispose();
+      } catch (_) {}
+      backend = null;
+      loop = null;
+      commands.close();
+      return;
+    }
     final request = message as List<dynamic>;
     switch (_Op.values[request[0] as int]) {
       case _Op.load:

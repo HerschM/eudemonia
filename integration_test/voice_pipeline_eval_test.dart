@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:eudemonia/features/models/domain/model_catalogue.dart';
 import 'package:eudemonia/features/ai_processing/model_file_validator.dart';
 import 'package:eudemonia/features/ai_processing/stt_service.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
@@ -47,7 +48,7 @@ void main() {
         (jsonDecode(await manifestFile.readAsString()) as List).cast<Map<String, dynamic>>();
 
     final files = ModelFiles(
-      sttModelDir: '${dir.path}/parakeet',
+      sttModelDir: '${dir.path}/${ModelCatalogue.parakeetV2.directory}',
     );
     await const ModelFileValidator().validate(files);
 

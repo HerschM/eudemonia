@@ -54,6 +54,12 @@ class NoteStyleSpec {
   /// The system text of the write turn, ending with its worked example.
   final String systemPrompt;
 
+  /// The system text of a write turn for a part of a split thought, and of the one retry of a
+  /// turn with a long thought (see `longThoughtWords`) whose plain reply left something out:
+  /// [systemPrompt] with [longThoughtRules] after the every-thought rule. Null for a style that
+  /// does not keep everything; it then uses [systemPrompt] for every turn.
+  final String? longThoughtSystemPrompt;
+
   /// The last line of the user turn, after the numbered thoughts. Read last, so a style whose
   /// form the model tends to drift from repeats it here.
   final String request;
@@ -85,6 +91,7 @@ class NoteStyleSpec {
     required this.label,
     required this.description,
     required this.systemPrompt,
+    this.longThoughtSystemPrompt,
     required this.requiresEveryThought,
     required this.formProblem,
     this.request = 'Write the note.',
@@ -94,6 +101,11 @@ class NoteStyleSpec {
     this.keepsPieceTitles = false,
     this.emptyBody,
   });
+
+  /// The system text of a write turn: the long-thought text when it is asked for and this style
+  /// has one, otherwise [systemPrompt].
+  String systemPromptFor({required bool longThought}) =>
+      longThought ? longThoughtSystemPrompt ?? systemPrompt : systemPrompt;
 
   /// [first] and [second], two pieces written in this style, as one note: one title, and for the
   /// actionable style at most one no-steps line. Organised and professional pieces are kept as
@@ -129,6 +141,7 @@ const List<NoteStyleSpec> noteStyles = [
     label: 'Organised',
     description: 'A title, short headings and bullet points, with every detail kept.',
     systemPrompt: _organisedSystem,
+    longThoughtSystemPrompt: _organisedLongSystem,
     requiresEveryThought: true,
     formProblem: _anyForm,
     keepsPieceTitles: true,
@@ -150,6 +163,7 @@ const List<NoteStyleSpec> noteStyles = [
     label: 'Key points',
     description: 'A title and one flat list of bullet points, with every detail kept.',
     systemPrompt: _bulletsSystem,
+    longThoughtSystemPrompt: _bulletsLongSystem,
     requiresEveryThought: true,
     formProblem: _keyPointsProblem,
   ),
@@ -158,6 +172,7 @@ const List<NoteStyleSpec> noteStyles = [
     label: 'Professional',
     description: 'The organised note in polished, neutral business wording.',
     systemPrompt: _professionalSystem,
+    longThoughtSystemPrompt: _professionalLongSystem,
     requiresEveryThought: true,
     formProblem: _anyForm,
     keepsPieceTitles: true,
@@ -167,6 +182,7 @@ const List<NoteStyleSpec> noteStyles = [
     label: 'Journal entry',
     description: 'A title and paragraphs in your own voice, keeping feelings and reasons.',
     systemPrompt: _journalSystem,
+    longThoughtSystemPrompt: _journalLongSystem,
     request: 'Write the journal entry in your own clean sentences, without the filler of speech.',
     requiresEveryThought: true,
     formProblem: _proseProblem,
@@ -187,6 +203,7 @@ const List<NoteStyleSpec> noteStyles = [
     label: 'Casual note',
     description: 'A friendly, natural note, as you would write it to yourself.',
     systemPrompt: _casualSystem,
+    longThoughtSystemPrompt: _casualLongSystem,
     request: 'Write the casual note in your own words, without the filler of speech such as "so yeah" or "like".',
     requiresEveryThought: true,
     formProblem: _proseProblem,
@@ -275,7 +292,19 @@ const String _corrections = '- When the speaker corrects themselves, keep only t
 const String _everyThought =
     '- Every numbered thought must appear in the note. Go through them in order and leave none out, including what the speaker says at the very end.\n';
 
-const String _organisedSystem =
+/// The rules of the long-thought text (see [NoteStyleSpec.longThoughtSystemPrompt]), after the
+/// every-thought rule: a long thought (a story, something read aloud) must not be written as its
+/// opening sentence alone, nor forced into the speaker's first person. Never the first try for an
+/// unsplit thought: on ordinary sessions they made Qwen3-4B keep long thoughts nearly verbatim, in
+/// fewer headings and longer bullets (TASK-104).
+const String longThoughtRules =
+    '- A thought can be long: a story, a description or something read aloud. Its opening words do not stand for the rest: write all of it into the note, in the order it was told. What is read aloud or dictated is never a remark about the recording.\n'
+    '- A story, a description or a quote keeps its own point of view: "Maya opened the door" stays about Maya. Only what the speaker says about themselves is written in the first person.\n';
+
+const String _organisedSystem = '$_organisedHead$_organisedTail';
+const String _organisedLongSystem = '$_organisedHead$longThoughtRules$_organisedTail';
+
+const String _organisedHead =
     'You turn spoken thoughts into one organised written note. $_intro'
     '\n'
     'Write the note like this:\n'
@@ -288,7 +317,8 @@ const String _organisedSystem =
     '$_keepTense'
     '$_leaveOut'
     '$_corrections'
-    '$_everyThought'
+    '$_everyThought';
+const String _organisedTail =
     '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
     '- Output only the note.\n'
     '\n'
@@ -328,7 +358,10 @@ const String _conciseSystem =
     'I need to email Daniel the contract before Friday. I liked the two-bedroom flat on Park Street at 1,800 a month, '
     'I already sent our documents, and Sam and I will see it on Sunday before we decide by the 10th.';
 
-const String _bulletsSystem =
+const String _bulletsSystem = '$_bulletsHead$_bulletsTail';
+const String _bulletsLongSystem = '$_bulletsHead$longThoughtRules$_bulletsTail';
+
+const String _bulletsHead =
     'You turn spoken thoughts into one note of key points. $_intro'
     '\n'
     'Write the note like this:\n'
@@ -341,7 +374,8 @@ const String _bulletsSystem =
     '$_keepTense'
     '$_leaveOut'
     '$_corrections'
-    '$_everyThought'
+    '$_everyThought';
+const String _bulletsTail =
     '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
     '- Output only the note.\n'
     '\n'
@@ -356,7 +390,10 @@ const String _bulletsSystem =
     '- Sam and I will see it together on Sunday.\n'
     '- I am a bit worried about the noise from the main road.';
 
-const String _professionalSystem =
+const String _professionalSystem = '$_professionalHead$_professionalTail';
+const String _professionalLongSystem = '$_professionalHead$longThoughtRules$_professionalTail';
+
+const String _professionalHead =
     'You turn spoken thoughts into one organised note in professional wording. $_intro'
     '\n'
     'Write the note like this:\n'
@@ -370,7 +407,8 @@ const String _professionalSystem =
     '$_keepTense'
     '$_leaveOut'
     '$_corrections'
-    '$_everyThought'
+    '$_everyThought';
+const String _professionalTail =
     '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
     '- Output only the note.\n'
     '\n'
@@ -388,7 +426,10 @@ const String _professionalSystem =
     '- Sam and I will view it together on Sunday.\n'
     '- My one concern is noise from the main road.';
 
-const String _journalSystem =
+const String _journalSystem = '$_journalHead$_journalTail';
+const String _journalLongSystem = '$_journalHead$longThoughtRules$_journalTail';
+
+const String _journalHead =
     'You turn spoken thoughts into one journal entry. $_intro'
     '\n'
     'Write the note like this:\n'
@@ -403,7 +444,8 @@ const String _journalSystem =
     '$_keepTense'
     '$_leaveOut'
     '$_corrections'
-    '$_everyThought'
+    '$_everyThought';
+const String _journalTail =
     '- Add nothing that was not said. No advice, no lessons, no summary sentence at the end.\n'
     '- Output only the note.\n'
     '\n'
@@ -445,7 +487,10 @@ const String _actionableSystem =
     '- [ ] See the Park Street flat with Sam on Sunday.\n'
     '- [ ] Give the landlord our decision on the flat by the 10th.';
 
-const String _casualSystem =
+const String _casualSystem = '$_casualHead$_casualTail';
+const String _casualLongSystem = '$_casualHead$longThoughtRules$_casualTail';
+
+const String _casualHead =
     'You turn spoken thoughts into one casual note. $_intro'
     '\n'
     'Write the note like this:\n'
@@ -458,7 +503,8 @@ const String _casualSystem =
     '$_keepTense'
     '$_leaveOut'
     '$_corrections'
-    '$_everyThought'
+    '$_everyThought';
+const String _casualTail =
     '- Add nothing that was not said. No advice, no summary sentence at the end.\n'
     '- Output only the note.\n'
     '\n'

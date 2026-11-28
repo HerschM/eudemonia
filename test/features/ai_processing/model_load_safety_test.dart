@@ -70,9 +70,9 @@ void main() {
   /// Lays down a complete, valid model directory.
   Future<void> installValidModels() async {
     for (final name in ['encoder', 'decoder', 'joiner']) {
-      await write('parakeet/$name.int8.onnx', onnxBytes());
+      await write('parakeet-v2/$name.int8.onnx', onnxBytes());
     }
-    await write('parakeet/tokens.txt', 'a 0\n'.codeUnits);
+    await write('parakeet-v2/tokens.txt', 'a 0\n'.codeUnits);
     await write('qwen2.5-1.5b.gguf', [...'GGUF'.codeUnits, 3, 0, 0, 0, 1, 2, 3, 4]);
   }
 
@@ -137,7 +137,7 @@ void main() {
     test('accepts a complete valid set', () async {
       await installValidModels();
       await validator.validate(
-        ModelFiles(sttModelDir: '${dir.path}/parakeet', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
+        ModelFiles(sttModelDir: '${dir.path}/parakeet-v2', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
       );
     });
 
@@ -146,7 +146,7 @@ void main() {
       await write('qwen2.5-1.5b.gguf', List<int>.filled(1024, 0));
       await expectLater(
         validator.validate(
-          ModelFiles(sttModelDir: '${dir.path}/parakeet', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
+          ModelFiles(sttModelDir: '${dir.path}/parakeet-v2', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
         ),
         throwsA(isA<ModelFileException>().having((e) => e.message, 'message', contains('Language model'))),
       );
@@ -154,10 +154,10 @@ void main() {
 
     test('rejects a set without tokens.txt', () async {
       await installValidModels();
-      await File('${dir.path}/parakeet/tokens.txt').delete();
+      await File('${dir.path}/parakeet-v2/tokens.txt').delete();
       await expectLater(
         validator.validate(
-          ModelFiles(sttModelDir: '${dir.path}/parakeet', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
+          ModelFiles(sttModelDir: '${dir.path}/parakeet-v2', llmModelPath: '${dir.path}/qwen2.5-1.5b.gguf'),
         ),
         throwsA(isA<ModelFileException>().having((e) => e.message, 'message', contains('tokens.txt'))),
       );
@@ -184,7 +184,7 @@ void main() {
     test('a corrupt model file fails the load without ever reaching the native runtime', () async {
       await installValidModels();
       final bytes = onnxBytes();
-      await write('parakeet/encoder.int8.onnx', bytes.sublist(0, bytes.length - 100));
+      await write('parakeet-v2/encoder.int8.onnx', bytes.sublist(0, bytes.length - 100));
       final manager = newProcess();
 
       await expectLater(manager.ensureModelsLoaded(), throwsA(isA<ModelFileException>()));
@@ -225,7 +225,7 @@ void main() {
       stt.dieDuringLoad = true;
       // The native abort: this process never gets to clean up its marker.
       await marker.writeAsString(
-        await ModelFiles(sttModelDir: '${dir.path}/parakeet').signature(),
+        await ModelFiles(sttModelDir: '${dir.path}/parakeet-v2').signature(),
       );
 
       final relaunched = newProcess();
@@ -249,7 +249,7 @@ void main() {
         () async {
       await installValidModels();
       await marker.writeAsString(
-        await ModelFiles(sttModelDir: '${dir.path}/parakeet').signature(),
+        await ModelFiles(sttModelDir: '${dir.path}/parakeet-v2').signature(),
       );
       final manager = newProcess();
       final queue = AudioQueueService(

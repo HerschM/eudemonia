@@ -4,6 +4,10 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
+import androidx.annotation.RequiresApi
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -33,6 +37,38 @@ class MainActivity: FlutterActivity() {
     private var captureChannel: MethodChannel? = null
     private var captureListener: CaptureListener? = null
     private var modelFilesChannel: ModelFilesChannel? = null
+
+    /** Receives Back at the root under predictive back; see [onCreate]. Null before Android 13. */
+    private val rootBackCallback: OnBackInvokedCallback? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) createRootBackCallback() else null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Under predictive back (on by default for this app's target SDK on Android 16+) Flutter
+        // registers its back callback only while it has a route to pop. At the root the system
+        // would handle Back itself and finish the activity when the task was not started from
+        // the launcher (the capture notification and widget open it directly). This callback is
+        // registered before FlutterActivity registers its own in super.onCreate; the dispatcher
+        // gives Back to the callback registered last, so Flutter's always comes first and this
+        // one only receives Back at the root.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            rootBackCallback?.let {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, it)
+            }
+        }
+        super.onCreate(savedInstanceState)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun createRootBackCallback() = OnBackInvokedCallback { sendTaskToBack() }
+
+    /**
+     * Back with no route left to pop. Flutter calls this from `SystemNavigator.pop` (the legacy
+     * back key, and predictive back while Flutter holds the callback) and skips its default
+     * `finish()` when it returns true.
+     */
+    override fun popSystemNavigator(): Boolean = sendTaskToBack()
+
+    private fun sendTaskToBack(): Boolean = RootBackNavigation.onRootBack { nonRoot -> moveTaskToBack(nonRoot) }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -353,11 +389,16 @@ class MainActivity: FlutterActivity() {
     }
 
     override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            rootBackCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+        }
         super.onDestroy()
         activeMethodChannel = null
         activeAudioChannel = null
         telemetryExecutor.shutdown()
-        // The engine dies with the activity, so no processing can still need the CPU.
+        // Back only sends the task to the background, so this runs when the task is removed
+        // (swiped from recents) or the system destroys the activity. The engine dies with it,
+        // and its worker isolates with their models, so no processing can still need the CPU.
         try {
             processingWakeLock.releaseAll()
         } catch (_: Exception) {}

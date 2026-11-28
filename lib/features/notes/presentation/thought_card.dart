@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:eudemonia/core/formatting/thought_timestamp.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
+import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/app_icons.dart';
 import 'package:eudemonia/features/theme/widgets/unread_dot.dart';
 import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 import '../data/note_model.dart';
@@ -22,6 +24,9 @@ class ThoughtCard extends StatefulWidget {
   final bool isSelected;
   final bool isSelectionMode;
 
+  /// The card glows for a moment: it is the thought just brought into view.
+  final bool highlighted;
+
   /// Identifier of the synthesis session that consumed this thought (e.g. `#S-02`).
   final String? synthesizedSessionLabel;
 
@@ -42,6 +47,7 @@ class ThoughtCard extends StatefulWidget {
     this.sequenceNumber,
     this.isSelected = false,
     this.isSelectionMode = false,
+    this.highlighted = false,
     this.synthesizedSessionLabel,
     this.onOpenSession,
   });
@@ -64,6 +70,11 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
       widget.onCopy != null &&
       (widget.note.state == ThoughtState.processed || widget.note.state == ThoughtState.synthesized) &&
       _currentText.isNotEmpty;
+
+  /// A tap on the text edits it: the same thought, under the same condition, as the Edit button.
+  bool get _canEditInline => widget.note.state == ThoughtState.processed && !_isEditing;
+
+  void _startEditing() => setState(() => _isEditing = true);
 
   /// A recording that held no speech: shown as a calm note, not as a failure.
   bool get _isSilent =>
@@ -147,9 +158,17 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         color: bgColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: widget.isSelected ? Theme.of(context).colorScheme.primary : borderColor,
-          width: widget.isSelected ? 2.0 : 1.0,
+          color: widget.isSelected
+              ? Theme.of(context).colorScheme.primary
+              : widget.highlighted
+                  ? AppColors.accentAction
+                  : borderColor,
+          width: widget.isSelected ? 2.0 : (widget.highlighted ? 1.5 : 1.0),
         ),
+        boxShadow: [
+          if (widget.highlighted)
+            BoxShadow(color: AppColors.accentAction.withValues(alpha: 0.45), blurRadius: 18, spreadRadius: 1),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -188,8 +207,23 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
                         ),
                       ),
 
-                    // 2. Play Audio Button
-                    if (note.originalAudioPath != null && note.originalAudioPath!.isNotEmpty)
+                    // 2. Play Audio Button; a written note has no recording, so it shows a pen that tells
+                    // it was typed (not a button), and a voice thought without one a muted "no longer kept" icon.
+                    if (note.isWritten)
+                      Tooltip(
+                        message: 'Written note',
+                        excludeFromSemantics: true,
+                        child: Semantics(
+                          label: 'Written note',
+                          child: Icon(
+                            AppIcons.writtenNote,
+                            key: const Key('written_note_marker'),
+                            color: _getActionColor(),
+                            size: 24,
+                          ),
+                        ),
+                      )
+                    else if (note.originalAudioPath != null && note.originalAudioPath!.isNotEmpty)
                       IconButton(
                         key: const Key('play_audio_button'),
                         icon: Icon(
@@ -203,10 +237,20 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
                         constraints: const BoxConstraints(),
                       )
                     else
-                      Icon(
-                        Icons.mic_none,
-                        color: _getActionColor(),
-                        size: 24,
+                      // A voice thought whose recording was removed (Settings, Keep original recordings):
+                      // a muted icon where the play control was; the text stays.
+                      Tooltip(
+                        message: 'Recording no longer kept',
+                        excludeFromSemantics: true,
+                        child: Semantics(
+                          label: 'Recording no longer kept',
+                          child: const Icon(
+                            Icons.volume_off_outlined,
+                            key: Key('recording_removed_marker'),
+                            color: AppColors.textTertiary,
+                            size: 24,
+                          ),
+                        ),
                       ),
 
                     // 3. Unread Indicator Dot: every thought not yet seen, in any state; it dissolves
@@ -373,11 +417,7 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
           ),
           icon: const Icon(Icons.edit_outlined, size: 15),
           label: const Text('Edit', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          onPressed: () {
-            setState(() {
-              _isEditing = true;
-            });
-          },
+          onPressed: _startEditing,
         );
     }
   }
@@ -493,12 +533,24 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
       );
     }
 
-    return Text(
+    final text = Text(
       _currentText,
       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
             fontSize: 15,
             height: 1.4,
           ),
+    );
+    if (!_canEditInline) return text;
+    // Tap the text to edit it in place. The tap also counts as a tap on the card (it marks the
+    // thought read); a long press still reaches the card and copies.
+    return GestureDetector(
+      key: const Key('thought_text_tap_target'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        widget.onTap?.call();
+        _startEditing();
+      },
+      child: SizedBox(width: double.infinity, child: text),
     );
   }
 

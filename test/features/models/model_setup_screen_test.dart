@@ -12,7 +12,7 @@ void main() {
   late FakeModelFilesChannel channel;
   late InMemoryModelSettingsStore store;
 
-  const speech = ModelCatalogue.parakeetV3;
+  const speech = ModelCatalogue.parakeetV2;
   const big = ModelCatalogue.qwen3_4b;
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -76,7 +76,8 @@ void main() {
         downloaded: 326141147, total: speech.files[0].sizeBytes);
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
-    expect(find.text('326 MB of 671 MB'), findsOneWidget);
+    // User decision 2026-11-28 (v3 removed; v2 is 661 MB): was '326 MB of 671 MB'.
+    expect(find.text('326 MB of 661 MB'), findsOneWidget);
 
     channel.setModel(speech, ModelFileState.ready);
     await tester.pump(const Duration(seconds: 1));
@@ -87,35 +88,28 @@ void main() {
     await unmount(tester);
   });
 
-  testWidgets('both speech models ready: choosing one stores it, the other can be deleted', (tester) async {
+  // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+  // parakeet v3 since we've not tested the european languages model writing cleanup."
+  // Was: "both speech models ready: choosing one stores it, the other can be deleted".
+  testWidgets('the only speech model ready is chosen automatically; deleting it clears the choice', (tester) async {
     channel.setModel(speech, ModelFileState.ready);
-    channel.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
     store.stored = const ModelSettings(setupShown: true);
     await pumpScreen(tester);
 
-    // Two usable models and no stored choice: nothing is in use until the user picks.
-    expect(find.text('In use'), findsNothing);
-    expect(store.stored.selectedSpeechModelId, isNull);
-
-    await tester.tap(find.byKey(Key('model_use_${ModelCatalogue.parakeetV2.id}')));
-    for (var i = 0; i < 4; i++) {
-      await tester.pump();
-    }
-    expect(store.stored.selectedSpeechModelId, ModelCatalogue.parakeetV2.id);
     expect(find.text('In use'), findsOneWidget);
-    expect(find.byKey(Key('model_use_${ModelCatalogue.parakeetV2.id}')), findsNothing);
-    expect(find.byKey(Key('model_use_${speech.id}')), findsOneWidget);
+    expect(store.stored.selectedSpeechModelId, speech.id);
+    expect(find.byKey(Key('model_use_${speech.id}')), findsNothing);
 
-    await tester.tap(find.byKey(Key('model_menu_${ModelCatalogue.parakeetV2.id}')));
+    await tester.tap(find.byKey(Key('model_menu_${speech.id}')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(Key('model_delete_${ModelCatalogue.parakeetV2.id}')));
+    await tester.tap(find.byKey(Key('model_delete_${speech.id}')));
     for (var i = 0; i < 6; i++) {
       await tester.pump();
     }
-    expect(channel.deletes, ModelCatalogue.parakeetV2.files.map((f) => f.relativePath).toList());
-    // The model left over was chosen for the user.
-    expect(store.stored.selectedSpeechModelId, speech.id);
-    expect(find.text('In use'), findsOneWidget);
+    expect(channel.deletes, speech.files.map((f) => f.relativePath).toList());
+    expect(store.stored.selectedSpeechModelId, isNull);
+    expect(find.text('In use'), findsNothing);
+    expect(find.byKey(Key('model_download_${speech.id}')), findsOneWidget);
     await unmount(tester);
   });
 

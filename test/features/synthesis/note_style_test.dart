@@ -110,6 +110,58 @@ void main() {
       expect(noteStyleById('concise').splittable, isFalse);
       expect(noteStyleById('actionable').splittable, isTrue);
     });
+
+    test('fact-keeping styles have a long-thought text: the plain text with the long-thought rules after the every-thought rule', () {
+      for (final rule in [
+        'A thought can be long: a story, a description or something read aloud.',
+        'Its opening words do not stand for the rest',
+        'in the order it was told',
+        'never a remark about the recording',
+        'keeps its own point of view',
+      ]) {
+        expect(longThoughtRules, contains(rule));
+      }
+      const everyThought = 'including what the speaker says at the very end.\n';
+      for (final s in noteStyles) {
+        expect(s.systemPrompt, isNot(contains(longThoughtRules)), reason: s.id);
+        expect(s.systemPromptFor(longThought: false), s.systemPrompt, reason: s.id);
+        if (s.requiresEveryThought) {
+          expect(s.longThoughtSystemPrompt, s.systemPrompt.replaceFirst(everyThought, '$everyThought$longThoughtRules'),
+              reason: s.id);
+          expect(s.systemPromptFor(longThought: true), s.longThoughtSystemPrompt, reason: s.id);
+        } else {
+          expect(s.longThoughtSystemPrompt, isNull, reason: s.id);
+          expect(s.systemPromptFor(longThought: true), s.systemPrompt, reason: s.id);
+        }
+      }
+    });
+
+    test('a turn of short thoughts gets exactly the plain prompt of its style', () {
+      for (final s in noteStyles) {
+        expect(
+            buildStyleWritePrompt(['One.', 'Two.'], s),
+            '<|im_start|>system\n${s.systemPrompt}<|im_end|>\n'
+            '<|im_start|>user\nThoughts:\n1. One.\n2. Two.\n\n${s.request}<|im_end|>\n'
+            '<|im_start|>assistant\n',
+            reason: s.id);
+      }
+    });
+
+    // Orchestrator decision 2026-11-28: long text only for split parts or as a retry. The prompt
+    // no longer picks it by word count; the engine asks for it (see synthesis_engine_test).
+    test('the long-thought text is used only when asked for, never by the length of a thought', () {
+      String words(int n) => List.filled(n, 'word').join(' ');
+      expect(longThoughtWords, 150);
+      for (final s in noteStyles) {
+        final long = s.systemPromptFor(longThought: true);
+        expect(buildStyleWritePrompt([words(275)], s), contains('system\n${s.systemPrompt}<|im_end|>'), reason: s.id);
+        expect(buildStyleWritePrompt([words(275)], s), isNot(contains(longThoughtRules)), reason: s.id);
+        expect(buildStyleWritePrompt(['A short part.'], s, longThoughtText: true), contains('system\n$long<|im_end|>'),
+            reason: s.id);
+      }
+      expect(buildStyleWritePrompt(['One.'], noteStyleById('organised'), longThoughtText: true), contains(longThoughtRules));
+      expect(buildStyleWritePrompt(['One.'], noteStyleById('concise'), longThoughtText: true), isNot(contains(longThoughtRules)));
+    });
   });
 
   group('reply form rules', () {

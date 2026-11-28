@@ -10,6 +10,7 @@ import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/audio_playback_controller.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
+import '../capture/capture_view_test_helpers.dart';
 
 class FakeNotesRepository implements NotesRepository {
   final List<Note> notes;
@@ -290,30 +291,24 @@ void main() {
       expect(find.text('Audio level too low or background noise too loud.'), findsOneWidget);
       expect(find.byKey(const Key('retry_button')), findsOneWidget);
 
-      // Compact dual dropdown filters replace the legacy chip row (FR9.2)
-      expect(find.byKey(const Key('capture_triage_filter_dropdown')), findsOneWidget);
-      expect(find.byKey(const Key('capture_status_filter_dropdown')), findsOneWidget);
+      // The view bar replaces the legacy chip row (FR9.2)
+      // Decision A (2026-11-28): one view control (bar title opening a panel) replaces the two dropdowns.
+      expect(find.byKey(const Key('capture_view_title')), findsOneWidget);
       expect(find.byKey(const Key('filter_chip_failed')), findsNothing);
 
       // Select the Failed status
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Failed').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, status: 'failed');
 
       // Only failed card should be visible
       expect(find.text('Audio level too low or background noise too loud.'), findsOneWidget);
       expect(find.text('Regular note.'), findsNothing);
 
       // Back to all statuses, then triage by Unread
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('All Statuses').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Unread').last);
-      await tester.pumpAndSettle();
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, status: 'all');
+      // Decision A (2026-11-28): the two dropdowns became the view panel; same filter, same assertions.
+      await pickCaptureView(tester, show: 'unread');
 
       // Regular note (unread) is shown, failed note is not shown in unread
       expect(find.text('Regular note.'), findsOneWidget);

@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
+import 'package:eudemonia/features/capture/presentation/capture_view_bar.dart';
+import 'package:eudemonia/features/capture/presentation/capture_view_filter.dart';
+import 'package:eudemonia/features/capture/presentation/capture_view_panel.dart';
 import 'package:eudemonia/features/capture/presentation/thought_delete_wording.dart';
 import 'package:eudemonia/features/capture/thought_actions.dart';
 import 'package:eudemonia/features/home/application/shell_state.dart';
@@ -15,16 +20,13 @@ import 'package:eudemonia/features/notes/presentation/thought_card.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
+import 'package:eudemonia/features/synthesis/presentation/folder_panel.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/clipboard_copy.dart';
 import 'package:eudemonia/features/theme/widgets/confirm_delete_dialog.dart';
 import 'package:eudemonia/features/theme/widgets/day_header.dart';
 import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 import 'package:eudemonia/features/theme/widgets/read_on_dwell.dart';
-
-enum CaptureTriageFilter { all, unread, read }
-
-enum CaptureStatusFilter { all, processing, processed, synthesized, failed }
 
 /// Stage 1 — Capture: the unfiltered, state-coded stream of raw thoughts.
 ///
@@ -48,6 +50,19 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
   /// dropped when a triage filter is picked, and with the screen.
   final Set<int> _keptUnderTriage = {};
 
+  /// The view panel (Show and Status) is laid over the list.
+  bool _panelOpen = false;
+
+  /// One per card, for scrolling a thought into view.
+  final Map<int, GlobalKey> _cardKeys = {};
+
+  /// Every card is built (not only those near the viewport) while one is being scrolled to.
+  bool _buildAllCards = false;
+  int? _highlightedId;
+  Timer? _highlightTimer;
+  final ScrollController _scrollController = ScrollController();
+  static const _highlightDuration = Duration(milliseconds: 1500);
+
   /// The shell swipes between tabs; this one keeps its scroll position and filters while away.
   @override
   bool get wantKeepAlive => true;
@@ -57,13 +72,16 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(backgroundPermissionServiceProvider).startForegroundService();
+      // A request made before this screen existed (first visit through a Synthesis note's thought).
+      if (mounted) unawaited(_handleFocusRequest(ref.read(captureFocusRequestProvider)));
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _highlightTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -113,37 +131,93 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     });
   }
 
-  bool _matchesFilters(Note n) {
-    final matchesTriage = switch (_triageFilter) {
-      CaptureTriageFilter.all => true,
-      CaptureTriageFilter.unread => !n.isRead,
-      CaptureTriageFilter.read => n.isRead,
-    } || _keptUnderTriage.contains(n.id);
-    final matchesStatus = switch (_statusFilter) {
-      CaptureStatusFilter.all => true,
-      CaptureStatusFilter.processing => n.state == ThoughtState.enqueued,
-      CaptureStatusFilter.processed => n.state == ThoughtState.processed,
-      CaptureStatusFilter.synthesized => n.state == ThoughtState.synthesized,
-      CaptureStatusFilter.failed => n.state == ThoughtState.failed && !isSilentRecordingMessage(n.failureReason),
-    };
-    return matchesTriage && matchesStatus;
+  bool _matchesFilters(Note n) =>
+      (matchesCaptureTriage(n, _triageFilter) || _keptUnderTriage.contains(n.id)) &&
+      matchesCaptureStatus(n, _statusFilter);
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.surfaceElevated,
+        duration: const Duration(seconds: 2),
+        content: Text(message, style: const TextStyle(color: AppColors.textPrimary)),
+      ),
+    );
+  }
+
+  /// Brings thought [noteId] into view: it is looked for among all stored thoughts, any filter
+  /// that would hide it is reset, its card is scrolled to and glows for a moment. The request is
+  /// consumed either way.
+  Future<void> _handleFocusRequest(int? noteId) async {
+    if (noteId == null) return;
+    ref.read(captureFocusRequestProvider.notifier).clear();
+    final List<Note> stored;
+    try {
+      stored = await ref.read(recentNotesProvider.future);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    final target = stored.where((n) => n.id == noteId).firstOrNull;
+    if (target == null) {
+      _showMessage('That thought no longer exists.');
+      return;
+    }
+    setState(() {
+      _panelOpen = false;
+      if (!matchesCaptureTriage(target, _triageFilter)) _triageFilter = CaptureTriageFilter.all;
+      if (!matchesCaptureStatus(target, _statusFilter)) _statusFilter = CaptureStatusFilter.all;
+      _keptUnderTriage.clear();
+      _buildAllCards = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_revealCard(noteId)));
+  }
+
+  Future<void> _revealCard(int noteId) async {
+    final cardContext = _cardKeys[noteId]?.currentContext;
+    if (!mounted) return;
+    if (cardContext != null && cardContext.mounted) {
+      await Scrollable.ensureVisible(
+        cardContext,
+        alignment: 0.1,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+    }
+    if (!mounted) return;
+    _highlightTimer?.cancel();
+    setState(() {
+      _buildAllCards = false;
+      _highlightedId = noteId;
+    });
+    _highlightTimer = Timer(_highlightDuration, () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    ref.listen(captureFocusRequestProvider, (_, noteId) => unawaited(_handleFocusRequest(noteId)));
     final notesAsync = ref.watch(recentNotesProvider);
     final queueItems = ref.watch(queueItemsProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: notesAsync.when(
-          skipLoadingOnReload: true,
-          data: (persistedNotes) => _buildFeed(_unifiedThoughts(persistedNotes, queueItems)),
-          loading: () => const Center(child: PulseDotsLoader()),
-          error: (err, stack) => Center(
-            child: Text('Error: $err', style: const TextStyle(color: AppColors.textSecondary)),
+    // Back closes the view panel before it leaves the screen.
+    return PopScope(
+      canPop: !_panelOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _panelOpen = false);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: notesAsync.when(
+            skipLoadingOnReload: true,
+            data: (persistedNotes) => _buildFeed(_unifiedThoughts(persistedNotes, queueItems)),
+            loading: () => const Center(child: PulseDotsLoader()),
+            error: (err, stack) => Center(
+              child: Text('Error: $err', style: const TextStyle(color: AppColors.textSecondary)),
+            ),
           ),
         ),
       ),
@@ -166,7 +240,12 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
       rows.add(note);
     }
 
-    return ListView.builder(
+    _cardKeys.removeWhere((id, _) => !allThoughts.any((n) => n.id == id));
+
+    final list = ListView.builder(
+      controller: _scrollController,
+      // While a thought is scrolled to, all cards exist so it can be found wherever it is.
+      scrollCacheExtent: _buildAllCards ? const ScrollCacheExtent.pixels(1e7) : null,
       // Bottom padding keeps the last card clear of the floating capsule.
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       itemCount: rows.length + 2,
@@ -179,6 +258,31 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
         return row is Note ? _buildCard(row) : DayHeader(label: row as String);
       },
     );
+
+    final counts = CaptureViewCounts.of(allThoughts, triage: _triageFilter, statusFilter: _statusFilter);
+    return Column(
+      children: [
+        CaptureViewBar(
+          title: captureViewTitle(_triageFilter, _statusFilter),
+          filterActive: _triageFilter != CaptureTriageFilter.all || _statusFilter != CaptureStatusFilter.all,
+          onTap: () => setState(() => _panelOpen = !_panelOpen),
+        ),
+        Expanded(
+          child: FolderPanelOverlay(
+            open: _panelOpen,
+            onDismiss: () => setState(() => _panelOpen = false),
+            panel: CaptureViewPanel(
+              triage: _triageFilter,
+              status: _statusFilter,
+              counts: counts,
+              onTriageChanged: _pickTriageFilter,
+              onStatusChanged: (f) => setState(() => _statusFilter = f),
+            ),
+            child: list,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildHeader() {
@@ -187,108 +291,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
       children: [
         _buildPermissionBanner(),
         _buildSpeechModelBanner(),
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: [
-            _buildFilterDropdown<CaptureTriageFilter>(
-              key: const Key('capture_triage_filter_dropdown'),
-              value: _triageFilter,
-              values: CaptureTriageFilter.values,
-              label: (f) => switch (f) {
-                CaptureTriageFilter.all => 'All Triage',
-                CaptureTriageFilter.unread => 'Unread',
-                CaptureTriageFilter.read => 'Read',
-              },
-              icon: (f) => switch (f) {
-                CaptureTriageFilter.all => Icons.visibility_outlined,
-                CaptureTriageFilter.unread => Icons.mark_email_unread_outlined,
-                CaptureTriageFilter.read => Icons.drafts_outlined,
-              },
-              color: (f) => f == _triageFilter ? AppColors.accentAction : AppColors.textSecondary,
-              onChanged: _pickTriageFilter,
-            ),
-            _buildFilterDropdown<CaptureStatusFilter>(
-              key: const Key('capture_status_filter_dropdown'),
-              value: _statusFilter,
-              values: CaptureStatusFilter.values,
-              label: (f) => switch (f) {
-                CaptureStatusFilter.all => 'All Statuses',
-                CaptureStatusFilter.processing => 'Processing',
-                CaptureStatusFilter.processed => 'Processed',
-                CaptureStatusFilter.synthesized => 'Synthesized',
-                CaptureStatusFilter.failed => 'Failed',
-              },
-              icon: (f) => switch (f) {
-                CaptureStatusFilter.all => Icons.layers_outlined,
-                CaptureStatusFilter.processing => Icons.hourglass_top,
-                CaptureStatusFilter.processed => Icons.chat_bubble_outline,
-                CaptureStatusFilter.synthesized => Icons.hub_outlined,
-                CaptureStatusFilter.failed => Icons.error_outline,
-              },
-              color: (f) => switch (f) {
-                CaptureStatusFilter.all => AppColors.textSecondary,
-                CaptureStatusFilter.processing => AppColors.accentWarning,
-                CaptureStatusFilter.processed => AppColors.accentAction,
-                CaptureStatusFilter.synthesized => AppColors.accentCapture,
-                CaptureStatusFilter.failed => AppColors.accentError,
-              },
-              onChanged: (f) => setState(() => _statusFilter = f),
-            ),
-          ],
-        ),
         const SizedBox(height: 8),
       ],
-    );
-  }
-
-  Widget _buildFilterDropdown<T>({
-    required Key key,
-    required T value,
-    required List<T> values,
-    required String Function(T) label,
-    required IconData Function(T) icon,
-    required Color Function(T) color,
-    required ValueChanged<T> onChanged,
-  }) {
-    return Container(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(AppColors.buttonRadius),
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          value: value,
-          dropdownColor: AppColors.surfaceElevated,
-          isDense: true,
-          icon: const Icon(Icons.arrow_drop_down, color: AppColors.accentAction, size: 20),
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-          items: [
-            for (final option in values)
-              DropdownMenuItem<T>(
-                value: option,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(icon(option), size: 14, color: color(option)),
-                    const SizedBox(width: 6),
-                    Text(label(option)),
-                  ],
-                ),
-              ),
-          ],
-          onChanged: (selected) {
-            if (selected != null) onChanged(selected);
-          },
-        ),
-      ),
     );
   }
 
@@ -478,14 +482,18 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
       },
       onRetry: () => ref.read(audioQueueServiceProvider).retryFailed(),
       onTap: markRead,
+      highlighted: _highlightedId == note.id,
     );
     // A thought is also read once it has stayed on screen for a while (while this tab is in front).
-    return ReadOnDwell(
-      key: ValueKey('dwell_${note.id}'),
-      enabled: isPersisted && !note.isRead,
-      active: ref.watch(shellTabActiveProvider(ShellTab.capture)),
-      onRead: markRead,
-      child: card,
+    return KeyedSubtree(
+      key: _cardKeys.putIfAbsent(note.id, () => GlobalKey(debugLabel: 'thought_${note.id}')),
+      child: ReadOnDwell(
+        key: ValueKey('dwell_${note.id}'),
+        enabled: isPersisted && !note.isRead,
+        active: ref.watch(shellTabActiveProvider(ShellTab.capture)),
+        onRead: markRead,
+        child: card,
+      ),
     );
   }
 

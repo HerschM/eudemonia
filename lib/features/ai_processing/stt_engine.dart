@@ -1,7 +1,9 @@
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 import 'audio_segmenter.dart';
+import 'native/native_release.dart';
 
 /// The result of one transcription, plus what the service logs about long recordings.
 class SttTranscript {
@@ -95,11 +97,18 @@ Float32List _withTailPadding(Float32List samples, int start, int end) {
 }
 
 /// Sherpa-ONNX Parakeet transducer engine.
-class SherpaSttEngine implements SttEngine {
+///
+/// The recognizer (about 750 MB of native memory on the phone) is also freed when the worker
+/// isolate shuts down without [dispose], as when the Flutter engine is destroyed or the isolate
+/// is killed. A stream lives within one [transcribe] call and is freed before it returns.
+class SherpaSttEngine implements SttEngine, Finalizable {
   static const int targetSampleRate = 16000;
 
   /// 300ms of tail silence (4800 samples at 16kHz) so the transducer emits the final words.
   static const int tailPaddingSamples = 4800;
+
+  /// Created in each isolate's first [load], after the bindings are initialised.
+  static NativeRelease? _release;
 
   OfflineRecognizer? _recognizer;
 
@@ -131,7 +140,32 @@ class SherpaSttEngine implements SttEngine {
       ),
     );
 
-    _recognizer = OfflineRecognizer(config);
+    final release = _release ??= NativeRelease(
+        _openSherpaLibrary().lookup<NativeFinalizerFunction>('SherpaOnnxDestroyOfflineRecognizer'));
+    final recognizer = OfflineRecognizer(config);
+    release.attach(this, recognizer.ptr);
+    _recognizer = recognizer;
+  }
+
+  /// Opens the library sherpa_onnx's `initBindings()` opens when given no path (sherpa_onnx
+  /// 1.13.8, lib/src/init_native.dart `loadDylib`); the same loaded library, so the same
+  /// destroy function the package calls.
+  static DynamicLibrary _openSherpaLibrary() {
+    final path = resolveSherpaOnnxPathSync();
+    if (Platform.isMacOS) {
+      return path == null
+          ? DynamicLibrary.process()
+          : DynamicLibrary.open(
+              '$path/sherpa_onnx_macos/sherpa-onnx.xcframework/macos-arm64_x86_64/libsherpa-onnx-c-api.dylib');
+    }
+    if (Platform.isIOS) return DynamicLibrary.process();
+    if (Platform.isAndroid || Platform.isLinux) {
+      return DynamicLibrary.open(path == null ? 'libsherpa-onnx-c-api.so' : '$path/libsherpa-onnx-c-api.so');
+    }
+    if (Platform.isWindows) {
+      return DynamicLibrary.open(path == null ? 'sherpa-onnx-c-api.dll' : '$path\\sherpa-onnx-c-api.dll');
+    }
+    throw UnsupportedError('Unknown platform: ${Platform.operatingSystem}');
   }
 
   @override
@@ -176,7 +210,10 @@ class SherpaSttEngine implements SttEngine {
 
   @override
   void dispose() {
-    _recognizer?.free();
+    final recognizer = _recognizer;
     _recognizer = null;
+    if (recognizer == null) return;
+    // Detached first, so the isolate shutdown never frees it again.
+    _release!.release(this, recognizer.free);
   }
 }

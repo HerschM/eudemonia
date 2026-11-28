@@ -48,7 +48,7 @@ class _CountingRunner implements SynthesisRunner {
 
 void main() {
   const hardwareChannel = MethodChannel('com.eudemonia/hardware_buttons');
-  const speech = ModelCatalogue.parakeetV3;
+  const speech = ModelCatalogue.parakeetV2;
   const big = ModelCatalogue.qwen3_4b;
 
   late FakeModelFilesChannel files;
@@ -129,16 +129,16 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('two speech models downloaded and none chosen: the banner still asks, and choosing one hides it', (tester) async {
+    // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+    // parakeet v3 since we've not tested the european languages model writing cleanup."
+    // Was: "two speech models downloaded and none chosen: the banner still asks, and choosing one hides it".
+    testWidgets('the only speech model downloaded and none chosen: it is chosen automatically and the banner stays hidden',
+        (tester) async {
       files.setModel(speech, ModelFileState.ready);
-      files.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
       await pumpCapture(tester);
-      expect(find.text('Speech model needed to turn recordings into text.'), findsOneWidget);
-      await unmount(tester);
-
-      store.stored = const ModelSettings(setupShown: true, selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
-      await pumpCapture(tester);
+      expect(find.text('Speech model needed to turn recordings into text.'), findsNothing);
       expect(find.byKey(const Key('capture_speech_model_banner')), findsNothing);
+      expect(store.stored.selectedSpeechModelId, speech.id);
       await unmount(tester);
     });
 
@@ -242,7 +242,8 @@ void main() {
       files.setModel(big, ModelFileState.ready);
       await pumpSettings(tester);
 
-      expect(find.text('Speech model · Parakeet v3 (25 languages)'), findsOneWidget);
+      // User decision 2026-11-28 (v3 removed): the ready speech model is now Parakeet v2.
+      expect(find.text('Speech model · Parakeet v2 (English)'), findsOneWidget);
       expect(find.text('Writing model · Qwen3 4B'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await unmount(tester);
@@ -257,12 +258,15 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('two downloaded and none chosen reads Not chosen', (tester) async {
+    // User decision 2026-11-28 (v3 removed). Was: "two downloaded and none chosen reads Not chosen".
+    // A stored choice naming the removed model counts as no choice; the only speech model is chosen.
+    testWidgets('a stored choice naming the removed v3 model is replaced by the only speech model', (tester) async {
+      store.stored = const ModelSettings(setupShown: true, selectedSpeechModelId: 'parakeet-tdt-0.6b-v3-int8');
       files.setModel(speech, ModelFileState.ready);
-      files.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
       await pumpSettings(tester);
 
-      expect(find.text('Speech model · Not chosen'), findsOneWidget);
+      expect(find.text('Speech model · Parakeet v2 (English)'), findsOneWidget);
+      expect(store.stored.selectedSpeechModelId, speech.id);
       await unmount(tester);
     });
 

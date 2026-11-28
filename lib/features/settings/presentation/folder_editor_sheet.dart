@@ -4,6 +4,7 @@ import 'package:eudemonia/features/synthesis/application/folder_settings.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'folder_style_sheet.dart';
 import 'folder_texts.dart';
 
 /// Bottom sheet that adds a folder ([folder] null) or edits one: name, description, default style,
@@ -13,6 +14,21 @@ class FolderEditorSheet extends ConsumerStatefulWidget {
   final FolderDefinition? folder;
 
   const FolderEditorSheet({super.key, this.folder});
+
+  /// Opens the editor as a bottom sheet: for a new folder when [folder] is null. Settings' `Add
+  /// folder` and the folder panel's `+` open the same one.
+  static Future<void> show(BuildContext context, {FolderDefinition? folder}) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.surfaceElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppColors.modalRadius)),
+      ),
+      builder: (_) => FolderEditorSheet(folder: folder),
+    );
+  }
 
   @override
   ConsumerState<FolderEditorSheet> createState() => _FolderEditorSheetState();
@@ -135,9 +151,9 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
     }
   }
 
-  InputDecoration _decoration(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: AppColors.textSecondary),
+  /// The field's name is a caption above it (see [_caption]), never a floating label that sits on
+  /// the border.
+  InputDecoration _decoration() => InputDecoration(
         counterStyle: const TextStyle(color: AppColors.textTertiary),
         filled: true,
         fillColor: AppColors.surface,
@@ -155,46 +171,64 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
         ),
       );
 
-  Widget _styleField() => DropdownButtonFormField<String>(
+  /// The name of a field, above it.
+  Widget _caption(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+        ),
+      );
+
+  Future<void> _chooseStyle() async {
+    final id = await FolderStyleSheet.show(context, selectedId: _style);
+    if (id == null || id == _style || !mounted) return;
+    if (_isProtected) {
+      await _saveProtectedStyle(id);
+    } else {
+      setState(() => _style = id);
+    }
+  }
+
+  /// The chosen style as a tappable field: its name, its description under it and a chevron.
+  /// Tapping opens [FolderStyleSheet].
+  Widget _styleField() {
+    final style = noteStyleById(_style);
+    return Material(
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppColors.buttonRadius),
+        side: const BorderSide(color: AppColors.borderSubtle),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
         key: const Key('folder_style_field'),
-        initialValue: _style,
-        isExpanded: true,
-        isDense: false,
-        itemHeight: null,
-        dropdownColor: AppColors.surfaceElevated,
-        style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-        decoration: _decoration('Default style'),
-        // Every choice carries its description under the name, as the restyle sheet's rows do; the
-        // closed field shows the chosen style the same way.
-        items: [
-          for (final s in noteStyles)
-            DropdownMenuItem<String>(
-              value: s.id,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+        onTap: _busy ? null : _chooseStyle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(s.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(
+                      style.label,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    ),
                     const SizedBox(height: 2),
-                    Text(s.description, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    Text(style.description, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   ],
                 ),
               ),
-            ),
-        ],
-        onChanged: _busy
-            ? null
-            : (id) {
-                if (id == null || id == _style) return;
-                if (_isProtected) {
-                  _saveProtectedStyle(id);
-                } else {
-                  setState(() => _style = id);
-                }
-              },
-      );
+              const SizedBox(width: 8),
+              const Icon(Icons.unfold_more, size: 20, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _errorText() => Padding(
         padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -230,7 +264,7 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             if (_isProtected) ...[
               Text(
                 widget.folder!.description,
@@ -244,18 +278,21 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
                 style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 16),
+              _caption('Default style'),
               _styleField(),
               if (_error != null) _errorText(),
             ] else ...[
+              _caption('Name'),
               TextField(
                 key: const Key('folder_name_field'),
                 controller: _name,
                 maxLength: maxFolderNameLength,
                 textCapitalization: TextCapitalization.sentences,
                 style: const TextStyle(color: AppColors.textPrimary),
-                decoration: _decoration('Name'),
+                decoration: _decoration(),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              _caption('Description'),
               TextField(
                 key: const Key('folder_description_field'),
                 controller: _description,
@@ -265,7 +302,7 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
                 keyboardType: TextInputType.multiline,
                 textCapitalization: TextCapitalization.sentences,
                 style: const TextStyle(color: AppColors.textPrimary),
-                decoration: _decoration('Description'),
+                decoration: _decoration(),
               ),
               const Padding(
                 padding: EdgeInsets.fromLTRB(4, 2, 4, 0),
@@ -275,10 +312,11 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
                   style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textSecondary),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              _caption('Default style'),
               _styleField(),
               if (_error != null) _errorText(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               ElevatedButton(
                 key: const Key('folder_save_button'),
                 style: ElevatedButton.styleFrom(

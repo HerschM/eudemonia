@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'llama_bindings.g.dart';
+import 'native_release.dart';
 
 /// The synchronous llama.cpp operations the generation loop needs: one sequence (0), on the CPU.
 /// Every call blocks the calling isolate; run it on a worker isolate.
@@ -51,7 +52,12 @@ abstract class LlamaBackend {
 /// of [batchSize] tokens allocated once, one persistent thread pool of [threadPoolSize] threads
 /// for reading and writing. `llama_backend_free` is never called: it is process-wide and the
 /// worker isolate may load the model again.
-class NativeLlamaBackend implements LlamaBackend {
+///
+/// The context, the thread pool and the model (the memory that matters: gigabytes of weights
+/// and the token memory) are also freed when the worker isolate shuts down without [dispose],
+/// as when the Flutter engine is destroyed or the isolate is killed (see [_LlamaReleases]).
+/// The sampler, the batch and the piece buffer are small and left to [dispose].
+class NativeLlamaBackend implements LlamaBackend, Finalizable {
   /// The Android library name; the ggml libraries are expected next to it.
   static const String defaultLibraryPath = 'libllama.so';
 
@@ -60,7 +66,16 @@ class NativeLlamaBackend implements LlamaBackend {
 
   static const int _pieceBufferBytes = 256;
 
+  /// One set of finalizers per library, created before the library's first handle exists.
+  static final Map<String, _LlamaReleases> _releasesByLibrary = {};
+
+  /// Backends not yet disposed. Holding them keeps them from being garbage collected: a
+  /// collection would run their three finalizers in no fixed order, and the model must outlive
+  /// the context. So the finalizers only run at the isolate shutdown, in their creation order.
+  static final Set<NativeLlamaBackend> _undisposed = {};
+
   final LlamaBindings _llama;
+  final _LlamaReleases _releases;
   final Pointer<llama_model> _model;
   final Pointer<llama_context> _context;
   final Pointer<llama_vocab> _vocab;
@@ -76,11 +91,16 @@ class NativeLlamaBackend implements LlamaBackend {
   @override
   final int batchSize;
 
-  NativeLlamaBackend._(this._llama, this._model, this._context, this._threadPool, this._batch,
+  NativeLlamaBackend._(this._llama, this._releases, this._model, this._context, this._threadPool, this._batch,
       {required this.contextSize, required this.batchSize})
       : _vocab = _llama.llama_model_get_vocab(_model),
         _memory = _llama.llama_get_memory(_context),
-        _pieceBuffer = calloc<Uint8>(_pieceBufferBytes);
+        _pieceBuffer = calloc<Uint8>(_pieceBufferBytes) {
+    _releases.context.attach(this, _context);
+    _releases.threadPool.attach(this, _threadPool);
+    _releases.model.attach(this, _model);
+    _undisposed.add(this);
+  }
 
   /// Loads [modelPath] with a context of [contextSize] tokens decoded in chunks of [batchSize].
   /// Throws when a library, the model or the context cannot be loaded; nothing stays allocated.
@@ -93,7 +113,9 @@ class NativeLlamaBackend implements LlamaBackend {
     if (contextSize <= 0 || batchSize <= 0 || batchSize > contextSize) {
       throw ArgumentError('Invalid sizes: context $contextSize, batch $batchSize.');
     }
-    final llama = _openLibraries(libraryPath);
+    final lookup = _openLibraries(libraryPath);
+    final llama = LlamaBindings.fromLookup(lookup);
+    final releases = _releasesByLibrary.putIfAbsent(libraryPath, () => _LlamaReleases(lookup));
     llama.llama_backend_init();
 
     // No GPU device at all: the bundled library is CPU only and rejects a main GPU.
@@ -151,13 +173,13 @@ class NativeLlamaBackend implements LlamaBackend {
       batch.n_seq_id[i] = 1;
       batch.seq_id[i][0] = 0;
     }
-    return NativeLlamaBackend._(llama, model, context, pool, batch,
+    return NativeLlamaBackend._(llama, releases, model, context, pool, batch,
         contextSize: llama.llama_n_ctx(context), batchSize: batchSize);
   }
 
   /// Opens libllama and, when present next to it, libggml-base and libggml-cpu: the thread pool
   /// functions are defined there, not in libllama.
-  static LlamaBindings _openLibraries(String libraryPath) {
+  static _Lookup _openLibraries(String libraryPath) {
     final llama = DynamicLibrary.open(libraryPath);
     final slash = libraryPath.lastIndexOf('/');
     final dir = libraryPath.substring(0, slash + 1);
@@ -168,12 +190,12 @@ class NativeLlamaBackend implements LlamaBackend {
       llama,
       for (final ggml in const ['libggml-base', 'libggml-cpu']) ?_tryOpen('$dir$ggml$extension'),
     ];
-    return LlamaBindings.fromLookup(<T extends NativeType>(String symbol) {
+    return <T extends NativeType>(String symbol) {
       for (final library in libraries) {
         if (library.providesSymbol(symbol)) return library.lookup<T>(symbol);
       }
       throw ArgumentError('$symbol is not in $libraryPath or the ggml libraries next to it.');
-    });
+    };
   }
 
   static DynamicLibrary? _tryOpen(String path) {
@@ -306,12 +328,40 @@ class NativeLlamaBackend implements LlamaBackend {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _undisposed.remove(this);
     _freeSampler();
     _llama.llama_batch_free(_batch);
-    // The context uses the thread pool, so it goes first.
-    _llama.llama_free(_context);
-    _llama.ggml_threadpool_free(_threadPool);
-    _llama.llama_model_free(_model);
+    // The context uses the thread pool, so it goes first. Each handle leaves its finalizer
+    // before it is freed, so the isolate shutdown never frees it again.
+    _releases.context.release(this, () => _llama.llama_free(_context));
+    _releases.threadPool.release(this, () => _llama.ggml_threadpool_free(_threadPool));
+    _releases.model.release(this, () => _llama.llama_model_free(_model));
     calloc.free(_pieceBuffer);
   }
+}
+
+typedef _Lookup = Pointer<T> Function<T extends NativeType>(String symbol);
+
+/// The finalizers that free a backend's context, thread pool and model when its isolate shuts
+/// down without [NativeLlamaBackend.dispose].
+///
+/// Order: at an isolate shutdown the Dart VM runs the native finalizers in the order the
+/// [NativeFinalizer] objects were created (VM behaviour, not an API promise; pinned by
+/// test/features/ai_processing/native/native_release_test.dart). The fields below are
+/// initialised in the order the handles must be freed: context, thread pool, model. In the
+/// pinned llama.cpp (af6b5243, src/llama-context.cpp) `~llama_context` reads the model it keeps
+/// a reference to (`model.no_alloc()`), so the model must be freed after the context. The
+/// context keeps only a raw pointer to the thread pool and does not use it when freed (its CPU
+/// backend's free deletes its own buffers only), and `ggml_threadpool_free`
+/// (ggml/src/ggml-cpu/ggml-cpu.c) joins the pool's threads and frees the pool alone, touching
+/// neither context nor model; freeing the context first still matches [NativeLlamaBackend.dispose].
+class _LlamaReleases {
+  final NativeRelease context;
+  final NativeRelease threadPool;
+  final NativeRelease model;
+
+  _LlamaReleases(_Lookup lookup)
+      : context = NativeRelease(lookup<NativeFinalizerFunction>('llama_free')),
+        threadPool = NativeRelease(lookup<NativeFinalizerFunction>('ggml_threadpool_free')),
+        model = NativeRelease(lookup<NativeFinalizerFunction>('llama_model_free'));
 }

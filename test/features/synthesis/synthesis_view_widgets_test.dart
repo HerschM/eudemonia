@@ -7,7 +7,7 @@ import 'package:eudemonia/features/synthesis/presentation/folder_panel.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_action_row.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_body.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_row.dart';
-import 'package:eudemonia/features/synthesis/presentation/note_text_editor_sheet.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_text_editor.dart';
 import 'package:eudemonia/features/synthesis/presentation/notes_view_prefs.dart';
 import 'package:eudemonia/features/synthesis/presentation/raw_thoughts_list.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_bar.dart';
@@ -238,6 +238,7 @@ void main() {
       List<SynthesisTriage>? triages,
       List<String>? picked,
       VoidCallback? onManage,
+      VoidCallback? onAdd,
     }) =>
         FolderPanel(
           triage: triage,
@@ -253,6 +254,7 @@ void main() {
           onSelectAll: () => picked?.add('<all>'),
           onSelectFolder: (n) => picked?.add(n),
           onManageFolders: onManage ?? () {},
+          onAddFolder: onAdd ?? () {},
         );
 
     testWidgets('shows All notes and every folder with counts and an unread badge, nothing wrong at 360 dp',
@@ -267,6 +269,24 @@ void main() {
       expect(find.byKey(const Key('folder_panel_row_Work_unread')), findsOneWidget);
       expect(find.byKey(const Key('folder_panel_row_Journal_unread')), findsNothing, reason: 'no unread, no badge');
       expect(find.text('Manage folders'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the footer has a + (New folder) beside Manage folders; each reports its own tap (TASK-106 B)',
+        (tester) async {
+      var manage = 0;
+      var add = 0;
+      await _pump(tester, SizedBox(width: 288, height: 600, child: panel(onManage: () => manage++, onAdd: () => add++)));
+
+      expect(find.byTooltip('New folder'), findsOneWidget);
+      final link = tester.getRect(find.byKey(const Key('manage_folders_link')));
+      final plus = tester.getRect(find.byKey(const Key('folder_panel_add')));
+      expect(plus.left, greaterThanOrEqualTo(link.right), reason: 'beside Manage folders');
+      expect(plus.right, lessThanOrEqualTo(288));
+      await tester.tap(find.byKey(const Key('folder_panel_add')));
+      expect((manage, add), (0, 1));
+      await tester.tap(find.byKey(const Key('manage_folders_link')));
+      expect((manage, add), (1, 1));
       expect(tester.takeException(), isNull);
     });
 
@@ -463,9 +483,10 @@ void main() {
       await tester.tap(find.byKey(const Key('move_out_note_1')));
       expect(events, ['style', 'edit', 'merge', 'delete', 'moveout 1']);
 
-      await tester.tap(find.byType(DropdownButton<String>));
+      // User decision 2026-11-28 (point 9): the folder menu is a chooser sheet with a search field.
+      await tester.tap(find.byKey(const Key('cluster_folder_dropdown_a')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Garden').last);
+      await tester.tap(find.byKey(const Key('folder_option_Garden')));
       await tester.pumpAndSettle();
       expect(events.last, 'folder Garden');
     });
@@ -488,80 +509,143 @@ void main() {
       expect(find.text('Move Out'), findsNothing);
     });
 
+    // User decision 2026-11-28 (TASK-108 B, point 14): tapping a raw thought goes back to it in Capture.
+    testWidgets('with onOpenThought a tap on the whole row reports the thought id; Move Out stays its own button',
+        (tester) async {
+      final opened = <int>[];
+      final moved = <int>[];
+      await _pump(
+        tester,
+        SingleChildScrollView(
+          child: RawThoughtsList(
+            thoughts: [_thought(7, 'One'), _thought(8, 'Two')],
+            onMoveOut: (t) => moved.add(t.id),
+            onOpenThought: opened.add,
+          ),
+        ),
+      );
+      expect(find.byTooltip('Open in Capture'), findsNWidgets(2));
+
+      await tester.tap(find.text('Two'));
+      expect(opened, [8]);
+      await tester.tap(find.byKey(const Key('raw_thought_open_7')), warnIfMissed: false);
+      expect(opened, [8, 7]);
+
+      await tester.tap(find.byKey(const Key('move_out_note_7')));
+      expect(moved, [7]);
+      expect(opened, [8, 7], reason: 'Move Out does not open the thought');
+    });
+
+    testWidgets('without onOpenThought a thought is not tappable and shows no arrow', (tester) async {
+      await _pump(tester, SingleChildScrollView(child: RawThoughtsList(thoughts: [_thought(7, 'One'), _thought(8, 'Two')])));
+      expect(find.byKey(const Key('raw_thought_open_7')), findsNothing);
+      expect(find.byTooltip('Open in Capture'), findsNothing);
+    });
+
     testWidgets('without onMoveOut the list is read only', (tester) async {
       await _pump(tester, SingleChildScrollView(child: RawThoughtsList(thoughts: [_thought(1, 'One'), _thought(2, 'Two')])));
       expect(find.text('Move Out'), findsNothing);
     });
   });
 
-  group('NoteTextEditorSheet', () {
-    Future<void> open(WidgetTester tester, Future<bool> Function(String) onSave) async {
-      tester.view.physicalSize = const Size(360, 800);
+  // User decision 2026-11-28 (TASK-108 A, point 8): a note's text is edited in place, not in a
+  // full-height sheet. What the sheet's tests asserted about outcomes moved here (the text handed
+  // over on Save, nothing on Cancel, the refusal of an empty text and its message clearing as the
+  // user types); the sheet's title and full-height assertions went with the sheet.
+  group('NoteTextEditor', () {
+    Future<void> open(WidgetTester tester, Future<bool> Function(String) onSave, {List<String>? events}) async {
+      await _pump(
+        tester,
+        SingleChildScrollView(
+          child: NoteTextEditor(
+            initialText: '**Flat**\n- one',
+            onSave: onSave,
+            onCancel: () => events?.add('cancel'),
+            onChanged: (text) => events?.add('changed $text'),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('holds the raw Markdown in a focused multi-line field with the cursor at its end', (tester) async {
+      await open(tester, (_) async => true);
+
+      final field = tester.widget<TextField>(find.byKey(const Key('note_edit_field')));
+      expect(field.controller!.text, '**Flat**\n- one');
+      expect(field.controller!.selection, const TextSelection.collapsed(offset: 14));
+      expect(field.maxLines, greaterThan(1));
+      expect(field.focusNode?.hasFocus ?? true, isTrue);
+      expect(find.byKey(const Key('note_edit_save')), findsOneWidget);
+      expect(find.byKey(const Key('note_edit_cancel')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Save hands over the text; Cancel reports cancel and saves nothing', (tester) async {
+      final saved = <String>[];
+      final events = <String>[];
+      await open(tester, (text) async {
+        saved.add(text);
+        return true;
+      }, events: events);
+      await tester.tap(find.byKey(const Key('note_edit_cancel')));
+      await tester.pump();
+      expect(events, ['cancel']);
+      expect(saved, isEmpty);
+
+      await tester.enterText(find.byKey(const Key('note_edit_field')), 'My text');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pump();
+      expect(saved, ['My text']);
+      expect(events, contains('changed My text'));
+    });
+
+    testWidgets('is scrolled into view when it opens below the fold and again when the keyboard comes up', (tester) async {
+      tester.view.physicalSize = const Size(360, 400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: Builder(
-              builder: (context) => TextButton(
-                key: const Key('open_editor'),
-                onPressed: () => NoteTextEditorSheet.show(
-                  context,
-                  sequenceLabel: '#S-02',
-                  initialText: '**Flat**\n- one',
-                  onSave: onSave,
-                ),
-                child: const Text('open'),
-              ),
+            body: ListView(
+              children: [
+                const SizedBox(height: 300),
+                NoteTextEditor(initialText: 'text', onSave: (_) async => true, onCancel: () {}),
+                const SizedBox(height: 900),
+              ],
             ),
           ),
         ),
       );
-      await tester.tap(find.byKey(const Key('open_editor')));
       await tester.pumpAndSettle();
-    }
 
-    testWidgets('holds the raw Markdown in a multi-line field and fills the screen height', (tester) async {
-      await open(tester, (_) async => true);
+      void expectOnScreen(double bottom) {
+        for (final key in ['note_edit_field', 'note_edit_cancel', 'note_edit_save']) {
+          final rect = tester.getRect(find.byKey(Key(key)));
+          expect(rect.top, greaterThanOrEqualTo(0), reason: key);
+          expect(rect.bottom, lessThanOrEqualTo(bottom), reason: key);
+        }
+      }
 
-      expect(tester.widget<TextField>(find.byKey(const Key('note_text_field'))).controller!.text, '**Flat**\n- one');
-      expect(tester.widget<TextField>(find.byKey(const Key('note_text_field'))).maxLines, isNull);
-      expect(find.text('Edit #S-02'), findsOneWidget);
-      expect(tester.getSize(find.byKey(const Key('note_text_field'))).height, greaterThan(500));
+      expectOnScreen(400);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expectOnScreen(200);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Save hands over the text and closes; Cancel closes without saving', (tester) async {
-      final saved = <String>[];
-      await open(tester, (text) async {
-        saved.add(text);
-        return true;
-      });
-      await tester.tap(find.byKey(const Key('note_text_cancel_button')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('note_text_field')), findsNothing);
-      expect(saved, isEmpty);
-
-      await tester.tap(find.byKey(const Key('open_editor')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('note_text_field')), 'My text');
-      await tester.tap(find.byKey(const Key('note_text_save_button')));
-      await tester.pumpAndSettle();
-      expect(saved, ['My text']);
-      expect(find.byKey(const Key('note_text_field')), findsNothing);
-    });
-
-    testWidgets('a refused text shows "A note cannot be empty." and keeps the sheet and the typing', (tester) async {
+    testWidgets('a refused text shows "A note cannot be empty." and keeps the editor and the typing', (tester) async {
       await open(tester, (_) async => false);
 
-      await tester.enterText(find.byKey(const Key('note_text_field')), '');
-      await tester.tap(find.byKey(const Key('note_text_save_button')));
+      await tester.enterText(find.byKey(const Key('note_edit_field')), '');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
       await tester.pumpAndSettle();
       expect(find.text('A note cannot be empty.'), findsOneWidget);
-      expect(find.byKey(const Key('note_text_field')), findsOneWidget);
+      expect(find.byKey(const Key('note_edit_field')), findsOneWidget);
 
-      await tester.enterText(find.byKey(const Key('note_text_field')), 'x');
+      await tester.enterText(find.byKey(const Key('note_edit_field')), 'x');
       await tester.pump();
       expect(find.text('A note cannot be empty.'), findsNothing, reason: 'typing clears the message');
     });
@@ -620,9 +704,17 @@ void main() {
           onDelete: () {},
         ),
       );
-      final dropdown = tester.widget<DropdownButton<String>>(find.byType(DropdownButton<String>));
-      expect(dropdown.items!.map((i) => i.value), ['Work', 'Uncategorized', 'Ideas']);
-      expect(dropdown.value, 'Ideas');
+      // User decision 2026-11-28 (point 9): the folder menu is a chooser sheet; the note's own folder
+      // is still offered, last, and marked as the current one.
+      expect(find.descendant(of: find.byKey(const Key('cluster_folder_dropdown_a')), matching: find.text('Ideas')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('cluster_folder_dropdown_a')));
+      await tester.pumpAndSettle();
+      final offered = [
+        for (final e in find.byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key as ValueKey<String>).value.startsWith('folder_option_')).evaluate())
+          (e.widget.key as ValueKey<String>).value.substring('folder_option_'.length),
+      ];
+      expect(offered, ['Work', 'Uncategorized', 'Ideas']);
+      expect(find.descendant(of: find.byKey(const Key('folder_option_Ideas')), matching: find.byIcon(Icons.check)), findsOneWidget);
     });
   });
 }

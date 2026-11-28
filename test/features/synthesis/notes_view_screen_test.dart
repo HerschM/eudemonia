@@ -14,8 +14,12 @@ import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/folder_definition.dart';
 import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_action_row.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_body.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_markdown_view.dart';
 import 'package:eudemonia/features/synthesis/presentation/notes_view_prefs.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 
 import '../settings/fake_permission_gateway.dart';
 import '../settings/settings_test_harness.dart';
@@ -336,12 +340,13 @@ void main() {
 
     testWidgets('moving a note to a folder from its folder menu reaches SessionActions.moveToFolder', (tester) async {
       await pumpScreen(tester, [_note('a', '#S-01', _at(0), folder: 'Work')], prefs: openEditPrefs);
-      final menu = find.descendant(of: find.byKey(const Key('cluster_folder_dropdown_a')), matching: find.byType(DropdownButton<String>));
-      expect(tester.widget<DropdownButton<String>>(menu).items!.map((i) => i.value), ['Work', 'Garden', 'Journal', 'Uncategorized']);
-
-      await tester.tap(menu);
+      // User decision 2026-11-28 (point 9, TASK-106 C): the folder menu became a chooser sheet with a
+      // search field; the folders offered and the move itself are asserted as before.
+      await tester.tap(find.byKey(const Key('cluster_folder_dropdown_a')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Garden').last);
+      expect(_offeredFolders(tester), ['Work', 'Garden', 'Journal', 'Uncategorized']);
+
+      await tester.tap(find.byKey(const Key('folder_option_Garden')));
       await tester.pumpAndSettle();
 
       expect(stored('a').folder, 'Garden');
@@ -392,17 +397,19 @@ void main() {
       await unmount(tester);
     });
 
-    testWidgets('Edit text: the sheet holds the raw Markdown; Save reaches SessionActions.editNoteText', (tester) async {
+    testWidgets('Edit text: the editor holds the raw Markdown; Save reaches SessionActions.editNoteText', (tester) async {
       await pumpScreen(tester, [_note('a', '#S-01', _at(0), unread: false)], prefs: openEditPrefs);
 
+      // User decision 2026-11-28 (TASK-108 A, point 8): a note's text is edited in place, not in a sheet.
+      // The keys became note_edit_field / note_edit_save / note_edit_cancel; the assertions are unchanged.
       await tapAndSettle(tester, find.byKey(const Key('edit_text_button_a')));
-      expect(tester.widget<TextField>(find.byKey(const Key('note_text_field'))).controller!.text, '**Flat visit**\n\n- I liked the flat.');
+      expect(tester.widget<TextField>(find.byKey(const Key('note_edit_field'))).controller!.text, '**Flat visit**\n\n- I liked the flat.');
 
-      await tester.enterText(find.byKey(const Key('note_text_field')), '**My title**\n\nMy own words.');
-      await tester.tap(find.byKey(const Key('note_text_save_button')));
+      await tester.enterText(find.byKey(const Key('note_edit_field')), '**My title**\n\nMy own words.');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('note_text_field')), findsNothing);
+      expect(find.byKey(const Key('note_edit_field')), findsNothing);
       expect(stored('a').synthesizedContent, '**My title**\n\nMy own words.');
       expect(stored('a').isHandEdited, isTrue);
       expect(find.text('My own words.'), findsOneWidget);
@@ -415,17 +422,18 @@ void main() {
     testWidgets('Edit text: an empty text is refused with "A note cannot be empty." and nothing changes', (tester) async {
       await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openEditPrefs);
 
+      // User decision 2026-11-28 (TASK-108 A): in-place editor; keys renamed, assertions unchanged.
       await tapAndSettle(tester, find.byKey(const Key('edit_text_button_a')));
-      await tester.enterText(find.byKey(const Key('note_text_field')), '  \n ');
-      await tester.tap(find.byKey(const Key('note_text_save_button')));
+      await tester.enterText(find.byKey(const Key('note_edit_field')), '  \n ');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
       await tester.pumpAndSettle();
 
       expect(find.text('A note cannot be empty.'), findsOneWidget);
-      expect(find.byKey(const Key('note_text_field')), findsOneWidget);
+      expect(find.byKey(const Key('note_edit_field')), findsOneWidget);
       expect(stored('a').synthesizedContent, '**Flat visit**\n\n- I liked the flat.');
       expect(stored('a').isHandEdited, isFalse);
 
-      await tester.tap(find.byKey(const Key('note_text_cancel_button')));
+      await tester.tap(find.byKey(const Key('note_edit_cancel')));
       await tester.pumpAndSettle();
       await unmount(tester);
     });
@@ -769,6 +777,157 @@ void main() {
     });
   });
 
+  group('choosers, the new-folder button and the Copy control (TASK-106, user decisions 2026-11-28)', () {
+    final notes = [
+      _note('a', '#S-03', _at(0, 12), folder: 'Work', content: '**Flat visit**\n- I liked the flat.'),
+      _note('b', '#S-02', _at(0, 11), folder: 'Garden', content: '**Tomato beds**\n- Water the tomatoes.'),
+      _note('c', '#S-01', _at(0, 10), folder: 'Journal', content: '**Quiet evening**\n- Slept early and read.'),
+    ];
+
+    Finder folderOption(String name) => find.byKey(Key('folder_option_$name'));
+
+    testWidgets('the + beside Manage folders opens the same new-folder editor as Settings and saves a folder',
+        (tester) async {
+      await pumpScreen(tester, notes);
+      await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+
+      expect(find.byKey(const Key('manage_folders_link')), findsOneWidget);
+      expect(find.byTooltip('New folder'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('folder_panel_add')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('New folder'), findsWidgets);
+      expect(find.byKey(const Key('folder_name_field')), findsOneWidget);
+      expect(find.byKey(const Key('folder_delete_button')), findsNothing, reason: 'a new folder, not an edit');
+      await tester.enterText(find.byKey(const Key('folder_name_field')), 'Reading');
+      await tester.tap(find.byKey(const Key('folder_save_button')));
+      await tester.pumpAndSettle();
+
+      expect([for (final f in container.read(foldersProvider)) f.name], contains('Reading'));
+      expect(find.byKey(const Key('folder_panel_row_Reading')), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('the folder chooser filters by folder name only, ignoring case; a description word does not match',
+        (tester) async {
+      await pumpScreen(tester, notes, prefs: openEditPrefs, height: 800);
+      await tapAndSettle(tester, find.byKey(const Key('cluster_folder_dropdown_a')));
+
+      expect(find.byKey(const Key('folder_search_field')), findsOneWidget);
+      expect(find.text('Search folders'), findsOneWidget);
+      expect(_offeredFolders(tester), ['Work', 'Garden', 'Journal', 'Uncategorized']);
+
+      await tester.enterText(find.byKey(const Key('folder_search_field')), 'GARD');
+      await tester.pump();
+      expect(_offeredFolders(tester), ['Garden']);
+
+      // 'plants' is in Garden's description only.
+      await tester.enterText(find.byKey(const Key('folder_search_field')), 'plants');
+      await tester.pump();
+      expect(_offeredFolders(tester), isEmpty);
+      expect(find.text('No folder matches'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('folder_search_field')), 'ar');
+      await tester.pump();
+      await tester.tap(folderOption('Garden'));
+      await tester.pumpAndSettle();
+      expect(stored('a').folder, 'Garden');
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
+    testWidgets('the folder chooser fits a 360x800 phone, also with the keyboard up', (tester) async {
+      await pumpScreen(tester, notes, prefs: openEditPrefs, height: 800);
+      await tapAndSettle(tester, find.byKey(const Key('cluster_folder_dropdown_a')));
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final sheet = tester.getRect(find.byKey(const Key('folder_search_field')));
+      expect(sheet.left, greaterThanOrEqualTo(0));
+      expect(sheet.right, lessThanOrEqualTo(360));
+      expect(sheet.bottom, lessThanOrEqualTo(800 - 300), reason: 'the search field stays above the keyboard');
+      await unmount(tester);
+    });
+
+    testWidgets('the merge chooser filters the candidates by title and by text, ignoring case', (tester) async {
+      await pumpScreen(tester, notes, prefs: openEditPrefs, height: 800);
+      await tapAndSettle(tester, find.byKey(const Key('merge_button_a')));
+
+      expect(find.byKey(const Key('merge_search_field')), findsOneWidget);
+      expect(find.text('Search notes'), findsOneWidget);
+      expect(find.byKey(const Key('merge_target_b')), findsOneWidget);
+      expect(find.byKey(const Key('merge_target_c')), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('merge_search_field')), 'TOMATO BEDS'); // title
+      await tester.pump();
+      expect(find.byKey(const Key('merge_target_b')), findsOneWidget);
+      expect(find.byKey(const Key('merge_target_c')), findsNothing);
+
+      await tester.enterText(find.byKey(const Key('merge_search_field')), 'slept early'); // body text
+      await tester.pump();
+      expect(find.byKey(const Key('merge_target_b')), findsNothing);
+      expect(find.byKey(const Key('merge_target_c')), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('merge_search_field')), 'zebra');
+      await tester.pump();
+      expect(find.text('No note matches'), findsOneWidget);
+      expect(find.byKey(const Key('merge_target_c')), findsNothing);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
+    testWidgets('the merge chooser fits a 360x800 phone and still merges into the filtered note', (tester) async {
+      await pumpScreen(tester, notes, prefs: openEditPrefs, height: 800);
+      await tapAndSettle(tester, find.byKey(const Key('merge_button_a')));
+      await tester.enterText(find.byKey(const Key('merge_search_field')), 'tomatoes');
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      final field = tester.getRect(find.byKey(const Key('merge_search_field')));
+      expect(field.left, greaterThanOrEqualTo(0));
+      expect(field.right, lessThanOrEqualTo(360));
+      await tester.tap(find.byKey(const Key('merge_target_b')));
+      await tester.pumpAndSettle();
+      expect(container.read(synthesisRepositoryProvider).any((c) => c.clusterId == 'a'), isFalse, reason: 'merged away');
+      await unmount(tester);
+    });
+
+    testWidgets('Read mode: the note text has the full width and Copy sits at the right end of the thoughts row',
+        (tester) async {
+      await pumpScreen(tester, [notes.first], prefs: openReadPrefs, height: 800);
+
+      final body = tester.getRect(find.byType(NoteBody));
+      final text = tester.getRect(find.byType(NoteMarkdownView));
+      expect(text.width, body.width, reason: 'the copy button no longer takes a column beside the text');
+      final copy = tester.getRect(find.byKey(const Key('note_copy_button')));
+      final thoughts = tester.getRect(find.byKey(const Key('expand_raw_notes_a')));
+      expect(copy.right, body.right);
+      // (The test font is wide, so the row's date may wrap below the link: overlap is what counts.)
+      expect(copy.top, lessThan(thoughts.bottom), reason: 'same row as From N thoughts');
+      expect(copy.bottom, greaterThan(thoughts.top), reason: 'same row as From N thoughts');
+      expect(copy.top, greaterThan(text.bottom - 1), reason: 'under the text, not beside it');
+      expect(find.byKey(const Key('note_copy_button')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
+    testWidgets('Edit mode: one Copy control, in the action row, and the note text has the full width',
+        (tester) async {
+      await pumpScreen(tester, [notes.first], prefs: openEditPrefs, height: 800);
+
+      expect(find.byKey(const Key('note_copy_button')), findsOneWidget);
+      expect(
+        find.descendant(of: find.byType(NoteActionRow), matching: find.byKey(const Key('note_copy_button'))),
+        findsOneWidget,
+      );
+      expect(tester.getRect(find.byType(NoteMarkdownView)).width, tester.getRect(find.byType(NoteBody)).width);
+      expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+  });
+
   group('a request from Capture to show a note', () {
     testWidgets('selects All notes, clears a triage filter that hides it, opens its row and highlights it', (tester) async {
       await pumpScreen(tester, [
@@ -819,6 +978,247 @@ void main() {
       await unmount(tester);
     });
   });
+
+  // User decisions 2026-11-28 (TASK-108): a note's text is edited where it stands (A, point 8) and
+  // a raw thought opens in Capture when tapped (B, point 14).
+  group('editing a note in place (TASK-108 A) and opening a thought in Capture (TASK-108 B)', () {
+    const original = '**Flat visit**\n\n- I liked the flat.';
+
+    Finder field() => find.byKey(const Key('note_edit_field'));
+    Finder textOf(String id) => find.byKey(Key('note_text_tap_$id'));
+
+    testWidgets('Read mode: a tap on the text turns it into the editor; Save stores through editNoteText', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openReadPrefs, height: 800);
+      expect(field(), findsNothing);
+
+      await tapAndSettle(tester, textOf('a'));
+      expect(field(), findsOneWidget);
+      expect(tester.widget<TextField>(field()).controller!.text, original);
+      final editable = tester.widget<EditableText>(find.descendant(of: field(), matching: find.byType(EditableText)));
+      expect(editable.focusNode.hasFocus, isTrue, reason: 'focused at once');
+      expect(find.byKey(const Key('note_edit_save')), findsOneWidget);
+      expect(find.byKey(const Key('note_edit_cancel')), findsOneWidget);
+      expect(find.byKey(const Key('edit_text_button_a')), findsNothing, reason: 'Read mode has no action row');
+
+      await tester.enterText(field(), '**My title**\n\nMy own words.');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pumpAndSettle();
+
+      expect(field(), findsNothing);
+      expect(stored('a').synthesizedContent, '**My title**\n\nMy own words.');
+      expect(stored('a').appliedStyleId, manualStyleId);
+      expect(stored('a').isHandEdited, isTrue, reason: 'FR11.19');
+      expect(find.text('My own words.'), findsOneWidget);
+      expect(runner.runs, 0, reason: 'a hand edit starts no run');
+      await unmount(tester);
+    });
+
+    testWidgets('Edit mode: a tap on the text and Edit text both open the same editor', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openEditPrefs, height: 800);
+
+      await tapAndSettle(tester, textOf('a'));
+      expect(field(), findsOneWidget);
+      expect(tester.widget<TextField>(field()).controller!.text, original);
+      await tapAndSettle(tester, find.byKey(const Key('note_edit_cancel')));
+      expect(field(), findsNothing);
+
+      await tapAndSettle(tester, find.byKey(const Key('edit_text_button_a')));
+      expect(field(), findsOneWidget);
+      expect(tester.widget<TextField>(field()).controller!.text, original);
+      await unmount(tester);
+    });
+
+    testWidgets('Save with the text unchanged closes the editor and changes nothing (not hand-edited)', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0), unread: false)], prefs: openReadPrefs, height: 800);
+
+      await tapAndSettle(tester, textOf('a'));
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pumpAndSettle();
+
+      expect(field(), findsNothing);
+      expect(stored('a').synthesizedContent, original);
+      expect(stored('a').appliedStyleId, defaultNoteStyleId);
+      expect(stored('a').isHandEdited, isFalse);
+      expect(runner.runs, 0);
+
+      // Only trailing whitespace added: still unchanged.
+      await tapAndSettle(tester, textOf('a'));
+      await tester.enterText(field(), '$original\n\n');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pumpAndSettle();
+      expect(stored('a').isHandEdited, isFalse);
+      await unmount(tester);
+    });
+
+    testWidgets('Cancel discards what was typed and changes nothing', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openReadPrefs, height: 800);
+
+      await tapAndSettle(tester, textOf('a'));
+      await tester.enterText(field(), 'something else');
+      await tester.tap(find.byKey(const Key('note_edit_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(field(), findsNothing);
+      expect(stored('a').synthesizedContent, original);
+      expect(stored('a').isHandEdited, isFalse);
+      expect(find.text('I liked the flat.'), findsOneWidget);
+      await tapAndSettle(tester, textOf('a'));
+      expect(tester.widget<TextField>(field()).controller!.text, original, reason: 'a new editing starts from the note');
+      await unmount(tester);
+    });
+
+    testWidgets('an empty text is refused with "A note cannot be empty." and the editor stays', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openReadPrefs, height: 800);
+
+      await tapAndSettle(tester, textOf('a'));
+      await tester.enterText(field(), ' \n ');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('A note cannot be empty.'), findsOneWidget);
+      expect(field(), findsOneWidget);
+      expect(stored('a').synthesizedContent, original);
+      await unmount(tester);
+    });
+
+    testWidgets('ticking a checklist box ticks the task and does not start editing', (tester) async {
+      await pumpScreen(
+        tester,
+        [_note('a', '#S-01', _at(0), content: '**Plan**\n\n- [ ] Buy milk\n- [ ] Call mum')],
+        prefs: openReadPrefs,
+        height: 800,
+      );
+
+      await tapAndSettle(tester, find.byKey(const Key('note_task_box_0')));
+
+      expect(field(), findsNothing);
+      expect(stored('a').synthesizedContent, contains('- [x] Buy milk'));
+      expect(stored('a').synthesizedContent, contains('- [ ] Call mum'));
+      expect(stored('a').isHandEdited, isFalse);
+      await unmount(tester);
+    });
+
+    testWidgets('a note being rewritten can be edited by a tap on its text or Edit text; Save stores it, marks it hand-edited and clears the rewrite',
+        (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0), reprocessing: true)], prefs: openReadPrefs, height: 800);
+      expect(stored('a').isReprocessing, isTrue);
+
+      await tapAndSettle(tester, textOf('a'));
+      expect(field(), findsOneWidget);
+      await tapAndSettle(tester, find.byKey(const Key('note_edit_cancel')));
+      expect(field(), findsNothing);
+
+      await editMode(tester);
+      await tapAndSettle(tester, find.byKey(const Key('edit_text_button_a')));
+      expect(field(), findsOneWidget);
+      await tester.enterText(field(), '**Mine**\n\nMy own words.');
+      await tester.tap(find.byKey(const Key('note_edit_save')));
+      await tester.pumpAndSettle();
+
+      expect(field(), findsNothing);
+      expect(stored('a').synthesizedContent, '**Mine**\n\nMy own words.');
+      expect(stored('a').appliedStyleId, manualStyleId);
+      expect(stored('a').isHandEdited, isTrue, reason: 'FR11.19');
+      expect(stored('a').isReprocessing, isFalse, reason: 'the hand edit wins over the pending rewrite');
+      expect(runner.runs, 0);
+      await unmount(tester);
+    });
+
+    testWidgets('one note is edited at a time: a second note is refused, the first keeps its typing', (tester) async {
+      await pumpScreen(
+        tester,
+        [_note('a', '#S-02', _at(0, 11)), _note('b', '#S-01', _at(0, 9), content: '**Other**\n\n- other body')],
+        prefs: openReadPrefs,
+        height: 1400,
+      );
+
+      await tapAndSettle(tester, textOf('a'));
+      await tester.enterText(field(), 'half typed');
+      await tapAndSettle(tester, textOf('b'));
+
+      expect(find.text(finishEditingFirstNotice), findsOneWidget);
+      expect(field(), findsOneWidget);
+      expect(tester.widget<TextField>(field()).controller!.text, 'half typed');
+      await tester.pump(const Duration(seconds: 5));
+      await unmount(tester);
+    });
+
+    testWidgets('the typing survives the note being closed and opened again', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0))], prefs: openReadPrefs, height: 800);
+
+      await tapAndSettle(tester, textOf('a'));
+      await tester.enterText(field(), 'half typed');
+      await tapAndSettle(tester, find.byKey(const Key('note_row_a')));
+      expect(field(), findsNothing, reason: 'closed note shows no body');
+      await tapAndSettle(tester, find.byKey(const Key('note_row_a')));
+
+      expect(tester.widget<TextField>(field()).controller!.text, 'half typed');
+      await unmount(tester);
+    });
+
+    testWidgets('on a 360x800 phone with the keyboard up the editor, Cancel and Save stay on screen', (tester) async {
+      await pumpScreen(
+        tester,
+        [for (var i = 1; i <= 6; i++) _note('n$i', '#S-0$i', _at(0, 20 - i), content: '**Note $i**\n\n- body $i')],
+        prefs: openReadPrefs,
+        height: 800,
+      );
+      await tapAndSettle(tester, textOf('n4'));
+      // The keyboard comes up after the editor opened, as it does on a phone.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      for (final key in ['note_edit_field', 'note_edit_cancel', 'note_edit_save']) {
+        final rect = tester.getRect(find.byKey(Key(key)));
+        expect(rect.left, greaterThanOrEqualTo(0), reason: key);
+        expect(rect.right, lessThanOrEqualTo(360), reason: key);
+        expect(rect.top, greaterThanOrEqualTo(0), reason: key);
+        expect(rect.bottom, lessThanOrEqualTo(800 - 320), reason: '$key stays above the keyboard');
+      }
+      await unmount(tester);
+    });
+
+    testWidgets('tapping a thought asks Capture to show it by its id; Move Out in Edit mode keeps working',
+        (tester) async {
+      final a = _note('a', '#S-01', _at(0, 9));
+      await pumpScreen(tester, [a, _note('b', '#S-02', _at(0, 11))], prefs: openEditPrefs);
+      await tapAndSettle(tester, find.byKey(const Key('expand_raw_notes_a')));
+      final firstId = a.originNotes.first.id;
+      final secondId = a.originNotes.last.id;
+      expect(container.read(captureFocusRequestProvider), isNull);
+      expect(find.byTooltip('Open in Capture'), findsNWidgets(2));
+
+      await tapAndSettle(tester, find.byKey(Key('raw_thought_open_$secondId')));
+      expect(container.read(captureFocusRequestProvider), secondId);
+      container.read(captureFocusRequestProvider.notifier).clear();
+
+      await tapAndSettle(tester, find.text('Thought one of a'));
+      expect(container.read(captureFocusRequestProvider), firstId, reason: 'the whole row is the target');
+      container.read(captureFocusRequestProvider.notifier).clear();
+
+      await tapAndSettle(tester, find.byKey(Key('move_out_note_$firstId')));
+      expect(container.read(captureFocusRequestProvider), isNull, reason: 'Move Out is its own button');
+      await tester.tap(find.byKey(const Key('ejection_move_to_another_clubbed_note_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('target_cluster_b')));
+      await tester.pumpAndSettle();
+      expect(stored('b').originNotes.map((o) => o.id), contains(firstId));
+      await tester.pump(const Duration(seconds: 5));
+      await unmount(tester);
+    });
+
+    testWidgets('in Read mode a thought also opens in Capture', (tester) async {
+      final a = _note('a', '#S-01', _at(0, 9));
+      await pumpScreen(tester, [a], prefs: openReadPrefs);
+      await tapAndSettle(tester, find.byKey(const Key('expand_raw_notes_a')));
+
+      await tapAndSettle(tester, find.byKey(Key('raw_thought_open_${a.originNotes.first.id}')));
+      expect(container.read(captureFocusRequestProvider), a.originNotes.first.id);
+      await unmount(tester);
+    });
+  });
 }
 
 class _FixedTab extends SelectedShellTabNotifier {
@@ -828,3 +1228,9 @@ class _FixedTab extends SelectedShellTabNotifier {
   @override
   ShellTab? build() => initial;
 }
+
+/// The folders a note's folder chooser offers, in order.
+List<String> _offeredFolders(WidgetTester tester) => [
+      for (final e in find.byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key as ValueKey<String>).value.startsWith('folder_option_')).evaluate())
+        (e.widget.key as ValueKey<String>).value.substring('folder_option_'.length),
+    ];

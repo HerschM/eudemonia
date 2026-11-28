@@ -21,6 +21,7 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 
 import '../settings/fake_permission_gateway.dart';
 import 'capture_test_doubles.dart';
+import 'capture_view_test_helpers.dart';
 
 class _NoQueueItems extends QueueItemsNotifier {
   @override
@@ -118,12 +119,10 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   }
 
-  Future<void> pickTriage(WidgetTester tester, String label) async {
-    await tester.tap(find.byKey(const Key('capture_triage_filter_dropdown')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label).last);
-    await tester.pumpAndSettle();
-  }
+  // Decision A (2026-11-28): the triage dropdown became the Show group of the view panel; the
+  // same labels pick the same filters ('All Triage' is now the row `All thoughts`).
+  Future<void> pickTriage(WidgetTester tester, String label) =>
+      pickCaptureView(tester, show: const {'Unread': 'unread', 'Read': 'read', 'All Triage': 'all'}[label]);
 
   Finder dotIn(String text) => find.descendant(
         of: find.ancestor(of: find.text(text), matching: find.byType(ThoughtCard)),
@@ -364,7 +363,8 @@ void main() {
   group('Synthesized filter icon', () {
     testWidgets('uses the hub icon, not the star', (tester) async {
       await pumpCapture(tester, []);
-      await tester.tap(find.byKey(const Key('capture_status_filter_dropdown')));
+      // Decision A (2026-11-28): the status dropdown became the Status group of the view panel.
+      await tester.tap(find.byKey(const Key('capture_view_button')));
       await tester.pumpAndSettle();
 
       expect(find.byIcon(Icons.hub_outlined), findsWidgets);

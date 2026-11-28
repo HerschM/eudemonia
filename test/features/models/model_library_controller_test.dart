@@ -14,7 +14,7 @@ void main() {
   late InMemoryModelSettingsStore store;
   late ProviderContainer container;
 
-  const speech = ModelCatalogue.parakeetV3;
+  const speech = ModelCatalogue.parakeetV2;
   const big = ModelCatalogue.qwen3_4b;
   const small = ModelCatalogue.qwen3_1_7b;
 
@@ -252,7 +252,7 @@ void main() {
 
       expect(channel.downloads.map((d) => d['relativePath']),
           speech.files.skip(1).map((f) => f.relativePath).toList());
-      expect(channel.downloads.every((d) => d['wifiOnly'] == true && d['title'] == 'Parakeet v3 (25 languages)'), isTrue);
+      expect(channel.downloads.every((d) => d['wifiOnly'] == true && d['title'] == 'Parakeet v2 (English)'), isTrue);
       expect(channel.downloads.first['url'], speech.files[1].url);
       expect(library().of(speech.id).isBusy, isTrue);
 

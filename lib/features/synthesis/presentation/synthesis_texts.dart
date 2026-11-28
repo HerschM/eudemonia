@@ -25,6 +25,17 @@ String deleteNoteConsequence(int thoughtCount) => thoughtCount == 1
 /// Shown in the text editor when an empty text is refused.
 const String emptyNoteRefusal = 'A note cannot be empty.';
 
+/// Said when a second note is asked to be edited while another one is being edited.
+const String finishEditingFirstNotice = 'Save or cancel the note you are editing first.';
+
+/// Under `N thoughts ready for Synthesis` when waiting thoughts have already failed a run (FR11.28):
+/// says why nothing was written, that the thoughts are safe, and what to do.
+String describeUnwrittenThoughts(int count) => count == 1
+    ? '1 thought could not be written into a note last time: the reply was incomplete, so nothing '
+        'was saved. It is safe in Capture; Synthesize Now tries again.'
+    : '$count thoughts could not be written into a note last time: the reply was incomplete, so '
+        'nothing was saved. They are safe in Capture; Synthesize Now tries again.';
+
 /// `From 3 thoughts`, the link that reveals the thoughts a note was written from.
 String describeNoteOrigin(int thoughtCount) => 'From $thoughtCount ${thoughtCount == 1 ? 'thought' : 'thoughts'}';
 

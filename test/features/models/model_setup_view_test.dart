@@ -6,8 +6,9 @@ import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _speech = ModelCatalogue.parakeetV3;
-const _speechV2 = ModelCatalogue.parakeetV2;
+// User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+// parakeet v3 since we've not tested the european languages model writing cleanup." Parakeet v2 is the only speech model.
+const _speech = ModelCatalogue.parakeetV2;
 const _big = ModelCatalogue.qwen3_4b;
 const _small = ModelCatalogue.qwen3_1_7b;
 
@@ -67,10 +68,11 @@ void main() {
 
     expect(find.text('Eudemonia runs on this phone. It needs two model files, downloaded once.'), findsOneWidget);
     expect(find.text('Speech model'), findsOneWidget);
-    expect(find.text('Turns your recordings into text. Choose one.'), findsOneWidget);
-    expect(find.text('Parakeet v3 (25 languages)'), findsOneWidget);
-    expect(find.text('25 European languages. Good for mixed-language speakers.'), findsOneWidget);
-    expect(find.text('671 MB download'), findsOneWidget);
+    // User, 2026-11-28: "let's have parakeet v2 itself as default STT ... remove the option of parakeet
+    // v3" — one speech model is offered, so the line no longer says `Choose one.`
+    expect(find.text('Turns your recordings into text.'), findsOneWidget);
+    // Was: a Parakeet v3 card ('25 European languages...', '671 MB download') above the v2 card; v3 is removed.
+    expect(find.text('Parakeet v3 (25 languages)'), findsNothing);
     expect(find.text('Parakeet v2 (English)'), findsOneWidget);
     expect(find.text('English only. The most accurate for English.'), findsOneWidget);
     expect(find.text('661 MB download'), findsOneWidget);
@@ -84,12 +86,11 @@ void main() {
         find.text('Smaller and faster, for phones with 6 GB of memory. Notes are less tidy and can miss a detail now and then.'),
         findsOneWidget);
     expect(find.text('Testing'), findsNothing);
-    expect(find.text('Download'), findsNWidgets(4));
+    expect(find.text('Download'), findsNWidgets(3));
 
-    await tester.tap(find.byKey(const Key('model_download_parakeet-tdt-0.6b-v3-int8')));
     await tester.tap(find.byKey(const Key('model_download_parakeet-tdt-0.6b-v2-int8')));
     await tester.tap(find.byKey(const Key('model_download_qwen3-4b')));
-    expect(calls, ['download:parakeet-tdt-0.6b-v3-int8', 'download:parakeet-tdt-0.6b-v2-int8', 'download:qwen3-4b']);
+    expect(calls, ['download:parakeet-tdt-0.6b-v2-int8', 'download:qwen3-4b']);
   });
 
   testWidgets('downloading shows a thin bar, the bytes and Cancel', (tester) async {
@@ -98,7 +99,8 @@ void main() {
     final bar = tester.widget<LinearProgressIndicator>(find.byKey(Key('model_progress_${_speech.id}')));
     expect(bar.value, closeTo(312000000 / _speech.totalBytes, 1e-9));
     expect(bar.minHeight, lessThanOrEqualTo(4));
-    expect(find.text('312 MB of 671 MB'), findsOneWidget);
+    // User decision 2026-11-28 (v3 removed; v2 is 661 MB): was '312 MB of 671 MB'.
+    expect(find.text('312 MB of 661 MB'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await tester.tap(find.byKey(Key('model_cancel_${_speech.id}')));
@@ -110,7 +112,8 @@ void main() {
       _speech.id: ModelAvailability(ModelAvailabilityKind.paused,
           downloadedBytes: 100000000, totalBytes: _speech.totalBytes, reason: 'waiting_for_wifi'),
     });
-    expect(find.text('Waiting for Wi-Fi · 100 MB of 671 MB'), findsOneWidget);
+    // User decision 2026-11-28 (v3 removed; v2 is 661 MB): was '... 100 MB of 671 MB'.
+    expect(find.text('Waiting for Wi-Fi · 100 MB of 661 MB'), findsOneWidget);
     expect(find.byKey(Key('model_cancel_${_speech.id}')), findsOneWidget);
   });
 
@@ -141,10 +144,9 @@ void main() {
       _big.id: _ready(_big),
       _small.id: _ready(_small),
       _speech.id: _ready(_speech),
-      _speechV2.id: _ready(_speechV2),
     });
 
-    for (final spec in [_speech, _speechV2, _big, _small]) {
+    for (final spec in [_speech, _big, _small]) {
       final card = tester.getRect(find.byKey(Key('model_card_${spec.id}')));
       final menu = tester.getRect(find.byKey(Key('model_menu_${spec.id}')));
       expect(menu.right, closeTo(card.right - 14, 2), reason: '${spec.id}: menu at the right padding edge');
@@ -181,39 +183,33 @@ void main() {
     expect(find.byKey(Key('model_use_${_small.id}')), findsOneWidget);
   });
 
-  testWidgets('both speech models ready, none in use: each can be chosen', (tester) async {
-    await pump(tester, availability: {_speech.id: _ready(_speech), _speechV2.id: _ready(_speechV2)});
+  // User decision 2026-11-28: "let's have parakeet v2 itself as default STT for now. and let's remove the option of
+  // parakeet v3 since we've not tested the european languages model writing cleanup."
+  // Was: two tests with both speech models ready (choose either; one in use, the other offers Use this model),
+  // and one with the other speech model still downloadable.
+  testWidgets('the only speech model ready, none in use: it can be chosen and no other speech model is offered',
+      (tester) async {
+    await pump(tester, availability: {_speech.id: _ready(_speech)});
 
     expect(find.text('In use'), findsNothing);
     expect(find.byKey(Key('model_use_${_speech.id}')), findsOneWidget);
-    expect(find.byKey(Key('model_use_${_speechV2.id}')), findsOneWidget);
-    await tester.tap(find.byKey(Key('model_use_${_speechV2.id}')));
-    expect(calls, ['select:${_speechV2.id}']);
+    expect(find.byKey(const Key('model_download_parakeet-tdt-0.6b-v3-int8')), findsNothing);
+    expect(find.byKey(const Key('model_use_parakeet-tdt-0.6b-v3-int8')), findsNothing);
+    await tester.tap(find.byKey(Key('model_use_${_speech.id}')));
+    expect(calls, ['select:${_speech.id}']);
   });
 
-  testWidgets('both speech models ready, one in use: it reads In use and the other offers Use this model',
+  testWidgets('the speech model ready and in use: it reads In use and has its own Delete in its More menu',
       (tester) async {
-    await pump(tester,
-        availability: {_speech.id: _ready(_speech), _speechV2.id: _ready(_speechV2)}, selectedSpeech: _speechV2.id);
-
-    expect(find.text('In use'), findsOneWidget);
-    expect(find.byKey(Key('model_use_${_speechV2.id}')), findsNothing);
-    expect(find.byKey(Key('model_use_${_speech.id}')), findsOneWidget);
-    // Each card has its own Delete in its More menu.
-    await tester.tap(find.byKey(Key('model_menu_${_speechV2.id}')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(Key('model_delete_${_speechV2.id}')));
-    await tester.pumpAndSettle();
-    expect(calls, ['delete:${_speechV2.id}']);
-  });
-
-  testWidgets('one speech model ready and in use, the other can still be downloaded', (tester) async {
     await pump(tester, availability: {_speech.id: _ready(_speech)}, selectedSpeech: _speech.id);
 
     expect(find.text('In use'), findsOneWidget);
-    expect(find.byKey(Key('model_download_${_speechV2.id}')), findsOneWidget);
-    await tester.tap(find.byKey(Key('model_download_${_speechV2.id}')));
-    expect(calls, ['download:${_speechV2.id}']);
+    expect(find.byKey(Key('model_use_${_speech.id}')), findsNothing);
+    await tester.tap(find.byKey(Key('model_menu_${_speech.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('model_delete_${_speech.id}')));
+    await tester.pumpAndSettle();
+    expect(calls, ['delete:${_speech.id}']);
   });
 
   testWidgets('a model too large for the phone is greyed, explained and not tappable', (tester) async {

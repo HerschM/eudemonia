@@ -108,6 +108,7 @@ Future agents may evolve algorithms, models, and UI screens, but must **NEVER** 
 - Mobile RAM is severely constrained (~1.6 GB+ for AI models). Unmanaged models risk triggering Android Low Memory Killer (LMK) kills or system blackouts.
 - **On-Demand Loading & Inactivity Eviction**: Heavy models must be evicted from memory when idle for a configurable period, returning baseline memory footprint to <60 MB.
 - **Sequential Loading**: When loading multiple models, load them sequentially rather than concurrently to prevent peak memory allocation spikes.
+- **No Orphaned Models (2026-11-28)**: the capture service keeps the process alive after the app's screen is gone. Memory held by a model must never remain in a process that can no longer use or unload it: Back sends the app to the background instead of destroying its engine, and every worker that holds a model frees it when the isolate that owns it exits (`IMPLEMENTATION.md` 1.D, Chronicle #43). Anything new that loads a model in a worker must honour both.
 - **Stateless Inference**: A turn's result must never depend on earlier turns. Within one synthesis run the model's cached reading of an identical prompt start (the fixed instructions) may be reused; nothing of an earlier turn's thoughts or replies is kept. All inference context and KV cache allocations are released when the run ends or is preempted.
 
 ### D. Background Reliability
@@ -214,9 +215,10 @@ lib/
 ├── core/                # Core utilities, logging, shared database
 ├── features/
 │   ├── ai_processing/   # STT, LLM inference, model lifecycle & queues
-│   ├── capture/         # Native capture channel, inbox ingestor, capture controller, capture screen & capsule
-│   ├── home/            # Navigation shell (Capture & Synthesis in the first release) & pipeline HUD
+│   ├── capture/         # Native capture channel, inbox ingestor, capture controller, written notes, recording retention & capture screen
+│   ├── home/            # Navigation shell (top row, bottom row of capture & search bubbles; Capture & Synthesis in the first release) & pipeline HUD
 │   ├── notes/           # Note models, repositories & database storage
+│   ├── search/          # Plain-text search across thoughts and notes (pure matcher & results page)
 │   ├── synthesis/       # Synthesis sessions, persistence & screen
 │   └── settings/        # Permissions, diagnostics, system telemetry & configuration
 previews/                # Isolated UI/UX Component Sandbox (0 prod boilerplate)

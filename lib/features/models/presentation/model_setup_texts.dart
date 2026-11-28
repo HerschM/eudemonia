@@ -4,14 +4,14 @@ library;
 import 'package:eudemonia/features/models/domain/model_availability.dart';
 import 'package:eudemonia/features/models/domain/model_catalogue.dart';
 
-/// Decimal units: `671 MB`, `2.5 GB`, `1.1 GB`. GB gets one decimal, MB none.
+/// Decimal units: `661 MB`, `2.5 GB`, `1.1 GB`. GB gets one decimal, MB none.
 String formatModelBytes(int bytes) {
   final megabytes = (bytes / 1e6).round();
   if (megabytes < 1000) return '${megabytes < 1 && bytes > 0 ? 1 : megabytes} MB';
   return '${(bytes / 1e9).toStringAsFixed(1)} GB';
 }
 
-/// `312 MB of 671 MB`.
+/// `312 MB of 661 MB`.
 String describeProgress(ModelAvailability a) => '${formatModelBytes(a.downloadedBytes)} of ${formatModelBytes(a.totalBytes)}';
 
 /// Why a download waits (paused) or stopped (failed), in plain words.

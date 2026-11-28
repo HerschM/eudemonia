@@ -7,10 +7,10 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_ejection_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_markdown.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_merge_sheet.dart';
-import 'package:eudemonia/features/synthesis/presentation/note_text_editor_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/rewrite_confirmation.dart';
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_filtering.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_view.dart';
 import '../preview_theme.dart';
 import '../synthesis_preview_data.dart';
@@ -36,6 +36,10 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> with Au
   late bool _panelOpen;
   late int _pendingThoughts;
   String? _folder;
+
+  /// The note being edited in place and what is typed in it so far.
+  String? _editingId;
+  String _draft = '';
   SynthesisTriage _triage = SynthesisTriage.all;
 
   /// A synthesis run is going: Synthesize Now shows the AI thinking, unclickable (FR11.16).
@@ -113,16 +117,23 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> with Au
   }
 
   void _editText(SynthesisCluster note) {
-    NoteTextEditorSheet.show(
-      context,
-      sequenceLabel: note.sequenceNumber,
-      initialText: note.synthesizedContent,
-      onSave: (text) async {
-        if (text.trim().isEmpty) return false;
-        _change(note.clusterId, (n) => n.copyWith(synthesizedContent: text, appliedStyleId: manualStyleId));
-        return true;
-      },
-    );
+    if (_editingId != null && _editingId != note.clusterId) {
+      _say(finishEditingFirstNotice);
+      return;
+    }
+    setState(() {
+      _editingId = note.clusterId;
+      _draft = note.synthesizedContent;
+    });
+  }
+
+  Future<bool> _saveText(SynthesisCluster note, String text) async {
+    if (text.trim().isEmpty) return false;
+    if (text.trimRight() != note.synthesizedContent.trimRight()) {
+      _change(note.clusterId, (n) => n.copyWith(synthesizedContent: text, appliedStyleId: manualStyleId, isReprocessing: false));
+    }
+    setState(() => _editingId = null);
+    return true;
   }
 
   void _merge(SynthesisCluster note) {
@@ -246,6 +257,7 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> with Au
               setState(() => _panelOpen = false);
               _say('Settings would open here.');
             },
+            onAddFolder: () => _say('The new-folder editor would open here.'),
             onChooseModel: () => _say('The model setup would open here.'),
             onSynthesizeNow: () {
               _startFakeRun();
@@ -263,6 +275,12 @@ class _SynthesisScreenPreviewState extends State<SynthesisScreenPreview> with Au
             onFolderChanged: (id, name) => _change(id, (n) => n.copyWith(folder: name)),
             onStyle: _chooseStyle,
             onEditText: _editText,
+            editingId: _editingId,
+            draftText: _draft,
+            onSaveText: _saveText,
+            onCancelEdit: () => setState(() => _editingId = null),
+            onDraftChanged: (text) => _draft = text,
+            onOpenThought: (id) => _say('Capture would open on thought #$id here.'),
             onMerge: _merge,
             onDelete: (note) => setState(() => _notes = [for (final n in _notes) if (n.clusterId != note.clusterId) n]),
             onMoveOut: _moveOut,

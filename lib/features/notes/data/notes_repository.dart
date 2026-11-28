@@ -107,6 +107,28 @@ class NotesRepository {
     onChanged?.call();
   }
 
+  /// Forgets the thought's recording after the audio file was removed (or found missing); the
+  /// text and everything else about the thought stay.
+  Future<void> clearAudioPath(Id id) async {
+    if (_isar != null) {
+      var found = false;
+      await _isar!.writeTxn(() async {
+        final note = await _isar!.notes.get(id);
+        if (note != null) {
+          found = true;
+          note.originalAudioPath = null;
+          await _isar!.notes.put(note);
+        }
+      });
+      if (!found) return;
+    } else {
+      final note = _inMemoryNotes.where((n) => n.id == id).firstOrNull;
+      if (note == null) return;
+      note.originalAudioPath = null;
+    }
+    onChanged?.call();
+  }
+
   Future<void> updateNoteText(Id id, String newText) async {
     if (_isar != null) {
       await _isar!.writeTxn(() async {

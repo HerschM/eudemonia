@@ -121,6 +121,22 @@ $$\mathbf{Capture} \longrightarrow \mathbf{Synthesis} \longrightarrow \mathbf{In
 
 ### C. Top Persistent Navigation Bar & Mind Pipeline Architecture
 
+> **Round 5 (user, 2026-11-28) — this block supersedes the wireframes below where they differ; the wireframes are to be redrawn with the chosen palette.**
+> - **No app-name bar.** One row under the status bar: status pill (left) · `Capture | Synthesis` segmented tabs (middle, taking the remaining width) · Settings gear (right).
+> - **Bottom row on both screens: three translucent, glass-like bubbles**, 52 dp high — round pen (written note) · obround `Search` · round microphone (no text). While recording, the microphone bubble shows stop and the middle bubble shows a dot, the voice wave and `00:07 / 05:00`. The row steps aside while the keyboard is up, except during a recording.
+>   ```
+>   ┌──────────────────────────────────────────────┐
+>   │ [⚡ 1 in Pipeline ▾] [ Capture | Synthesis ] ⚙ │
+>   │ [≡ All thoughts ▾]                            │
+>   │  …cards…                                      │
+>   │ (✎)  (  🔍 Search                )  (🎤)      │
+>   └──────────────────────────────────────────────┘
+>   ```
+> - **Search page**: one list, newest first; each row carries a `Capture` or `Synthesis` label, a title line, a snippet with the matched words in bold; choosing a row opens that thought or note in its screen.
+> - **Capture**: one view control (`All thoughts ▾`) opening a side panel with the groups Show (All thoughts / Unread / Read) and Status (Any status / Processing / Processed / Synthesized / Failed), each row with its count. A written note shows a pen where a voice thought shows play; a voice thought whose recording was removed shows a muted speaker. Tapping a waiting thought's text edits it in place.
+> - **Synthesis**: tapping a note's text edits it in place (Save / Cancel under the field); a raw thought under a note opens Capture at that thought; `+` beside `Manage folders`; the folder chooser and the merge chooser have a search field; the Copy icon sits at the right end of the `From N thoughts` row.
+> - **Folder editor**: a caption above each field (Name, Description, Default style); the style is chosen from a list sheet showing each style with its description.
+
 The global top navigation shell clearly separates **AI Machine Processing** from **Human Cognitive Consumption**:
 
 1. **Top AI Status Pill (`[ ⚡ X in Pipeline ▾ ]` / `[ 🌿 In Sync ▾ ]`)**:

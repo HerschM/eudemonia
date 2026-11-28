@@ -59,6 +59,7 @@ SynthesisView _view(List<SynthesisCluster> notes, {bool open = true, Set<String>
       onSelectFolder: (_) {},
       onTriageChanged: (_) {},
       onManageFolders: () {},
+      onAddFolder: () {},
       onChooseModel: () {},
       onSynthesizeNow: () {},
       onToggleNote: (_) {},

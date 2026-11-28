@@ -80,10 +80,22 @@ const String _writeSystem =
 String buildWritePrompt(List<String> thoughts, {ChatFormat format = ChatFormat.chatml}) =>
     _wrap(format, _writeSystem, 'Thoughts:\n${_numbered(thoughts)}\n\nWrite the note.');
 
+/// A thought of at least this many words (about a minute of speech) is long: its note is judged
+/// stretch by stretch ([longThoughtsWithMissingStretch]), and a write turn with one whose plain
+/// reply left something out is retried once with the long-thought text (see `SynthesisEngine`).
+const int longThoughtWords = 150;
+
+int _wordCount(String text) => text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+
 /// Writes the thoughts as a note in [style] (see [noteStyles]): its system text, then the
-/// numbered thoughts and the style's request.
-String buildStyleWritePrompt(List<String> thoughts, NoteStyleSpec style, {ChatFormat format = ChatFormat.chatml}) =>
-    _wrap(format, style.systemPrompt, 'Thoughts:\n${_numbered(thoughts)}\n\n${style.request}');
+/// numbered thoughts and the style's request. [longThoughtText] asks for the style's long-thought
+/// text ([NoteStyleSpec.longThoughtSystemPrompt]): the engine asks for it for a part of a split
+/// thought and for the one retry of a long thought; any other turn gets exactly its plain
+/// [NoteStyleSpec.systemPrompt].
+String buildStyleWritePrompt(List<String> thoughts, NoteStyleSpec style,
+        {ChatFormat format = ChatFormat.chatml, bool longThoughtText = false}) =>
+    _wrap(format, style.systemPromptFor(longThought: longThoughtText),
+        'Thoughts:\n${_numbered(thoughts)}\n\n${style.request}');
 
 /// Writes the thoughts as a titled note of bullets under topic headings ([NoteStyle.structured]),
 /// the organised style. Needs a model larger than Qwen2.5-1.5B to keep the facts (TASK-070). The
@@ -201,3 +213,33 @@ List<int> thoughtsMissingFrom(String note, List<String> thoughts) => [
       for (var i = 0; i < thoughts.length; i++)
         if (_contentWords(thoughts[i]).length >= 4 && thoughtCoverage(thoughts[i], note) < minThoughtCoverage) i + 1,
     ];
+
+/// Words per stretch when a long thought is judged stretch by stretch.
+const int longThoughtStretchWords = 100;
+
+/// 1-based positions of the long thoughts (at least [longThoughtWords] words) of which [note]
+/// leaves out a stretch: each is cut into consecutive stretches of about [longThoughtStretchWords]
+/// words, and a stretch that shares fewer than [minThoughtCoverage] of its distinctive words with
+/// the note is missing (stretches with fewer than four distinctive words are not judged). A note
+/// that keeps only the first half of a long thought passes [thoughtsMissingFrom] but not this.
+List<int> longThoughtsWithMissingStretch(String note, List<String> thoughts) {
+  bool stretchMissing(List<String> words) {
+    final stretch = words.join(' ');
+    return _contentWords(stretch).length >= 4 && thoughtCoverage(stretch, note) < minThoughtCoverage;
+  }
+
+  return [
+    for (var i = 0; i < thoughts.length; i++)
+      if (_wordCount(thoughts[i]) >= longThoughtWords && _stretches(thoughts[i]).any(stretchMissing)) i + 1,
+  ];
+}
+
+/// [thought]'s words cut into consecutive stretches of about [longThoughtStretchWords] words, of
+/// sizes that differ by at most one.
+List<List<String>> _stretches(String thought) {
+  final words = thought.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  final count = (words.length / longThoughtStretchWords).round().clamp(1, words.length);
+  return [
+    for (var k = 0; k < count; k++) words.sublist(k * words.length ~/ count, (k + 1) * words.length ~/ count),
+  ];
+}

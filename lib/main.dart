@@ -5,6 +5,8 @@ import 'features/ai_processing/audio_queue_service.dart';
 import 'features/capture/capture_controller.dart';
 import 'features/capture/capture_inbox_ingestor.dart';
 import 'features/capture/capture_resume_scanner.dart';
+import 'features/capture/recording_retention.dart';
+import 'features/capture/recording_retention_settings.dart';
 import 'features/home/main_navigation_shell.dart';
 import 'features/models/application/model_library_controller.dart';
 import 'features/notes/application/read_state_migration.dart';
@@ -43,6 +45,27 @@ void main() async {
   // Hydrate the audio queue and finish whatever the previous session left behind. Runs after the
   // inbox scan so a recording whose file is still being moved into place is never transcribed early.
   unawaited(captureSync.then((_) => container.read(audioQueueServiceProvider).resumePendingWork()));
+
+  // "Keep original recordings": audio older than the chosen period is removed, once after the
+  // queue is loaded (so a recording it still holds is known) and then at most once a day when the
+  // app returns to the foreground. All file work is awaited off the first frame; it never throws.
+  Future<void> sweepOldRecordings() async {
+    try {
+      await container.read(recordingRetentionProvider.notifier).ready;
+      await container
+          .read(recordingRetentionServiceProvider)
+          .sweepIfDue(container.read(recordingRetentionProvider));
+    } catch (e) {
+      container.read(appLoggerProvider).warning('[Recordings] Sweep of old recordings failed: $e');
+    }
+  }
+
+  unawaited(
+    captureSync
+        .then((_) => container.read(audioQueueServiceProvider).loadFromStorage())
+        .then((_) => sweepOldRecordings()),
+  );
+  CaptureResumeScanner(onResumed: sweepOldRecordings).start();
 
   // Automatic synthesis (FR11.8): thoughts left from the previous session may already meet a trigger.
   // It starts after the one-time read-state migration, so a thought it synthesizes is never taken

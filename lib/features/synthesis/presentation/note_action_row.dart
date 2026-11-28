@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_folder_sheet.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 
-/// What the user can do to one note in Edit mode: file it under a folder, choose its style,
-/// edit its text, merge it into another note, delete it. Pure presentational widget; every
-/// action is a callback. Keys, all from the session's `clusterId`: `cluster_folder_dropdown_<id>`,
-/// `style_button_<id>`, `edit_text_button_<id>`, `merge_button_<id>` and `delete_cluster_<id>`.
+/// What the user can do to one note in Edit mode: file it under a folder (a chooser sheet with a
+/// search field, see `NoteFolderSheet`), choose its style, edit its text, merge it into another
+/// note, delete it, and copy it (`note_copy_button`, when [onCopy] is given). Pure presentational
+/// widget; every action is a callback. Keys, all from the session's `clusterId`:
+/// `cluster_folder_dropdown_<id>`, `style_button_<id>`, `edit_text_button_<id>`, `merge_button_<id>`
+/// and `delete_cluster_<id>`.
 class NoteActionRow extends StatelessWidget {
   final String clusterId;
   final String folder;
@@ -23,6 +26,9 @@ class NoteActionRow extends StatelessWidget {
   final VoidCallback onMerge;
   final VoidCallback onDelete;
 
+  /// Copies the note as plain text; null leaves the copy control out.
+  final VoidCallback? onCopy;
+
   const NoteActionRow({
     super.key,
     required this.clusterId,
@@ -35,6 +41,7 @@ class NoteActionRow extends StatelessWidget {
     required this.onEditText,
     required this.onMerge,
     required this.onDelete,
+    this.onCopy,
   });
 
   @override
@@ -44,30 +51,17 @@ class NoteActionRow extends StatelessWidget {
       runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Container(
+        _ActionChip(
           key: Key('cluster_folder_dropdown_$clusterId'),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(AppColors.badgeRadius),
-            border: Border.all(color: AppColors.borderSubtle),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: folder,
-              dropdownColor: AppColors.surfaceElevated,
-              isDense: true,
-              icon: const Icon(Icons.arrow_drop_down, size: 16, color: AppColors.accentAction),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              // A session keeps its folder even when it is no longer in the list.
-              items: [
-                for (final f in {...folderNames, folder}) DropdownMenuItem(value: f, child: Text(f)),
-              ],
-              onChanged: (newFolder) {
-                if (newFolder != null && newFolder != folder) onFolderChanged(newFolder);
-              },
-            ),
-          ),
+          icon: Icons.folder_outlined,
+          label: folder,
+          trailing: Icons.arrow_drop_down,
+          color: AppColors.textSecondary,
+          tooltip: 'Move to folder',
+          onTap: () async {
+            final chosen = await NoteFolderSheet.show(context, current: folder, folderNames: folderNames);
+            if (chosen != null && chosen != folder) onFolderChanged(chosen);
+          },
         ),
         _ActionChip(
           key: Key('style_button_$clusterId'),
@@ -103,6 +97,20 @@ class NoteActionRow extends StatelessWidget {
           tooltip: 'Delete Cluster',
           onTap: onDelete,
         ),
+        if (onCopy != null)
+          Tooltip(
+            message: 'Copy note',
+            child: InkWell(
+              key: const Key('note_copy_button'),
+              borderRadius: BorderRadius.circular(AppColors.badgeRadius),
+              onTap: onCopy,
+              child: const SizedBox(
+                width: 32,
+                height: 32,
+                child: Icon(Icons.copy_outlined, size: 16, color: AppColors.textSecondary),
+              ),
+            ),
+          ),
       ],
     );
   }

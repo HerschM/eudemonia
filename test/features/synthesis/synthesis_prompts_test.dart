@@ -219,4 +219,32 @@ void main() {
       expect(thoughtCoverage('', 'anything'), 1);
     });
   });
+
+  group('long thoughts judged stretch by stretch', () {
+    // Every word distinctive: the numbers 1000, 1001, ...
+    String numbers(int from, int to) => [for (var i = from; i < to; i++) '${1000 + i}'].join(' ');
+
+    test('a note that keeps every stretch of a long thought passes', () {
+      final thought = numbers(0, 464);
+      expect(longThoughtsWithMissingStretch(numbers(0, 464), [thought]), isEmpty);
+    });
+
+    test('a note that drops the second half of a long thought leaves out a stretch, though it passes as a whole', () {
+      final thought = numbers(0, 464);
+      final note = numbers(0, 232);
+      expect(thoughtsMissingFrom(note, [thought]), isEmpty, reason: 'half the words: coverage 0.5');
+      expect(longThoughtsWithMissingStretch(note, ['Short thought here today.', thought]), [2]);
+    });
+
+    test('stretches are about 100 words: a dropped final 100 words is found, a dropped final 40 is not', () {
+      final thought = numbers(0, 300);
+      expect(longThoughtsWithMissingStretch(numbers(0, 200), [thought]), [1]);
+      expect(longThoughtsWithMissingStretch(numbers(0, 260), [thought]), isEmpty);
+    });
+
+    test('a thought under longThoughtWords words is judged only as a whole, as before', () {
+      expect(longThoughtsWithMissingStretch(numbers(0, 40), [numbers(0, 149)]), isEmpty);
+      expect(longThoughtsWithMissingStretch(numbers(0, 40), [numbers(0, 150)]), [1]);
+    });
+  });
 }

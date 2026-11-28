@@ -47,6 +47,8 @@ class AudioQueueService {
   /// a restart the inbox scan completes the move before the worker starts.
   final Set<String> _awaitingFile = {};
 
+  bool _disposed = false;
+
   AudioQueueService(
     this._sttService,
     this._notesRepo,
@@ -171,6 +173,9 @@ class AudioQueueService {
   }
 
   void _notifyState() {
+    // Work that finishes after the owner is gone has nobody to tell (its callbacks read a
+    // disposed provider).
+    if (_disposed) return;
     _onQueueChanged?.call(pendingCount, failedCount);
     _onItemsChanged?.call(List.unmodifiable(_items));
   }
@@ -202,6 +207,15 @@ class AudioQueueService {
       }
     }
     return _sequenceHighWater[key] = highWater + 1;
+  }
+
+  /// Takes the next daily sequence number of [day] for a thought that does not pass through the
+  /// queue (a written note). Voice and written thoughts share this one counter, so a number
+  /// given here is never given to a recording.
+  Future<int> reserveSequenceNumber(DateTime day) async {
+    // Hydration brings back the numbers of recordings still waiting.
+    await loadFromStorage();
+    return _nextSequenceNumber(day);
   }
 
   /// Queues a finished recording. [recordedAt] is when it was spoken (defaults to now); the
@@ -382,10 +396,10 @@ class AudioQueueService {
 
     await _saveToStorage();
     _notifyState();
-    _onNoteSaved?.call();
+    if (!_disposed) _onNoteSaved?.call();
   }
 
-  void dispose() {}
+  void dispose() => _disposed = true;
 }
 
 class PendingQueueCountNotifier extends Notifier<int> {

@@ -42,7 +42,7 @@ class ModelSetupView extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
           child: Text(
-            'Turns your recordings into text. Choose one.',
+            'Turns your recordings into text.',
             style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textSecondary),
           ),
         ),

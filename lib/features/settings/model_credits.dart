@@ -4,11 +4,6 @@ import 'package:flutter/foundation.dart';
 /// Short attribution paragraphs, not full licence texts.
 const List<({String package, String text})> modelCredits = [
   (
-    package: 'Parakeet TDT 0.6b v3 (speech model)',
-    text: 'NVIDIA. Licensed under Creative Commons Attribution 4.0 (CC-BY-4.0). '
-        'Converted for on-device use by the sherpa-onnx project.',
-  ),
-  (
     package: 'Parakeet TDT 0.6b v2 (speech model)',
     text: 'NVIDIA. Licensed under Creative Commons Attribution 4.0 (CC-BY-4.0). '
         'Converted for on-device use by the sherpa-onnx project.',

@@ -17,7 +17,7 @@ import 'package:eudemonia/features/theme/widgets/clipboard_copy.dart';
 import '../capture/capture_test_doubles.dart';
 import '../settings/fake_permission_gateway.dart';
 
-/// The record capsule lives in the navigation shell: on both tabs, and never under a SnackBar.
+/// The record bubble lives in the shell's bottom row: on both tabs, and never under a SnackBar.
 void main() {
   const channel = MethodChannel('com.eudemonia/hardware_buttons');
 
@@ -76,7 +76,8 @@ void main() {
   testWidgets('the capsule shows on Capture and on Synthesis', (tester) async {
     await pumpShell(tester);
     expect(find.byKey(const Key('floating_capture_button')), findsOneWidget);
-    expect(find.text('Tap to capture'), findsOneWidget);
+    // User decision 7 (2026-11-28): the `Tap to capture` text is gone, only the mic symbol stays.
+    expect(find.text('Tap to capture'), findsNothing);
 
     await openSynthesis(tester);
     expect(find.byKey(const Key('floating_capture_button')), findsOneWidget, reason: 'the same capsule, still there');
@@ -92,7 +93,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(native.state.isRecording, isTrue);
     expect(find.byKey(const Key('floating_capture_button_active')), findsOneWidget);
-    expect(find.text('00:00 • Tap to Stop'), findsOneWidget, reason: 'native reported no limit: elapsed time only');
+    // User decision 13 (2026-11-28): `00:00 • Tap to Stop` became the timer text in the middle bubble.
+    expect(find.text('00:00'), findsOneWidget, reason: 'native reported no limit: elapsed time only');
 
     await tester.tap(find.byKey(const Key('floating_capture_button_active')));
     await tester.pump();
@@ -108,7 +110,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('00:00 / 05:00 • Tap to Stop'), findsOneWidget);
+    // User decision 13 (2026-11-28): the timer in the middle bubble, `00:00 / 05:00` with the limit.
+    expect(find.text('00:00 / 05:00'), findsOneWidget);
   });
 
   testWidgets('the capsule state carries over when the tab changes', (tester) async {

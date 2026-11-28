@@ -61,6 +61,8 @@ void main() {
     final engine = LlamaIsolateEngine(const LLMConfig(kvCacheMaxSize: 4096), null, _library!);
     await engine.load(_model!);
     final rejections = <Map<String, Object?>>[];
+    // Every raw reply in turn order, so a rejected one can be read afterwards.
+    final replies = <Map<String, Object?>>[];
     var turns = 0;
     var promptTokens = 0;
     var reusedTokens = 0;
@@ -76,6 +78,7 @@ void main() {
           promptTokens += done.promptTokens;
           reusedTokens += done.reusedPromptTokens;
           outputTokens += done.outputTokens;
+          replies.add({'promptTokens': done.promptTokens, 'outputTokens': done.outputTokens, 'text': done.text});
           return (text: done.text, hitOutputCap: done.hitOutputCap);
         },
         onRejected: (kind, ids, reason) => rejections.add({'kind': kind, 'thoughts': ids, 'reason': reason}),
@@ -121,6 +124,7 @@ void main() {
         'summary': summary,
         'unfiled': organised.failedThoughtIds,
         'rejections': rejections,
+        'replies': replies,
         'sessions': sessions,
       }));
       // ignore: avoid_print
