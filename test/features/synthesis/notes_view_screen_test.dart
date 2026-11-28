@@ -407,7 +407,7 @@ void main() {
       expect(stored('a').isHandEdited, isTrue);
       expect(find.text('My own words.'), findsOneWidget);
       expect(find.byKey(const Key('hand_edited_notice_a')), findsOneWidget);
-      expect(find.text('My title'), findsNWidgets(2), reason: 'the row title follows the edit');
+      expect(find.text('My title'), findsOneWidget, reason: 'the row title follows the edit; the body does not repeat it');
       expect(runner.runs, 0, reason: 'a hand edit starts no run');
       await unmount(tester);
     });
@@ -450,9 +450,29 @@ void main() {
       await pumpScreen(tester, [_note('a', '#S-01', _at(0, 9)), _note('b', '#S-02', _at(0, 11))], prefs: openEditPrefs);
 
       await tapAndSettle(tester, find.byKey(const Key('delete_cluster_a')));
+      await tapAndSettle(tester, find.byKey(const Key('confirm_delete_button')));
 
       expect(container.read(synthesisRepositoryProvider).map((c) => c.clusterId), ['b']);
       expect(find.byKey(const Key('note_row_a')), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('Delete asks first, naming the note and what happens to its thoughts; Cancel keeps it', (tester) async {
+      await pumpScreen(tester, [_note('a', '#S-01', _at(0, 9)), _note('b', '#S-02', _at(0, 11))], prefs: openEditPrefs);
+
+      await tapAndSettle(tester, find.byKey(const Key('delete_cluster_a')));
+      expect(find.text('Delete note #S-01 "Flat visit"?'), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('confirm_delete_consequence'))).data,
+        'Its 2 thoughts stay in Capture and become ready for Synthesis again.',
+      );
+      expect(find.byKey(const Key('confirm_delete_button')), findsOneWidget, reason: 'one dialog only');
+      expect(container.read(synthesisRepositoryProvider), hasLength(2), reason: 'nothing deleted yet');
+
+      await tapAndSettle(tester, find.byKey(const Key('confirm_delete_cancel')));
+      expect(find.byKey(const Key('confirm_delete_button')), findsNothing);
+      expect(container.read(synthesisRepositoryProvider), hasLength(2));
+      expect(find.byKey(const Key('note_row_a')), findsOneWidget);
       await unmount(tester);
     });
 
@@ -612,6 +632,93 @@ void main() {
       expect(find.byKey(const Key('synthesis_filter_badge')), findsNothing);
       expect(find.byKey(const Key('note_row_w1')), findsOneWidget);
       await unmount(tester);
+    });
+
+    group('the Unread and Read filters keep what they listed', () {
+      Future<void> pickFilter(WidgetTester tester, String chip) async {
+        await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+        await tester.tap(find.byKey(Key('triage_chip_$chip')));
+        await tester.pumpAndSettle();
+        await tester.tapAt(const Offset(350, 500)); // the scrim closes the panel
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('opening a note under Unread reads it, and it stays listed and open', (tester) async {
+        await pumpScreen(tester, notes);
+        await pickFilter(tester, 'unread');
+        expect(find.byKey(const Key('note_row_w2')), findsNothing);
+
+        await openRow(tester, 'w1');
+
+        expect(stored('w1').isUnread, isFalse);
+        expect(find.byKey(const Key('note_row_w1')), findsOneWidget, reason: 'it did not vanish');
+        expect(find.text('I liked the flat.'), findsOneWidget, reason: 'and it opened');
+        expect(find.byKey(const Key('unread_dot_w1')), findsNothing, reason: 'its dot dissolved');
+        expect(find.byKey(const Key('note_row_w2')), findsNothing, reason: 'a read note was never listed under Unread');
+        await unmount(tester);
+      });
+
+      testWidgets('the panel keeps showing the true counts while a read note stays listed', (tester) async {
+        await pumpScreen(tester, notes);
+        await pickFilter(tester, 'unread');
+        await openRow(tester, 'w1');
+
+        await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+        expect(tester.widget<Text>(find.byKey(const Key('folder_panel_all_notes_count'))).data, '4');
+        expect(
+          tester.widget<Text>(find.descendant(
+              of: find.byKey(const Key('folder_panel_all_notes_unread')), matching: find.byType(Text))).data,
+          '1',
+          reason: 'w1 was read: one unread note is left, though w1 is still listed',
+        );
+        await unmount(tester);
+      });
+
+      testWidgets('picking a chip (even the same one) drops what was kept; new matches still appear', (tester) async {
+        await pumpScreen(tester, notes);
+        await pickFilter(tester, 'unread');
+        await openRow(tester, 'w1');
+        expect(find.byKey(const Key('note_row_w1')), findsOneWidget);
+
+        await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+        await tester.tap(find.byKey(const Key('triage_chip_unread')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('note_row_w1')), findsNothing, reason: 'the same chip again refreshes the list');
+        expect(find.byKey(const Key('note_row_g1')), findsOneWidget);
+
+        // A note read while it is listed stays.
+        container.read(synthesisRepositoryProvider.notifier).markClusterAsRead('g1');
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('note_row_g1')), findsOneWidget, reason: 'kept after being read');
+        await unmount(tester);
+      });
+
+      testWidgets('changing folder drops what was kept', (tester) async {
+        await pumpScreen(tester, notes);
+        await pickFilter(tester, 'unread');
+        await openRow(tester, 'w1');
+
+        await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+        await tapAndSettle(tester, find.byKey(const Key('folder_panel_row_Garden')));
+        await tapAndSettle(tester, find.byKey(const Key('synthesis_folder_button')));
+        await tapAndSettle(tester, find.byKey(const Key('folder_panel_all_notes')));
+
+        expect(find.byKey(const Key('note_row_w1')), findsNothing);
+        expect(find.byKey(const Key('note_row_g1')), findsOneWidget);
+        await unmount(tester);
+      });
+
+      testWidgets('under Read a note that turns out unread is not listed, and one read meanwhile stays', (tester) async {
+        await pumpScreen(tester, notes);
+        await pickFilter(tester, 'read');
+        expect(find.byKey(const Key('note_row_w2')), findsOneWidget);
+        expect(find.byKey(const Key('note_row_w1')), findsNothing);
+
+        container.read(synthesisRepositoryProvider.notifier).markClusterAsRead('w1');
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('note_row_w1')), findsOneWidget, reason: 'new matches appear');
+        await unmount(tester);
+      });
     });
 
     testWidgets('the scrim and the back button close it', (tester) async {

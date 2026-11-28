@@ -4,7 +4,6 @@ import 'package:eudemonia/features/capture/capture_inbox_ingestor.dart';
 import 'package:eudemonia/features/capture/native_capture_channel.dart';
 import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/home/main_navigation_shell.dart';
-import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/application/model_settings.dart';
 import 'package:eudemonia/features/models/data/model_files_channel.dart';
 import 'package:eudemonia/features/models/domain/model_catalogue.dart';
@@ -49,7 +48,7 @@ class _CountingRunner implements SynthesisRunner {
 
 void main() {
   const hardwareChannel = MethodChannel('com.eudemonia/hardware_buttons');
-  const speech = ModelCatalogue.speech;
+  const speech = ModelCatalogue.parakeetV3;
   const big = ModelCatalogue.qwen3_4b;
 
   late FakeModelFilesChannel files;
@@ -69,7 +68,6 @@ void main() {
   List<Override> modelOverrides() => [
         modelFilesChannelProvider.overrideWithValue(files),
         modelSettingsStoreProvider.overrideWithValue(store),
-        includeCandidateModelsProvider.overrideWithValue(false),
       ];
 
   Future<void> settle(WidgetTester tester) async {
@@ -128,6 +126,19 @@ void main() {
 
       expect(find.text('Downloading speech model… 45%'), findsOneWidget);
       expect(find.byKey(const Key('capture_speech_model_setup')), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('two speech models downloaded and none chosen: the banner still asks, and choosing one hides it', (tester) async {
+      files.setModel(speech, ModelFileState.ready);
+      files.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
+      await pumpCapture(tester);
+      expect(find.text('Speech model needed to turn recordings into text.'), findsOneWidget);
+      await unmount(tester);
+
+      store.stored = const ModelSettings(setupShown: true, selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
+      await pumpCapture(tester);
+      expect(find.byKey(const Key('capture_speech_model_banner')), findsNothing);
       await unmount(tester);
     });
 
@@ -231,9 +242,38 @@ void main() {
       files.setModel(big, ModelFileState.ready);
       await pumpSettings(tester);
 
-      expect(find.text('Speech model · Ready'), findsOneWidget);
+      expect(find.text('Speech model · Parakeet v3 (25 languages)'), findsOneWidget);
       expect(find.text('Writing model · Qwen3 4B'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await unmount(tester);
+    });
+
+    testWidgets('names the chosen model, v2 included', (tester) async {
+      files.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
+      await pumpSettings(tester);
+
+      expect(find.text('Speech model · Parakeet v2 (English)'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'no overflow at 360 dp');
+      await unmount(tester);
+    });
+
+    testWidgets('two downloaded and none chosen reads Not chosen', (tester) async {
+      files.setModel(speech, ModelFileState.ready);
+      files.setModel(ModelCatalogue.parakeetV2, ModelFileState.ready);
+      await pumpSettings(tester);
+
+      expect(find.text('Speech model · Not chosen'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('a chosen model that is downloading shows its progress', (tester) async {
+      store.stored = const ModelSettings(setupShown: true, selectedSpeechModelId: 'parakeet-tdt-0.6b-v2-int8');
+      final v2 = ModelCatalogue.parakeetV2;
+      files.setFile(v2.files[0].relativePath, ModelFileState.running,
+          downloaded: v2.files[0].sizeBytes ~/ 2, total: v2.files[0].sizeBytes);
+      await pumpSettings(tester);
+
+      expect(find.textContaining('Speech model · Downloading'), findsOneWidget);
       await unmount(tester);
     });
   });

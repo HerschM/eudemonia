@@ -10,6 +10,9 @@ class ModelSettings {
   /// Id of the language model Synthesis uses, or `null` when none is chosen.
   final String? selectedLanguageModelId;
 
+  /// Id of the speech model that transcribes recordings, or `null` when none is chosen.
+  final String? selectedSpeechModelId;
+
   /// Download only on Wi-Fi (the default); `false` also allows mobile data.
   final bool wifiOnly;
 
@@ -21,6 +24,7 @@ class ModelSettings {
 
   const ModelSettings({
     this.selectedLanguageModelId,
+    this.selectedSpeechModelId,
     this.wifiOnly = true,
     this.setupShown = false,
     this.loaded = false,
@@ -29,12 +33,15 @@ class ModelSettings {
   ModelSettings copyWith({
     String? selectedLanguageModelId,
     bool clearSelection = false,
+    String? selectedSpeechModelId,
+    bool clearSpeechSelection = false,
     bool? wifiOnly,
     bool? setupShown,
     bool? loaded,
   }) =>
       ModelSettings(
         selectedLanguageModelId: clearSelection ? null : (selectedLanguageModelId ?? this.selectedLanguageModelId),
+        selectedSpeechModelId: clearSpeechSelection ? null : (selectedSpeechModelId ?? this.selectedSpeechModelId),
         wifiOnly: wifiOnly ?? this.wifiOnly,
         setupShown: setupShown ?? this.setupShown,
         loaded: loaded ?? this.loaded,
@@ -50,6 +57,7 @@ abstract class ModelSettingsStore {
 
 class SharedPreferencesModelSettingsStore implements ModelSettingsStore {
   static const _selectedKey = 'models.selectedLanguageModelId';
+  static const _selectedSpeechKey = 'models.selectedSpeechModelId';
   static const _wifiOnlyKey = 'models.wifiOnly';
   static const _setupShownKey = 'models.setupShown';
 
@@ -58,6 +66,7 @@ class SharedPreferencesModelSettingsStore implements ModelSettingsStore {
     final prefs = await SharedPreferences.getInstance();
     return ModelSettings(
       selectedLanguageModelId: prefs.getString(_selectedKey),
+      selectedSpeechModelId: prefs.getString(_selectedSpeechKey),
       wifiOnly: prefs.getBool(_wifiOnlyKey) ?? true,
       setupShown: prefs.getBool(_setupShownKey) ?? false,
       loaded: true,
@@ -72,6 +81,12 @@ class SharedPreferencesModelSettingsStore implements ModelSettingsStore {
       await prefs.remove(_selectedKey);
     } else {
       await prefs.setString(_selectedKey, selected);
+    }
+    final selectedSpeech = settings.selectedSpeechModelId;
+    if (selectedSpeech == null) {
+      await prefs.remove(_selectedSpeechKey);
+    } else {
+      await prefs.setString(_selectedSpeechKey, selectedSpeech);
     }
     await prefs.setBool(_wifiOnlyKey, settings.wifiOnly);
     await prefs.setBool(_setupShownKey, settings.setupShown);
@@ -109,6 +124,10 @@ class ModelSettingsNotifier extends Notifier<ModelSettings> {
   void selectLanguageModel(String id) => _update(state.copyWith(selectedLanguageModelId: id));
 
   void clearSelection() => _update(state.copyWith(clearSelection: true));
+
+  void selectSpeechModel(String id) => _update(state.copyWith(selectedSpeechModelId: id));
+
+  void clearSpeechSelection() => _update(state.copyWith(clearSpeechSelection: true));
 
   void setWifiOnly(bool value) => _update(state.copyWith(wifiOnly: value));
 

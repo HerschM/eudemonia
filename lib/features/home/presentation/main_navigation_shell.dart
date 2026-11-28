@@ -2,36 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/thinking_indicator.dart';
+import 'package:eudemonia/features/home/application/pipeline_status.dart';
 import 'package:eudemonia/features/home/application/shell_state.dart';
-import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
-import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/application/model_settings.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_screen.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
-import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
 import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_screen.dart';
 import 'package:eudemonia/features/home/presentation/pipeline_hud_modal.dart';
-
-/// Live memory line for the Pipeline HUD, built from an OS reading taken when the HUD opens.
-String describePipelineMemory({required bool modelsLoaded, SystemTelemetry? telemetry}) {
-  final parts = <String>[modelsLoaded ? 'AI models loaded' : 'AI models unloaded'];
-  final appMemory = telemetry?.appMemoryLabel;
-  final deviceMemory = telemetry?.deviceMemoryLabel;
-  if (appMemory != null) parts.add('App memory $appMemory');
-  if (deviceMemory != null) parts.add('Device $deviceMemory');
-  if (appMemory == null && deviceMemory == null) parts.add('live memory reading unavailable');
-  return parts.join(' • ');
-}
+import 'package:eudemonia/features/home/presentation/shell_capture_capsule.dart';
 
 class MainNavigationShell extends ConsumerStatefulWidget {
-  final int initialIndex;
+  /// The tab shown first. When null the shell opens on Synthesis if at least one synthesis note
+  /// exists, else on Capture (a new user has nothing to read yet).
+  final int? initialIndex;
 
-  const MainNavigationShell({super.key, this.initialIndex = 0});
+  const MainNavigationShell({super.key, this.initialIndex});
 
   @override
   ConsumerState<MainNavigationShell> createState() => _MainNavigationShellState();
@@ -41,14 +31,26 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  /// False only while the start tab waits for the stored synthesis notes to load (see
+  /// [_decideStartTab]); the shell then shows an empty page instead of a tab it may have to leave.
+  bool _startTabDecided = true;
+
   @override
   void initState() {
     super.initState();
+    final explicit = widget.initialIndex;
+    final hasNotes = ref.read(synthesisRepositoryProvider).isNotEmpty;
     _tabController = TabController(
       length: ShellTab.values.length,
       vsync: this,
-      initialIndex: widget.initialIndex,
+      initialIndex: explicit ?? (hasNotes ? ShellTab.synthesis.index : ShellTab.capture.index),
     );
+    if (explicit == null && !hasNotes) {
+      // Stored sessions load asynchronously and none are here yet: decide once they have, before
+      // the first tab is drawn, so there is never a visible jump between tabs.
+      _startTabDecided = false;
+      ref.read(synthesisRepositoryProvider.notifier).hydrated.whenComplete(_decideStartTab);
+    }
     // Taps, swipes and the jump from a Capture card's session number all move this one controller.
     _tabController.addListener(_publishSelectedTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -56,6 +58,14 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
       _publishSelectedTab();
       if (ref.read(shouldOfferModelSetupProvider)) _offerModelSetup();
     });
+  }
+
+  /// Opens Synthesis when stored notes turned up; either way the shell is drawn from here on.
+  void _decideStartTab() {
+    if (!mounted) return;
+    if (ref.read(synthesisRepositoryProvider).isNotEmpty) _tabController.index = ShellTab.synthesis.index;
+    setState(() => _startTabDecided = true);
+    _publishSelectedTab();
   }
 
   /// Tells the screens which tab is in front (they read thoughts only while theirs is).
@@ -75,25 +85,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
   void dispose() {
     _tabController.dispose();
     super.dispose();
-  }
-
-  void _openPipelineHud({
-    required int queueCount,
-    required int readyToClusterCount,
-    required VoidCallback onSynthesizeNow,
-    required bool modelsLoaded,
-  }) {
-    final memoryTelemetry = ref
-        .read(systemTelemetryServiceProvider)
-        .read()
-        .then((telemetry) => describePipelineMemory(modelsLoaded: modelsLoaded, telemetry: telemetry));
-    PipelineHudModal.show(
-      context,
-      captureTranscribingCount: queueCount,
-      synthesisReadyCount: readyToClusterCount,
-      onSynthesizeNow: onSynthesizeNow,
-      memoryTelemetry: memoryTelemetry,
-    );
   }
 
   void _openSettings() {
@@ -122,15 +113,14 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
     ref.listen(synthesisFocusRequestProvider, (previous, clusterId) {
       if (clusterId != null) _tabController.animateTo(ShellTab.synthesis.index);
     });
-    final synthesisBusy = ref.watch(synthesisBusyProvider);
-    final pendingQueueCount = ref.watch(pendingQueueCountProvider);
+    if (!_startTabDecided) return const Scaffold(backgroundColor: AppColors.background);
+    // The chip and the status sheet are drawn from the same picture of the pipeline.
+    final status = ref.watch(pipelineStatusProvider);
+    final synthesisBusy = status.synthesizing;
+    final pendingQueueCount = status.transcribing;
     final notesAsync = ref.watch(recentNotesProvider);
-    final rawNotesCountAsync = ref.watch(rawNotesReadyToClusterCountProvider);
     final synthesisClusters = ref.watch(synthesisRepositoryProvider);
-    final modelState = ref.watch(modelLifecycleStateProvider);
-
-    final readyToClusterCount = rawNotesCountAsync.value ?? 0;
-    final totalPipelinePending = pendingQueueCount + readyToClusterCount;
+    final totalPipelinePending = status.pending;
     final hasActivePipeline = totalPipelinePending > 0;
 
     // Unread count for Capture
@@ -140,8 +130,6 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
 
     // Unread count for Synthesis
     final totalSynthesisUnread = synthesisClusters.where((c) => c.isUnread).length;
-
-    final modelsLoaded = modelState == ModelLifecycleState.ready;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -174,11 +162,9 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
                 child: InkWell(
                   key: const Key('top_ai_pipeline_pill'),
                   borderRadius: BorderRadius.circular(AppColors.pillRadius),
-                  onTap: () => _openPipelineHud(
-                    queueCount: pendingQueueCount,
-                    readyToClusterCount: readyToClusterCount,
+                  onTap: () => PipelineHudModal.show(
+                    context,
                     onSynthesizeNow: () => startManualSynthesis(context),
-                    modelsLoaded: modelsLoaded,
                   ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -287,6 +273,10 @@ class _MainNavigationShellState extends ConsumerState<MainNavigationShell>
           ),
         ),
       ),
+      // The record capsule belongs to the shell, so it shows on both tabs; being the floating action
+      // button, a SnackBar is laid out beside it and never covers it.
+      floatingActionButton: const ShellCaptureCapsule(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       // Swiping the body moves between the stages like the bar does; each page keeps its state.
       body: TabBarView(
         controller: _tabController,

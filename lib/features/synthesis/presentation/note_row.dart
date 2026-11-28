@@ -38,6 +38,9 @@ class NoteRow extends StatelessWidget {
   final bool highlighted;
   final VoidCallback onTap;
 
+  /// Long press on the row (copies the note); null does nothing.
+  final VoidCallback? onLongPress;
+
   /// What is shown under the row while [open]; built only then.
   final Widget? body;
 
@@ -50,6 +53,7 @@ class NoteRow extends StatelessWidget {
     required this.unread,
     required this.open,
     required this.onTap,
+    this.onLongPress,
     this.folderLabel,
     this.rewriting = false,
     this.animateRewriting = false,
@@ -91,6 +95,7 @@ class NoteRow extends StatelessWidget {
               key: noteRowKey(clusterId),
               borderRadius: BorderRadius.circular(AppColors.cardRadius),
               onTap: onTap,
+              onLongPress: onLongPress,
               child: Semantics(
                 expanded: open,
                 child: ConstrainedBox(
@@ -122,8 +127,9 @@ class NoteRow extends StatelessWidget {
                             children: [
                               Text(
                                 title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                // An open note shows its whole title: its body does not repeat it.
+                                maxLines: open ? null : 1,
+                                overflow: open ? TextOverflow.visible : TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,

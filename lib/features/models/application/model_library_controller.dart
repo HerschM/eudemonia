@@ -75,21 +75,23 @@ class ModelLibraryState {
       );
 }
 
-/// Whether language models still in testing are offered; the app shows them in debug builds only.
-final includeCandidateModelsProvider = Provider<bool>((ref) => kDebugMode);
-
 /// Reads the state of the model files from native code, starts and stops their downloads and
-/// keeps the selection of the language model consistent with what is on the phone.
+/// keeps the selection of the speech and language models consistent with what is on the phone.
 ///
 /// Progress is polled once a second, only while a file is queued, running, paused or being
 /// verified; native `onChanged` events and app resumes (via [refresh]) also refresh it.
 class ModelLibraryController extends Notifier<ModelLibraryState> {
   static const Duration pollInterval = Duration(seconds: 1);
 
-  /// Called each time the speech model turns from missing to ready, so recordings that waited
-  /// for it are transcribed. Set by whoever owns the queue; a plain callback because it must
-  /// fire even when no screen is listening.
+  /// Called each time the chosen speech model turns from missing to ready, so recordings that
+  /// waited for it are transcribed. Set by whoever owns the queue; a plain callback because it
+  /// must fire even when no screen is listening.
   void Function()? onSpeechModelReady;
+
+  /// Called each time the chosen speech model changes or is cleared, so a model still in memory
+  /// is unloaded and the next transcription loads the new one. Set by whoever owns the speech
+  /// model's lifecycle; a plain callback for the same reason as [onSpeechModelReady].
+  void Function()? onSpeechSelectionChanged;
 
   Timer? _timer;
   Future<void> _chain = Future.value();
@@ -97,10 +99,7 @@ class ModelLibraryController extends Notifier<ModelLibraryState> {
 
   ModelFilesChannel get _channel => ref.read(modelFilesChannelProvider);
 
-  List<ModelSpec> get _visibleLanguageModels =>
-      ModelCatalogue.visibleLanguageModels(includeCandidates: ref.read(includeCandidateModelsProvider));
-
-  List<ModelSpec> get _trackedModels => [ModelCatalogue.speech, ..._visibleLanguageModels];
+  List<ModelSpec> get _trackedModels => [...ModelCatalogue.speechModels, ...ModelCatalogue.languageModels];
 
   @override
   ModelLibraryState build() {
@@ -146,11 +145,17 @@ class ModelLibraryController extends Notifier<ModelLibraryState> {
     if (!ref.mounted) return;
     final files = {for (final s in statuses) s.relativePath: s};
     final availability = {for (final m in models) m.id: aggregateAvailability(m, files)};
-    final speechWasReady = state.of(ModelCatalogue.speech.id).isReady;
+    final speechWasReady = _isSpeechReady();
     state = state.copyWith(loaded: true, files: files, availability: availability);
-    if (!speechWasReady && availability[ModelCatalogue.speech.id]!.isReady) onSpeechModelReady?.call();
     _syncTimer(availability.values.any((a) => a.isBusy));
     _reconcileSelection();
+    if (!speechWasReady && _isSpeechReady()) onSpeechModelReady?.call();
+  }
+
+  /// The chosen speech model is downloaded and verified.
+  bool _isSpeechReady() {
+    final spec = ModelCatalogue.byId(ref.read(modelSettingsProvider).selectedSpeechModelId);
+    return spec != null && spec.kind == ModelKind.speech && state.of(spec.id).isReady;
   }
 
   void _syncTimer(bool active) {
@@ -167,17 +172,38 @@ class ModelLibraryController extends Notifier<ModelLibraryState> {
     }
   }
 
-  /// With no language model chosen, a single downloaded one that fits is chosen for the user,
-  /// so a phone that already has the file keeps working.
+  /// With no model chosen, a single downloaded one that fits is chosen for the user, so a phone
+  /// that already has the file keeps working. Several usable models and no choice: the user picks.
+  /// The same rule holds for the speech models and for the language models.
   void _reconcileSelection() {
     final settings = ref.read(modelSettingsProvider);
     if (!settings.loaded || !state.loaded) return;
-    final current = ModelCatalogue.byId(settings.selectedLanguageModelId);
-    if (current != null && _visibleLanguageModels.contains(current)) return;
-    final usable = [for (final m in _visibleLanguageModels) if (_isUsable(m)) m];
-    if (usable.length == 1) {
-      ref.read(modelSettingsProvider.notifier).selectLanguageModel(usable.single.id);
+    final notifier = ref.read(modelSettingsProvider.notifier);
+    final language = _soleUsableWithoutChoice(ModelCatalogue.languageModels, settings.selectedLanguageModelId);
+    if (language != null) notifier.selectLanguageModel(language.id);
+    final speech = _soleUsableWithoutChoice(ModelCatalogue.speechModels, settings.selectedSpeechModelId);
+    if (speech != null) _setSpeechSelection(speech.id);
+  }
+
+  /// The one usable model of [models] when [selectedId] names none of them; `null` otherwise.
+  ModelSpec? _soleUsableWithoutChoice(List<ModelSpec> models, String? selectedId) {
+    final current = ModelCatalogue.byId(selectedId);
+    if (current != null && models.contains(current)) return null;
+    final usable = [for (final m in models) if (_isUsable(m)) m];
+    return usable.length == 1 ? usable.single : null;
+  }
+
+  /// Changes the chosen speech model (`null` clears it) and tells the owner of the loaded
+  /// model, which unloads it. Does nothing when the choice is already [id].
+  void _setSpeechSelection(String? id) {
+    final notifier = ref.read(modelSettingsProvider.notifier);
+    if (ref.read(modelSettingsProvider).selectedSpeechModelId == id) return;
+    if (id == null) {
+      notifier.clearSpeechSelection();
+    } else {
+      notifier.selectSpeechModel(id);
     }
+    onSpeechSelectionChanged?.call();
   }
 
   bool _isUsable(ModelSpec spec) =>
@@ -213,27 +239,49 @@ class ModelLibraryController extends Notifier<ModelLibraryState> {
     await _refreshStatus();
   }
 
-  /// Removes every file of [modelId]; a deleted language model stops being the selected one.
+  /// Removes every file of [modelId]; a deleted model stops being the selected one. A deleted
+  /// speech model is unloaded first, so no file is removed under a model that is in memory.
   Future<void> delete(String modelId) async {
     final spec = ModelCatalogue.byId(modelId);
     if (spec == null) return;
+    final speechWasReady = _isSpeechReady();
+    if (spec.kind == ModelKind.speech && ref.read(modelSettingsProvider).selectedSpeechModelId == modelId) {
+      _setSpeechSelection(null);
+    }
     for (final file in spec.files) {
       await _channel.delete(file.relativePath);
     }
     // Read the files first: clearing the choice re-runs the automatic choice, which must see the model gone.
     await _refreshStatus();
-    if (ref.mounted && ref.read(modelSettingsProvider).selectedLanguageModelId == modelId) {
+    if (!ref.mounted) return;
+    if (ref.read(modelSettingsProvider).selectedLanguageModelId == modelId) {
       ref.read(modelSettingsProvider.notifier).clearSelection();
     }
+    // A model left as the only usable one is chosen now rather than at the next reading.
+    _reconcileSelection();
+    if (!speechWasReady && _isSpeechReady()) onSpeechModelReady?.call();
   }
 
-  /// Makes [modelId] the language model Synthesis uses. Only a downloaded, visible language
+  /// Makes [modelId] the language model Synthesis uses. Only a downloaded language
   /// model that fits the phone can be chosen; returns whether it was.
   bool select(String modelId) {
     final spec = ModelCatalogue.byId(modelId);
     if (spec == null || spec.kind != ModelKind.language) return false;
-    if (!_visibleLanguageModels.contains(spec) || !_isUsable(spec)) return false;
+    if (!_isUsable(spec)) return false;
     ref.read(modelSettingsProvider.notifier).selectLanguageModel(modelId);
+    return true;
+  }
+
+  /// Makes [modelId] the speech model that transcribes recordings. Only a downloaded speech
+  /// model can be chosen; returns whether it was. A model already in memory is unloaded, and
+  /// recordings that waited for a model are transcribed.
+  bool selectSpeech(String modelId) {
+    final spec = ModelCatalogue.byId(modelId);
+    if (spec == null || spec.kind != ModelKind.speech) return false;
+    if (!_isUsable(spec)) return false;
+    final wasReady = _isSpeechReady();
+    _setSpeechSelection(modelId);
+    if (!wasReady && _isSpeechReady()) onSpeechModelReady?.call();
     return true;
   }
 
@@ -243,25 +291,52 @@ class ModelLibraryController extends Notifier<ModelLibraryState> {
 final modelLibraryControllerProvider =
     NotifierProvider<ModelLibraryController, ModelLibraryState>(ModelLibraryController.new);
 
-/// The speech model is complete and verified.
-final speechModelReadyProvider = Provider<bool>(
-  (ref) => ref.watch(modelLibraryControllerProvider.select((s) => s.of(ModelCatalogue.speech.id).isReady)),
-);
+/// The speech model that transcribes recordings: the chosen one, or `null` when none is chosen.
+final selectedSpeechModelProvider = Provider<ModelSpec?>((ref) {
+  final spec = ModelCatalogue.byId(ref.watch(modelSettingsProvider.select((s) => s.selectedSpeechModelId)));
+  return spec != null && spec.kind == ModelKind.speech ? spec : null;
+});
 
-/// The speech model's download state, for the Capture banner.
-final speechModelAvailabilityProvider = Provider<ModelAvailability>(
-  (ref) => ref.watch(modelLibraryControllerProvider.select((s) => s.of(ModelCatalogue.speech.id))),
-);
+/// The chosen speech model is complete and verified.
+final speechModelReadyProvider = Provider<bool>((ref) {
+  final spec = ref.watch(selectedSpeechModelProvider);
+  if (spec == null) return false;
+  return ref.watch(modelLibraryControllerProvider.select((s) => s.of(spec.id).isReady));
+});
+
+/// Where the speech model stands, for the Capture banner: the chosen model's download state.
+/// With none chosen, the transfer furthest along (never "ready": nothing is chosen to use), or
+/// absent.
+final speechModelAvailabilityProvider = Provider<ModelAvailability>((ref) {
+  final spec = ref.watch(selectedSpeechModelProvider);
+  final library = ref.watch(modelLibraryControllerProvider);
+  if (spec != null) return library.of(spec.id);
+  return furthestSpeechTransfer([for (final m in ModelCatalogue.speechModels) library.of(m.id)]);
+});
+
+/// The most active of [availabilities] (downloading, then checking, then paused, then failed),
+/// or [ModelAvailability.absent] when none of them is under way. A ready model is not under way.
+ModelAvailability furthestSpeechTransfer(Iterable<ModelAvailability> availabilities) {
+  for (final kind in const [
+    ModelAvailabilityKind.downloading,
+    ModelAvailabilityKind.verifying,
+    ModelAvailabilityKind.paused,
+    ModelAvailabilityKind.failed,
+  ]) {
+    for (final a in availabilities) {
+      if (a.kind == kind) return a;
+    }
+  }
+  return ModelAvailability.absent;
+}
 
 /// How synthesis runs with the chosen language model: its profile when the model is selected,
-/// downloaded, visible and fits the phone; `null` otherwise (Synthesis then asks for a model).
+/// downloaded and fits the phone; `null` otherwise (Synthesis then asks for a model).
 final activeSynthesisProfileProvider = Provider<SynthesisModelProfile?>((ref) {
   final selectedId = ref.watch(modelSettingsProvider.select((s) => s.selectedLanguageModelId));
   final library = ref.watch(modelLibraryControllerProvider);
-  final includeCandidates = ref.watch(includeCandidateModelsProvider);
   final spec = ModelCatalogue.byId(selectedId);
   if (spec == null || spec.kind != ModelKind.language) return null;
-  if (!ModelCatalogue.visibleLanguageModels(includeCandidates: includeCandidates).contains(spec)) return null;
   if (!library.of(spec.id).isReady || !ModelCatalogue.fitsDevice(spec, library.device.totalRamMb)) return null;
   return spec.profile;
 });

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eudemonia/features/ai_processing/llm_service.dart';
+import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 
 class FakeSession implements LlmPromptSession {
   final Completer<LlmPromptCompletion> _completion = Completer<LlmPromptCompletion>();
@@ -234,4 +235,50 @@ void main() {
       expect(engine.sessions, isEmpty);
     });
   });
+
+  group('LLMService residency for the status sheet', () {
+    test('reports loading, then loaded, then unloaded only once the weights are freed', () async {
+      final states = <ModelLifecycleState>[];
+      final gate = Completer<void>();
+      final slow = _GatedDisposeEngine(gate.future);
+      final s = LLMService(engineFactory: () => slow, onStateChanged: states.add);
+
+      await s.initialize('/fake');
+      expect(states, [ModelLifecycleState.loading, ModelLifecycleState.ready]);
+
+      final disposing = s.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(states.last, ModelLifecycleState.ready, reason: 'still in memory while it is being freed');
+      gate.complete();
+      await disposing;
+      expect(states, [ModelLifecycleState.loading, ModelLifecycleState.ready, ModelLifecycleState.unloaded]);
+    });
+
+    test('a load that fails reports unloaded', () async {
+      final states = <ModelLifecycleState>[];
+      final s = LLMService(engineFactory: () => _FailingLoadEngine(), onStateChanged: states.add);
+
+      await expectLater(s.initialize('/fake'), throwsStateError);
+
+      expect(states, [ModelLifecycleState.loading, ModelLifecycleState.unloaded]);
+      expect(s.isInitialized, isFalse);
+    });
+  });
+}
+
+class _GatedDisposeEngine extends FakeEngine {
+  final Future<void> gate;
+
+  _GatedDisposeEngine(this.gate);
+
+  @override
+  Future<void> dispose() async {
+    await gate;
+    await super.dispose();
+  }
+}
+
+class _FailingLoadEngine extends FakeEngine {
+  @override
+  Future<void> load(String modelPath) async => throw StateError('corrupt model file');
 }

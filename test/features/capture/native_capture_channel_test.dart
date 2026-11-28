@@ -48,6 +48,26 @@ void main() {
       expect(calls.map((c) => c.method), ['getState', 'start', 'stop']);
     });
 
+    test('state replies carry the recording length limit when native reports it', () async {
+      mockNative((call) async => switch (call.method) {
+            'getState' => {'isRecording': false, 'startedAtMs': null, 'maxDurationMs': 300000},
+            'start' => {'isRecording': true, 'startedAtMs': 1700000000000, 'maxDurationMs': 300000},
+            'stop' => {'isRecording': false, 'maxDurationMs': 'five minutes'},
+            _ => null,
+          });
+
+      expect(await native.getState(),
+          const NativeCaptureState(isRecording: false, maxDurationMs: 300000));
+      expect(await native.start(),
+          const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000, maxDurationMs: 300000));
+      expect((await native.stop()).maxDurationMs, isNull);
+    });
+
+    test('a state without a limit has none', () {
+      expect(NativeCaptureState.fromMap({'isRecording': true, 'startedAtMs': 1}).maxDurationMs, isNull);
+      expect(NativeCaptureState.idle.maxDurationMs, isNull);
+    });
+
     test('listPendingCaptures keeps order and skips malformed rows', () async {
       mockNative((call) async => [
             {'path': '/inbox/a.wav', 'startedAtMs': 1},
@@ -98,6 +118,16 @@ void main() {
 
       expect(states, [const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000)]);
       expect(saved.single.path, '/inbox/a.wav');
+    });
+
+    test('onStateChanged carries the recording length limit', () async {
+      final states = <NativeCaptureState>[];
+      native.setListeners(onStateChanged: states.add, onCaptureSaved: (_) {});
+
+      await sendFromNative('onStateChanged',
+          {'isRecording': true, 'startedAtMs': 1700000000000, 'maxDurationMs': 300000});
+
+      expect(states.single.maxDurationMs, 300000);
     });
 
     test('clearListeners stops delivery', () async {

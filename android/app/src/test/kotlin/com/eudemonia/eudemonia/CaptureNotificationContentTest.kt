@@ -19,6 +19,7 @@ class CaptureNotificationContentTest {
         assertEquals(ForegroundServiceCoordinator.ACTION_START_CAPTURE, content.action)
         assertFalse(content.usesChronometer)
         assertNull(content.whenMs)
+        assertNull(content.chronometerFormat)
     }
 
     @Test
@@ -31,6 +32,14 @@ class CaptureNotificationContentTest {
         assertEquals(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE, content.action)
         assertTrue(content.usesChronometer)
         assertEquals(1234L, content.whenMs)
+    }
+
+    @Test
+    fun recordingTimerShowsTheLimit() {
+        val content = CaptureNotificationContent.from(CaptureState(isRecording = true, startedAtMs = 1234L))
+
+        assertEquals("Recording %s / 5:00", content.chronometerFormat)
+        assertEquals("Recording 1:30 / 5:00", String.format(content.chronometerFormat!!, "1:30"))
     }
 
     @Test

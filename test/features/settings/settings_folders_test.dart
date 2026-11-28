@@ -385,6 +385,50 @@ void main() {
     });
   });
 
+  group('folder editor guidance (TASK-093, user review 2026-11-27)', () {
+    testWidgets('the description field says Synthesis reads it to place notes and asks for the user\'s own words',
+        (tester) async {
+      await pumpFolders(tester);
+      await openRow(tester, 'Work');
+
+      expect(
+        tester.widget<Text>(find.byKey(const Key('folder_description_help'))).data,
+        'Synthesis reads this description to decide which notes belong in this folder. Add your own words — topics, people, projects — to make it more accurate.',
+      );
+      expect(folderDescriptionHelp, contains('Add your own words'));
+    });
+
+    testWidgets('a new folder\'s editor shows it too; Uncategorized, which has no description field, does not',
+        (tester) async {
+      await pumpFolders(tester);
+      await openAdd(tester);
+      expect(find.byKey(const Key('folder_description_help')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('folder_editor_close')));
+      await tester.pumpAndSettle();
+
+      await openRow(tester, 'Uncategorized');
+      expect(find.byKey(const Key('folder_description_help')), findsNothing);
+      expect(find.text('Catches whatever fits no other folder. It cannot be changed.'), findsOneWidget);
+    });
+
+    testWidgets('every choice of the default-style picker carries its description under its name', (tester) async {
+      await pumpFolders(tester);
+      await openRow(tester, 'Work');
+      await tester.ensureVisible(find.byKey(const Key('folder_style_field')));
+      await tester.tap(find.byKey(const Key('folder_style_field')));
+      await tester.pumpAndSettle();
+
+      for (final s in noteStyles) {
+        final label = find.text(s.label).last;
+        final description = find.text(s.description).last;
+        expect(description, findsOneWidget, reason: s.id);
+        expect(tester.getTopLeft(description).dy, greaterThan(tester.getTopLeft(label).dy), reason: '${s.id}: under the name');
+        expect(tester.getTopLeft(description).dx, tester.getTopLeft(label).dx, reason: '${s.id}: same column');
+      }
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('messages', () {
     test('every refusal has its own plain message', () {
       final messages = {

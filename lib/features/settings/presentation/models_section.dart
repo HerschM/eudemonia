@@ -14,6 +14,9 @@ class OnDeviceModelsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final speech = ref.watch(speechModelAvailabilityProvider);
+    final selectedSpeech = ref.watch(selectedSpeechModelProvider);
+    final anySpeechDownloaded = ref.watch(modelLibraryControllerProvider
+        .select((s) => ModelCatalogue.speechModels.any((m) => s.of(m.id).isReady)));
     final profile = ref.watch(activeSynthesisProfileProvider);
     final writing = ModelCatalogue.languageModels.where((m) => m.profile == profile).firstOrNull;
     Widget row(Key key, String label, String value) => Material(
@@ -46,7 +49,15 @@ class OnDeviceModelsSection extends ConsumerWidget {
           padding: EdgeInsets.zero,
           child: Column(
             children: [
-              row(const Key('settings_speech_model_row'), 'Speech model', describeSpeechModelState(speech)),
+              row(
+                const Key('settings_speech_model_row'),
+                'Speech model',
+                describeSpeechModelSummary(
+                  selected: selectedSpeech,
+                  availability: speech,
+                  anyDownloaded: anySpeechDownloaded,
+                ),
+              ),
               const Divider(height: 1, color: AppColors.borderSubtle),
               row(const Key('settings_writing_model_row'), 'Writing model', writing?.displayName ?? 'Not chosen'),
             ],

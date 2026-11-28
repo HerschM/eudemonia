@@ -213,7 +213,7 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    /** Offers to add the "Record thought" tile to Quick Settings (Android 13+); false when the system cannot ask. */
+    /** Offers to add the "Record" tile to Quick Settings (Android 13+); false when the system cannot ask. */
     private fun requestAddCaptureTile(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
         return try {

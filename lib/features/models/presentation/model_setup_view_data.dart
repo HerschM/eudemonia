@@ -15,7 +15,7 @@ class ModelCardData {
   /// Why the model is greyed out; `null` when it fits.
   final String? doesNotFitMessage;
 
-  /// The model Synthesis uses.
+  /// The model in use: the one that transcribes recordings, or the one Synthesis writes with.
   final bool selected;
 
   const ModelCardData({
@@ -30,7 +30,7 @@ class ModelCardData {
 class ModelSetupData {
   /// The phone has not been read yet; the writing models are not shown until it has.
   final bool loading;
-  final ModelCardData speech;
+  final List<ModelCardData> speechModels;
   final List<ModelCardData> languageModels;
 
   /// Set instead of the list when no language model fits this phone.
@@ -39,7 +39,7 @@ class ModelSetupData {
 
   const ModelSetupData({
     required this.loading,
-    required this.speech,
+    required this.speechModels,
     required this.languageModels,
     required this.noModelFitsMessage,
     required this.wifiOnly,
@@ -49,9 +49,9 @@ class ModelSetupData {
     required bool loading,
     required int? totalRamMb,
     required ModelAvailability Function(String modelId) availabilityOf,
+    required String? selectedSpeechModelId,
     required String? selectedLanguageModelId,
     required bool wifiOnly,
-    required bool includeCandidates,
   }) {
     // A transfer the system has not started yet is, with Wi-Fi only, waiting for Wi-Fi.
     ModelAvailability shown(String modelId) {
@@ -63,9 +63,12 @@ class ModelSetupData {
       return a;
     }
 
-    final visible = ModelCatalogue.visibleLanguageModels(includeCandidates: includeCandidates);
+    final speechCards = [
+      for (final spec in ModelCatalogue.speechModels)
+        ModelCardData(spec: spec, availability: shown(spec.id), selected: spec.id == selectedSpeechModelId),
+    ];
     final cards = [
-      for (final spec in visible)
+      for (final spec in ModelCatalogue.languageModels)
         ModelCardData(
           spec: spec,
           availability: shown(spec.id),
@@ -76,10 +79,10 @@ class ModelSetupData {
         ),
     ];
     final anyFits = cards.any((c) => c.fits);
-    final smallest = ModelCatalogue.smallestRequirementGb(visible);
+    final smallest = ModelCatalogue.smallestRequirementGb(ModelCatalogue.languageModels);
     return ModelSetupData(
       loading: loading,
-      speech: ModelCardData(spec: ModelCatalogue.speech, availability: shown(ModelCatalogue.speech.id)),
+      speechModels: speechCards,
       languageModels: cards,
       noModelFitsMessage: !anyFits && smallest != null ? describeNoModelFits(smallest) : null,
       wifiOnly: wifiOnly,

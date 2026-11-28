@@ -71,6 +71,8 @@ void main() {
     WidgetTester tester, {
     List<Note> notes = const [],
     List<SynthesisCluster> clusters = const [],
+    // These tests start on Capture; where the app opens by itself is tested in shell_start_tab_test.
+    int initialIndex = 0,
   }) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -91,7 +93,7 @@ void main() {
           activeSynthesisProfileProvider.overrideWithValue(ModelCatalogue.qwen3_4b.profile!),
           synthesisRunnerProvider.overrideWithValue(runner),
         ],
-        child: const MaterialApp(home: MainNavigationShell()),
+        child: MaterialApp(home: MainNavigationShell(initialIndex: initialIndex)),
       ),
     );
     container = ProviderScope.containerOf(tester.element(find.byType(MainNavigationShell)));

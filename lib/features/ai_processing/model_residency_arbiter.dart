@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// The two heavy on-device models that must never be in RAM together.
 enum HeavyModel { speech, language }
 
-/// Decides which heavy model may be resident. Capture (speech) always has priority.
+/// Decides which heavy model may be resident. Capture (speech) always has priority: the
+/// language model is never kept once speech is asked for, but its holder may finish the note it
+/// is writing first (see [tryAcquireLanguage]). The two are never resident together.
 class ModelResidencyArbiter {
   HeavyModel? _holder;
   Future<void> Function()? _onPreempt;
@@ -18,7 +20,8 @@ class ModelResidencyArbiter {
 
   /// Speech always wins. If language holds, invokes the callback it registered and waits until
   /// [releaseLanguage] has been called, then marks speech as holder. Idempotent when speech
-  /// already holds; concurrent callers share the same wait.
+  /// already holds; concurrent callers share the same wait. Only the caller waits (a
+  /// transcription, never the recording itself), at most for the write turn in progress.
   Future<void> acquireSpeech() {
     if (_holder == HeavyModel.speech) return Future.value();
     if (_holder == null) {
@@ -50,7 +53,9 @@ class ModelResidencyArbiter {
   }
 
   /// Returns false when speech holds (or language already holds). [onPreempt] must stop
-  /// generation, unload the language model and call [releaseLanguage].
+  /// generation, unload the language model and call [releaseLanguage]; it completes only once
+  /// the model is unloaded. A holder in a write or rewrite turn may let that turn finish and
+  /// commit before it stops (decision 2026-11-27); one that is not writing stops at once.
   bool tryAcquireLanguage({required Future<void> Function() onPreempt}) {
     if (_holder != null) return false;
     _holder = HeavyModel.language;

@@ -191,6 +191,7 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 #### FR4: On-Device Speech Recognition (STT)
 - **FR4.1**: The queue worker must transcribe audio files using an on-device Sherpa-ONNX offline recognizer (Parakeet v3 model).
 - **FR4.2**: If the audio contains no detectable speech, the system must fail gracefully with an explicit error (`No speech detected in audio recording`).
+- **FR4.3 (Long Recordings in Segments, 2026-11-27)**: a recording longer than 40 seconds is transcribed in consecutive segments cut at the quietest moment, so memory does not grow with the length of the recording and the end of the recording is never lost; a recording of 40 seconds or less is transcribed exactly as before. Measured reason: one 5-minute call took 4.1 GB on the test phone.
 
 #### FR5: On-Device LLM Pipeline (Two-Tier Post-Processing)
 - **FR5.1**: The system must run an on-device quantized LLM (Qwen-2.5 1.5B GGUF) via `llama_cpp_dart`.
@@ -237,6 +238,9 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR9.9 (Link to the Synthesized Note, user 2026-11-26)**: a thought that has been synthesized shows the number of its note; tapping it opens the Synthesis screen at that note.
 - **FR9.10 (Unread Is About Reading, user 2026-11-26)**: a thought stays unread until the user has actually seen it (tap, or a few seconds in view, FR11.10). Being synthesized does not mark a thought as read.
 - **FR9.11 (A Silent Recording Is Not a Failure, 2026-11-26)**: a recording in which nothing was heard is shown as a calm card (`Nothing was heard in this recording.`) with Play and Delete, not as a failed item.
+- **FR9.12 (Filtered Views Hold Still, user 2026-11-27)**: on Capture and on Synthesis, an item listed under the Unread or Read filter stays listed while the user remains in that view even after it is marked read; it leaves only when the user picks a filter again or leaves the view.
+- **FR9.13 (Delete Always Asks, user 2026-11-27)**: every delete asks for confirmation first and names what else changes: the note that will be deleted or rewritten with a thought, or what happens to the thoughts of a deleted note.
+- **FR9.14 (Copy, user 2026-11-27)**: thoughts and notes have a Copy control, and a long press copies the text to the clipboard (notes as plain readable text).
 
 #### FR10: Lock Screen & Notification Center Capture Trigger
 - **FR10.1**: The persistent foreground service notification must host an interactive action button: `[ 🎙️ Record Thought ]`.
@@ -245,9 +249,11 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR10.4 (Home-Screen Capture Widget, added 2026-11-26)**: The app provides a home-screen widget with one tap target: `Record thought` when idle; while recording it shows the running elapsed time and `Stop & save`. Settings offers `Add capture widget to home screen`.
 - **FR10.5 (Capture Without the App, added 2026-11-26)**: Starting or stopping a recording from the notification or the widget must never open the app or bring it in front of what the user is doing, and must work when the app's screen has been closed. The recording is saved on the device at once; it is transcribed in the background while the app's process is alive, otherwise the next time the app is opened. The start and stop haptics (FR1.3 patterns) are given natively for every way of capturing.
 - **FR10.6 (Nothing Shown Over the Lock Screen, added 2026-11-26)**: The app's screens and the user's notes are never displayed over the lock screen; only the notification with its timer and buttons is.
-- **FR10.7 (Quick Settings Tile, user 2026-11-27)**: a `Record thought` tile in Quick Settings starts and stops a recording with one swipe and one tap, also from the locked phone, without opening the app. Settings offers to add the tile.
+- **FR10.7 (Quick Settings Tile, user 2026-11-27; label shortened to `Record` on 2026-11-27 because the longer label scrolled)**: a `Record` tile in Quick Settings starts and stops a recording with one swipe and one tap, also from the locked phone, without opening the app. Settings offers to add the tile.
 - **FR10.8 (Other Sound Pauses While Recording, user 2026-11-27)**: when a recording starts, the app asks other apps to pause their sound so that music playing on the phone is not recorded with the voice; playback resumes when the recording ends. No additional permission is involved.
 - **FR10.9 (No Media-Player Style Lock-Screen Card, user 2026-11-27)**: rejected as redundant — a recording is stopped where it was started. A corner shortcut on the lock screen like Google Home's is not available to third-party apps on Pixel phones; the capture widget is marked as usable on the lock-screen widget page of recent Android versions.
+- **FR10.10 (Recording Length Limit, user 2026-11-27)**: a recording is limited to 5 minutes ("for now"); the timer shows elapsed time and the limit (`1:30 / 5:00`); at the limit the recording stops and is saved exactly like a user stop. The limit is enforced natively and works with no app screen open.
+- **FR10.11 (Record Button Everywhere, user 2026-11-27)**: the in-app record button is shown on Capture and on Synthesis and is never covered by a message. The app opens on Synthesis when at least one note exists, otherwise on Capture.
 
 #### FR11: Synthesis, Predefined Folders & Session Clustering
 - **FR11.1**: The system must automatically cluster disjointed raw notes captured within an active temporal window (e.g. 15–45 minutes) that share contextual continuity or topical affinity into a unified synthesized note.
@@ -300,6 +306,10 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR11.18 (Deleting or Editing a Thought Updates Its Note, user 2026-11-26)**: when a synthesized thought is deleted or its text edited, it is removed from (or updated in) the note's raw thoughts and the note is rewritten without waiting for a new thought; a note left with no thoughts is removed.
 - **FR11.19 (A Note Edited by Hand Belongs to the User, user 2026-11-27)**: in Edit mode the user can edit a note's text. From then on the note is never rewritten automatically: a later thought that belongs to it is written on its own and added underneath under `Added later`; deleting or editing one of its raw thoughts changes the raw list only. Choosing a style is the one action that regenerates it from the raw thoughts, after a confirmation that this replaces the user's edits. Ticking a checklist box is not an edit.
 - **FR11.20 (Synthesis Screen for Many Notes, approved by the user 2026-11-27)**: the screen is a list of note titles grouped by day (number, title, time, unread dot); a note opens in place when tapped, and several can be open. A folder panel slides in from the left when its button is tapped (never by swiping, which changes stages) and lists `All notes` and every folder with note and unread counts. A Read / Edit switch sits at the top: Read mode (default) shows only the note and a quiet link to its raw thoughts; Edit mode adds folder, style, text editing, merge, delete and the per-thought actions. A setting (`Show notes opened`) and a quick toggle show all notes opened or collapsed.
+- **FR11.21 (A Recording Does Not Discard a Note Being Written, user 2026-11-27)**: recording is always instant. When a recording arrives during a Synthesis run, the note being written is finished and saved; then the run pauses, the thought is transcribed, and the run resumes with the new thought included. A run that is still sorting thoughts into folders stops at once. The two models are never in memory together.
+- **FR11.22 (Requested Rewrites Always Happen, 2026-11-27)**: a note waiting to be rewritten (merge, moved or edited thought, style or folder change) is rewritten without further action from the user, also after the app is restarted.
+- **FR11.23 (Moved-Out Thought Takes the Folder Style, user 2026-11-27)**: a thought moved out into its own note is written in the default style of its folder.
+- **FR11.24 (Parked, user 2026-11-27)**: an automatically produced, read-only description of each folder built from its notes. The user found a version based only on note titles insufficient; to be designed later.
 
 #### FR12: Thermal & Resource-Aware Adaptive Queue Gating
 - **FR12.1**: The queue service must query Android native thermal status (`PowerManager.getThermalHeadroom()` and `OnThermalStatusChangedListener`).
@@ -332,6 +342,8 @@ Existing AI note apps (e.g., Otter, Notion AI, Whisper APIs) require uploading p
 - **FR16.4 (Only Models That Earn Their Place)**: A model is listed only if it has been measured to write notes that keep the spoken details on a phone of the class it is offered to (TASK-065). A smaller model that does not meet that bar is not listed.
 - **FR16.5 (No Model, Honest Message)**: When no listed language model fits the phone, or none has been downloaded, Synthesis says so plainly and Capture and transcription keep working. No fallback output of any kind is produced (FR5.5).
 - **FR16.6 (What the Network Is Used For)**: The network permission is used for these downloads only. No recording, transcript, note, identifier or usage data is sent anywhere.
+- **FR16.7 (Small Writing Model Listed, user 2026-11-27)**: Qwen3 1.7B is offered on phones with 6 GB of memory or more, with a quality note saying its notes are less tidy and can miss a detail.
+- **FR16.8 (Choice of Speech Model, user 2026-11-27)**: speech models are listed and chosen in the same way as writing models. Offered: Parakeet v3 (25 European languages) and Parakeet v2 (English only; clearly the most accurate for English on the user's own recordings). Only one speech model is in memory at a time. Which one is recommended to new users is not yet decided.
 
 #### FR17: Settings Organisation (User, 2026-11-26)
 - **FR17.1**: Settings opens on what the user changes most, in this order: Folders (FR11.14, with each folder's description, add, edit, rename and remove), automatic Synthesis, on-device models, the capture widget.

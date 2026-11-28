@@ -12,6 +12,8 @@ data class CaptureNotificationContent(
     val usesChronometer: Boolean,
     /** Wall-clock start of the chronometer, or null to hide the timestamp. */
     val whenMs: Long?,
+    /** Format of the running timer (`%s` is the elapsed time); null when idle. */
+    val chronometerFormat: String?,
 ) {
     companion object {
         fun from(state: CaptureState): CaptureNotificationContent =
@@ -24,6 +26,7 @@ data class CaptureNotificationContent(
                     action = ForegroundServiceCoordinator.ACTION_STOP_CAPTURE,
                     usesChronometer = true,
                     whenMs = state.startedAtMs,
+                    chronometerFormat = CaptureLimits.RECORDING_CHRONOMETER_FORMAT,
                 )
             } else {
                 CaptureNotificationContent(
@@ -34,6 +37,7 @@ data class CaptureNotificationContent(
                     action = ForegroundServiceCoordinator.ACTION_START_CAPTURE,
                     usesChronometer = false,
                     whenMs = null,
+                    chronometerFormat = null,
                 )
             }
     }

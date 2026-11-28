@@ -374,7 +374,11 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
     ];
   }
 
-  void ejectRawNoteToIndependent(String sourceClusterId, int rawNoteId) {
+  /// Moves thought [rawNoteId] out into a session of its own in the same folder. Its note is
+  /// written by the next run in [styleId] (the folder's default style, chosen by
+  /// `SessionActions.moveThoughtOut`); until then it shows the thought's text. The session it
+  /// left is flagged so its note is rewritten without it.
+  void ejectRawNoteToIndependent(String sourceClusterId, int rawNoteId, {String styleId = defaultNoteStyleId}) {
     final sourceCluster =
         state.where((c) => c.clusterId == sourceClusterId).firstOrNull;
     if (sourceCluster == null) return;
@@ -401,7 +405,8 @@ class SynthesisRepository extends Notifier<List<SynthesisCluster>> {
       sessionDuration: const Duration(minutes: 5),
       originNotes: [noteToMove],
       isExpanded: false,
-      isReprocessing: false,
+      isReprocessing: true,
+      appliedStyleId: styleId,
       isUnread: true,
       isActionExtracted: true,
     );

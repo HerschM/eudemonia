@@ -59,7 +59,7 @@ class CaptureNotificationFactory(private val context: Context) {
             views.setChronometer(
                 R.id.capture_notification_chronometer,
                 SystemClock.elapsedRealtime() - elapsed,
-                "Recording %s",
+                content.chronometerFormat,
                 true
             )
             views.setViewVisibility(R.id.capture_notification_chronometer, View.VISIBLE)
@@ -105,7 +105,7 @@ class CaptureNotificationFactory(private val context: Context) {
 
         content.text?.let { builder.setContentText(it) }
         val whenMs = content.whenMs
-        // The running timer is in the body ("Recording 0:06"); the header stays free of a second one.
+        // The running timer is in the body ("Recording 0:06 / 5:00"); the header stays free of a second one.
         if (whenMs != null) builder.setWhen(whenMs)
         builder.setUsesChronometer(false).setShowWhen(false)
         return builder.build()

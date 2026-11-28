@@ -374,7 +374,8 @@ void main() {
     testWidgets('Read mode: the formatted note and the quiet link, no edit control', (tester) async {
       await _pump(tester, SingleChildScrollView(child: body(_note())));
 
-      expect(find.text('Flat visit'), findsOneWidget);
+      // The title is the row's to show; the body does not repeat it (TASK-093, user review 2026-11-27).
+      expect(find.text('Flat visit'), findsNothing);
       expect(find.text('I liked the flat.'), findsOneWidget);
       expect(find.textContaining('*'), findsNothing);
       expect(find.text('From 2 thoughts'), findsOneWidget);

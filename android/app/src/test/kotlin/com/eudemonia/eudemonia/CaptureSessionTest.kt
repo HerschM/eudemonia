@@ -53,6 +53,26 @@ class CaptureSessionTest {
         override fun onCaptureStopped() { stops++ }
     }
 
+    /** Holds scheduled tasks until the test lets the time pass. */
+    private class FakeLimitTimer : CaptureLimitTimer {
+        inner class Scheduled(val delayMs: Long, val task: () -> Unit) {
+            var cancelled = false
+        }
+
+        val scheduled = mutableListOf<Scheduled>()
+
+        override fun schedule(delayMs: Long, task: () -> Unit): CaptureLimitTimer.Handle {
+            val entry = Scheduled(delayMs, task)
+            scheduled.add(entry)
+            return CaptureLimitTimer.Handle { entry.cancelled = true }
+        }
+
+        /** Runs every task that has not been cancelled, as if their delay had passed. */
+        fun elapse() {
+            for (entry in scheduled.toList()) if (!entry.cancelled) entry.task()
+        }
+    }
+
     private class RecordingListener : CaptureListener {
         val events = mutableListOf<Any>()
         override fun onStateChanged(state: CaptureState) { events.add(state) }
@@ -65,7 +85,9 @@ class CaptureSessionTest {
     private lateinit var haptics: FakeHaptics
     private lateinit var focus: FakeAudioFocus
     private lateinit var listener: RecordingListener
+    private lateinit var limitTimer: FakeLimitTimer
     private lateinit var session: CaptureSession
+    private var clockMs = now
 
     @Before
     fun setUp() {
@@ -74,12 +96,14 @@ class CaptureSessionTest {
         haptics = FakeHaptics()
         focus = FakeAudioFocus()
         listener = RecordingListener()
+        limitTimer = FakeLimitTimer()
         session = CaptureSession(
             audio = audio,
             haptics = haptics,
             inbox = CaptureInbox(dir),
-            clock = { now },
+            clock = { clockMs },
             mainPoster = Executor { it.run() },
+            limitTimer = limitTimer,
             audioFocus = focus,
         )
         session.addListener(listener)
@@ -184,5 +208,112 @@ class CaptureSessionTest {
         audio.startSucceeds = false
         session.start()
         assertEquals(listOf("acquire", "release"), focus.calls)
+    }
+
+    @Test
+    fun startArmsTheLimitTimerForTheMaximumLength() {
+        session.start()
+
+        assertEquals(listOf(CaptureLimits.MAX_RECORDING_MS), limitTimer.scheduled.map { it.delayMs })
+    }
+
+    @Test
+    fun failedRecorderStartArmsNoLimitTimer() {
+        audio.startSucceeds = false
+
+        session.start()
+
+        assertTrue(limitTimer.scheduled.isEmpty())
+    }
+
+    @Test
+    fun reachingTheLimitStopsAndSavesOnceLikeAUserStop() {
+        session.start()
+
+        limitTimer.elapse()
+
+        val committed = File(dir, "$now.wav")
+        val saved = SavedCapture(committed, now, audio.durationMs)
+        assertTrue(committed.exists())
+        assertFalse(File(dir, "$now.wav.part").exists())
+        assertEquals(1, audio.stopCount)
+        assertEquals(1, haptics.stops)
+        assertEquals(listOf("acquire", "release"), focus.calls)
+        assertEquals(CaptureState.IDLE, session.state)
+        assertEquals(
+            listOf(CaptureState(isRecording = true, startedAtMs = now), saved, CaptureState.IDLE),
+            listener.events,
+        )
+
+        limitTimer.elapse()
+        assertEquals(1, audio.stopCount)
+        assertEquals(1, CaptureInbox(dir).listCommitted().size)
+    }
+
+    @Test
+    fun userStopBeforeTheLimitCancelsTheTimer() {
+        session.start()
+
+        session.stop()
+
+        assertTrue(limitTimer.scheduled.single().cancelled)
+        limitTimer.elapse()
+        assertEquals(1, audio.stopCount)
+        assertEquals(1, haptics.stops)
+    }
+
+    @Test
+    fun limitFiringRightAfterAUserStopSavesOneFile() {
+        session.start()
+
+        // The limit task was already running when the user stopped, so cancelling came too late.
+        session.stop()
+        limitTimer.scheduled.single().task()
+
+        assertEquals(1, audio.stopCount)
+        assertEquals(1, haptics.stops)
+        assertEquals(1, CaptureInbox(dir).listCommitted().size)
+        assertEquals(CaptureState.IDLE, session.state)
+    }
+
+    @Test
+    fun userStopRightAfterTheLimitIsANoOp() {
+        session.start()
+        limitTimer.elapse()
+
+        assertNull(session.stop())
+
+        assertEquals(1, audio.stopCount)
+        assertEquals(1, haptics.stops)
+        assertEquals(1, CaptureInbox(dir).listCommitted().size)
+    }
+
+    @Test
+    fun startRightAfterTheLimitRecordsAsUsual() {
+        session.start()
+        limitTimer.elapse()
+        clockMs = now + CaptureLimits.MAX_RECORDING_MS
+
+        val state = session.start()
+
+        assertEquals(CaptureState(isRecording = true, startedAtMs = clockMs), state)
+        assertEquals(File(dir, "$clockMs.wav.part"), audio.target)
+        assertEquals(2, haptics.starts)
+        assertEquals(2, limitTimer.scheduled.size)
+        assertFalse(limitTimer.scheduled.last().cancelled)
+    }
+
+    @Test
+    fun aLateLimitOfAnEarlierRecordingNeverStopsTheNextOne() {
+        session.start()
+        val firstLimit = limitTimer.scheduled.single()
+        session.stop()
+        clockMs = now + 10_000
+        session.start()
+
+        firstLimit.task()
+
+        assertTrue(session.state.isRecording)
+        assertEquals(1, audio.stopCount)
     }
 }

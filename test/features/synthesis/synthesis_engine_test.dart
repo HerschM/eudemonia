@@ -257,6 +257,44 @@ void main() {
       expect(model.prompts, hasLength(2));
     });
 
+    group('a single thought longer than one write turn', () {
+      // 175 sentences of 10 words: 1750 words, 2.5 times the 700-word limit of the default profile.
+      final sentences = [for (var k = 0; k < 175; k++) 'Sentence $k has a few more words in it now.'];
+      final long = sentences.join(' ');
+      final parts = [
+        sentences.sublist(0, 70).join(' '),
+        sentences.sublist(70, 140).join(' '),
+        sentences.sublist(140).join(' '),
+      ];
+      final organised = noteStyleById(defaultNoteStyleId);
+
+      test('is written in consecutive pieces cut at sentence ends and joined in the style', () async {
+        final model = FakeModel((p, i) => ok(parts[i]));
+        final result = await SynthesisEngine(generate: model.call).write(plan([th(1, 0, long)]));
+        expect(model.prompts, [for (final part in parts) buildWritePrompt([part])]);
+        expect(result, organised.join(organised.join(parts[0], parts[1]), parts[2]));
+      });
+
+      test('keeps its place between shorter thoughts', () async {
+        final texts = ['First short thought.', ...parts, 'Last short thought.'];
+        final model = FakeModel((p, i) => ok(texts[i]));
+        final all = [th(1, 0, texts.first), th(2, 1, long), th(3, 2, texts.last)];
+        final result = await SynthesisEngine(generate: model.call).write(plan(all));
+        expect(model.prompts, [for (final text in texts) buildWritePrompt([text])]);
+        expect(result, texts.reduce(organised.join));
+      });
+
+      test('a failing piece fails the write and is reported with the thought id', () async {
+        final rejected = <String>[];
+        final model = FakeModel((p, i) => i == 1 ? ok('Too short.') : ok(parts[i]));
+        final engine =
+            SynthesisEngine(generate: model.call, onRejected: (kind, ids, reason) => rejected.add('$kind $ids'));
+        expect(await engine.write(plan([th(7, 0, long)])), isNull);
+        expect(model.prompts, hasLength(2));
+        expect(rejected, ['write [7]']);
+      });
+    });
+
     test('too short, too long or empty replies are invalid and split', () async {
       for (final bad in [words(5), words(100), '   ']) {
         final model = FakeModel((p, _) {
@@ -503,6 +541,35 @@ void main() {
       final note = await SynthesisEngine(generate: model.call, profile: structured)
           .write(styled(all, 'actionable', added: [all[1]], note: '**Old**\n\n- [ ] Call Ana.'));
       expect(note, '**Old**\n\n- [ ] Call Ana.\n\n- [ ] Buy milk.');
+    });
+  });
+
+  group('splitAtSentenceEnds', () {
+    List<String> wordsOf(String text) => text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+    test('cuts at the last sentence end that keeps a part within the limit', () {
+      expect(splitAtSentenceEnds('a b c d e. f g h i j k l? m n!', 10), ['a b c d e.', 'f g h i j k l? m n!']);
+    });
+
+    test('a sentence longer than the limit is cut at the limit and the rest runs on', () {
+      expect(splitAtSentenceEnds('one two three four five six seven. eight', 3),
+          ['one two three', 'four five six', 'seven. eight']);
+    });
+
+    test('a text within the limit is one part', () {
+      expect(splitAtSentenceEnds('Just this. And that.', 4), ['Just this. And that.']);
+    });
+
+    test('no word is dropped, duplicated or moved, and no part is over the limit', () {
+      final text = [
+        for (var k = 0; k < 60; k++) k % 7 == 0 ? '${words(k + 3)} end$k!\n' : 'sentence $k ${words(k % 5)}? '
+      ].join();
+      for (final limit in [1, 4, 25, 700]) {
+        final parts = splitAtSentenceEnds(text, limit);
+        expect(parts.expand(wordsOf).toList(), wordsOf(text), reason: 'limit $limit');
+        expect(parts.every((p) => wordsOf(p).length <= limit && wordsOf(p).isNotEmpty), isTrue,
+            reason: 'limit $limit');
+      }
     });
   });
 

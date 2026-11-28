@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
+import 'package:eudemonia/features/ai_processing/resident_model.dart';
 import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'settings_card.dart';
@@ -70,7 +71,7 @@ class _PhoneMemoryBodyState extends ConsumerState<_PhoneMemoryBody> {
 
   @override
   Widget build(BuildContext context) {
-    final areModelsLoaded = ref.watch(modelLifecycleStateProvider) == ModelLifecycleState.ready;
+    final residentModel = ref.watch(residentModelProvider);
     final telemetry = ref.watch(systemTelemetryProvider).value;
     final thermalColor = telemetry == null || telemetry.thermalStatus == null
         ? AppColors.textSecondary
@@ -116,9 +117,7 @@ class _PhoneMemoryBodyState extends ConsumerState<_PhoneMemoryBody> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    areModelsLoaded
-                        ? 'AI models loaded • inactivity eviction timer active'
-                        : 'AI models currently unloaded',
+                    describeResidentModel(residentModel),
                     style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   if (telemetry?.deviceMemoryLabel != null) ...[
@@ -140,7 +139,7 @@ class _PhoneMemoryBodyState extends ConsumerState<_PhoneMemoryBody> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: areModelsLoaded ? AppColors.accentWarning : AppColors.accentCapture,
+                color: residentModel == ResidentModel.none ? AppColors.accentCapture : AppColors.accentWarning,
               ),
             ),
           ],

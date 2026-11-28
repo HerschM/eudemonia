@@ -183,7 +183,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.textContaining('drag "Record thought" into your tiles'), findsOneWidget);
+      expect(find.textContaining('drag "Record" into your tiles'), findsOneWidget);
     });
   });
 }

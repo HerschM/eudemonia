@@ -22,7 +22,7 @@ class ChooseWritingModelCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.auto_awesome_outlined, size: 16, color: AppColors.accentAI),
+          const Icon(Icons.hub_outlined, size: 16, color: AppColors.accentAI),
           const SizedBox(width: 8),
           const Expanded(
             child: Text(

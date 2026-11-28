@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/folder_panel.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_copy.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_body.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_row.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_bar.dart';
@@ -24,6 +25,10 @@ class SynthesisView extends StatelessWidget {
   /// The selected folder; null is `All notes`.
   final String? folder;
   final SynthesisTriage triage;
+
+  /// Notes listed under the Unread or Read filter stay listed after their read state changes, so
+  /// a note being read does not vanish; the screen holds these until the filter or folder changes.
+  final Set<String> keptIds;
   final bool readMode;
   final bool panelOpen;
   final bool Function(String clusterId) isOpen;
@@ -95,6 +100,7 @@ class SynthesisView extends StatelessWidget {
     required this.onMerge,
     required this.onDelete,
     required this.onMoveOut,
+    this.keptIds = const {},
     this.highlightedId,
     this.buildAll = false,
     this.tabActive = true,
@@ -104,7 +110,7 @@ class SynthesisView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = visibleNotes(notes, folder: folder, triage: triage);
+    final visible = visibleNotes(notes, folder: folder, triage: triage, keep: keptIds);
     final visibleIds = [for (final n in visible) n.clusterId];
     final allOpen = visible.isNotEmpty && visible.every((n) => isOpen(n.clusterId));
 
@@ -130,13 +136,14 @@ class SynthesisView extends StatelessWidget {
       controller: scrollController,
       // While a note is scrolled to, all of them exist so it can be found wherever it is.
       scrollCacheExtent: buildAll ? const ScrollCacheExtent.pixels(1e7) : null,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      // The bottom padding keeps the last note clear of the floating record capsule (as on Capture).
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
       itemCount: leading.length + entries.length,
       itemBuilder: (context, index) {
         if (index < leading.length) return leading[index];
         final entry = entries[index - leading.length];
         if (entry is String) return DayHeader(label: entry);
-        return _buildRow(entry as SynthesisCluster);
+        return _buildRow(context, entry as SynthesisCluster);
       },
     );
 
@@ -176,7 +183,7 @@ class SynthesisView extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(SynthesisCluster note) {
+  Widget _buildRow(BuildContext context, SynthesisCluster note) {
     final id = note.clusterId;
     final open = isOpen(id);
     final tone = note.isReprocessing
@@ -203,6 +210,7 @@ class SynthesisView extends StatelessWidget {
           open: open,
           highlighted: highlightedId == id,
           onTap: () => onToggleNote(note),
+          onLongPress: () => copyNote(context, note),
           // A tap anywhere on an opened note that is still unread reads it (a control takes its own tap).
           body: open
               ? GestureDetector(

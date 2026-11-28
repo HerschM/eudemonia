@@ -6,10 +6,6 @@ import 'package:eudemonia/features/synthesis/domain/synthesis_model_profile.dart
 
 enum ModelKind { speech, language }
 
-/// [listed] models are offered to every user; a [candidate] has not yet been measured to keep
-/// the spoken details (FR16.4) and is shown in debug builds only.
-enum ModelListing { listed, candidate }
-
 class ModelFileSpec {
   /// Path below the app's external files directory, where the app loads the file from.
   final String relativePath;
@@ -41,9 +37,8 @@ class ModelSpec {
   /// The same requirement as printed on a phone's box ("8 GB"), for messages. A phone sold as
   /// 8 GB reports roughly 7.3-7.7 GB, which is why [minDeviceRamMb] sits below this figure.
   final int requiredNominalGb;
-  final ModelListing listing;
 
-  /// How synthesis uses the model; `null` for the speech model.
+  /// How synthesis uses the model; `null` for a speech model.
   final SynthesisModelProfile? profile;
 
   const ModelSpec({
@@ -55,57 +50,109 @@ class ModelSpec {
     required this.files,
     required this.minDeviceRamMb,
     required this.requiredNominalGb,
-    this.listing = ModelListing.listed,
     this.profile,
   });
 
   int get totalBytes => files.fold(0, (sum, f) => sum + f.sizeBytes);
 
-  bool get isCandidate => listing == ModelListing.candidate;
+  /// The folder (below the app's external files directory) that holds every file of the model:
+  /// `parakeet` for `parakeet/encoder.int8.onnx`. A file at the top level gives an empty string.
+  String get directory {
+    final path = files.first.relativePath;
+    final slash = path.lastIndexOf('/');
+    return slash < 0 ? '' : path.substring(0, slash);
+  }
 }
 
 class ModelCatalogue {
   const ModelCatalogue._();
 
-  static const String _parakeetBase =
+  static const String _parakeetV3Base =
       'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/'
       'ed5d745623472f97cfc2e6c2916ee248798fc5a8';
 
-  static const ModelSpec speech = ModelSpec(
+  static const String _parakeetV2Base =
+      'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/'
+      '84b478d541cdbf0c296a7ab5f1e20a6f8f998114';
+
+  /// Parakeet v3: 25 European languages. The first speech model Eudemonia shipped, so its files
+  /// stay in `parakeet/`.
+  static const ModelSpec parakeetV3 = ModelSpec(
     id: 'parakeet-tdt-0.6b-v3-int8',
     kind: ModelKind.speech,
-    displayName: 'Speech model',
-    qualityLine: 'Turns your recordings into text.',
+    displayName: 'Parakeet v3 (25 languages)',
+    qualityLine: '25 European languages. Good for mixed-language speakers.',
     memoryLine: 'Loaded only while transcribing',
     minDeviceRamMb: 0,
     requiredNominalGb: 0,
     files: [
       ModelFileSpec(
         relativePath: 'parakeet/encoder.int8.onnx',
-        url: '$_parakeetBase/encoder.int8.onnx',
+        url: '$_parakeetV3Base/encoder.int8.onnx',
         sha256: '1afbe69c1ffdabee94755f42e4daf1d93549131a3da11356bda84fcef0f2c479',
         sizeBytes: 652282294,
       ),
       ModelFileSpec(
         relativePath: 'parakeet/decoder.int8.onnx',
-        url: '$_parakeetBase/decoder.int8.onnx',
+        url: '$_parakeetV3Base/decoder.int8.onnx',
         sha256: '0222a86147299d4dee90edf95b6d13827edb42ad8b7c9cf0b2582f030937c0b5',
         sizeBytes: 11845274,
       ),
       ModelFileSpec(
         relativePath: 'parakeet/joiner.int8.onnx',
-        url: '$_parakeetBase/joiner.int8.onnx',
+        url: '$_parakeetV3Base/joiner.int8.onnx',
         sha256: 'cbd02f3696e9944970111fb439d9c3fd365a80374565f13f2b9c7007d253fc98',
         sizeBytes: 6355277,
       ),
       ModelFileSpec(
         relativePath: 'parakeet/tokens.txt',
-        url: '$_parakeetBase/tokens.txt',
+        url: '$_parakeetV3Base/tokens.txt',
         sha256: 'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d',
         sizeBytes: 93939,
       ),
     ],
   );
+
+  /// Parakeet v2: English only, and the most accurate of the two for English (2.0 % against
+  /// 10.5 % word error rate on 22 real recordings, 2026-11-27). Same size and memory as v3.
+  static const ModelSpec parakeetV2 = ModelSpec(
+    id: 'parakeet-tdt-0.6b-v2-int8',
+    kind: ModelKind.speech,
+    displayName: 'Parakeet v2 (English)',
+    qualityLine: 'English only. The most accurate for English.',
+    memoryLine: 'Loaded only while transcribing',
+    minDeviceRamMb: 0,
+    requiredNominalGb: 0,
+    files: [
+      ModelFileSpec(
+        relativePath: 'parakeet-v2/encoder.int8.onnx',
+        url: '$_parakeetV2Base/encoder.int8.onnx',
+        sha256: '92a10bd9c23936ea0566c29f963bc57c2a5df4261b6a8921c39abea66557ca8b',
+        sizeBytes: 652282309,
+      ),
+      ModelFileSpec(
+        relativePath: 'parakeet-v2/decoder.int8.onnx',
+        url: '$_parakeetV2Base/decoder.int8.onnx',
+        sha256: '4d097bae3bac5c96018d5293ba39f1b657296102b142affda40378f38b020f41',
+        sizeBytes: 7257753,
+      ),
+      ModelFileSpec(
+        relativePath: 'parakeet-v2/joiner.int8.onnx',
+        url: '$_parakeetV2Base/joiner.int8.onnx',
+        sha256: '77a29f3e5ac7d37074e0af465391b80f314015d5b97f0f90c6c7767f1d56f428',
+        sizeBytes: 1739080,
+      ),
+      ModelFileSpec(
+        relativePath: 'parakeet-v2/tokens.txt',
+        url: '$_parakeetV2Base/tokens.txt',
+        sha256: 'ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d',
+        sizeBytes: 9384,
+      ),
+    ],
+  );
+
+  /// The order of the list on screen.
+  static const List<ModelSpec> speechModels = [parakeetV3, parakeetV2];
 
   static const ModelSpec qwen3_4b = ModelSpec(
     id: 'qwen3-4b',
@@ -131,11 +178,10 @@ class ModelCatalogue {
     id: 'qwen3-1.7b',
     kind: ModelKind.language,
     displayName: 'Qwen3 1.7B',
-    qualityLine: 'Lighter. Keeps the details, organises less tidily.',
+    qualityLine: 'Smaller and faster, for phones with 6 GB of memory. Notes are less tidy and can miss a detail now and then.',
     memoryLine: 'Uses about 1.8 GB of memory while writing (estimate)',
     minDeviceRamMb: 5200,
     requiredNominalGb: 6,
-    listing: ModelListing.candidate,
     files: [
       ModelFileSpec(
         relativePath: 'qwen3-1.7b.gguf',
@@ -151,7 +197,7 @@ class ModelCatalogue {
   /// Largest first: the order of the list on screen.
   static const List<ModelSpec> languageModels = [qwen3_4b, qwen3_1_7b];
 
-  static const List<ModelSpec> all = [speech, qwen3_4b, qwen3_1_7b];
+  static const List<ModelSpec> all = [parakeetV3, parakeetV2, qwen3_4b, qwen3_1_7b];
 
   /// The spec with [id], or `null` when the catalogue has none.
   static ModelSpec? byId(String? id) {
@@ -161,12 +207,6 @@ class ModelCatalogue {
     }
     return null;
   }
-
-  /// The language models to show. Candidates only when [includeCandidates] (debug builds).
-  static List<ModelSpec> visibleLanguageModels({required bool includeCandidates}) => [
-        for (final m in languageModels)
-          if (includeCandidates || !m.isCandidate) m,
-      ];
 
   /// True when a phone with [totalRamMb] of memory can run [spec]. Unknown memory does not
   /// fit a model that has a requirement.

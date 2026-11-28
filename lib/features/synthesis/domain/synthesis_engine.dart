@@ -80,6 +80,35 @@ typedef SynthesisGenerate = Future<SynthesisReply> Function(String prompt, int m
 /// Reports a model reply the engine rejected: the turn kind, the thought ids of the turn and why.
 typedef SynthesisRejection = void Function(String kind, List<int> thoughtIds, String reason);
 
+/// Cuts [text] into consecutive parts of at most [wordLimit] words, at sentence ends (`.`, `?` or
+/// `!` followed by whitespace) where it can; a sentence longer than the limit is cut at the limit.
+/// The parts' words, in order, are exactly the words of [text].
+List<String> splitAtSentenceEnds(String text, int wordLimit) {
+  if (wordLimit < 1) throw ArgumentError.value(wordLimit, 'wordLimit', 'must be at least 1');
+  final parts = <String>[];
+  var current = <String>[];
+  for (final sentence in text.trim().split(RegExp(r'(?<=[.?!])\s+'))) {
+    final words = sentence.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) continue;
+    if (current.isNotEmpty && current.length + words.length > wordLimit) {
+      parts.add(current.join(' '));
+      current = [];
+    }
+    if (words.length <= wordLimit) {
+      current.addAll(words);
+      continue;
+    }
+    // Too long on its own: full parts of the limit, and the rest runs on with the next sentence.
+    var i = 0;
+    for (; i + wordLimit <= words.length; i += wordLimit) {
+      parts.add(words.sublist(i, i + wordLimit).join(' '));
+    }
+    current = words.sublist(i);
+  }
+  if (current.isNotEmpty) parts.add(current.join(' '));
+  return parts;
+}
+
 class _Session {
   final String? existingId;
   final String folder;
@@ -266,16 +295,26 @@ class SynthesisEngine {
     return _writePieces(plan.thoughts, style);
   }
 
+  /// Packs [thoughts] into pieces of at most one write turn, in order. A thought longer than one
+  /// turn is written as its own consecutive pieces, cut at sentence ends (see
+  /// [splitAtSentenceEnds]); each part keeps the thought's id and time.
   Future<String?> _writePieces(List<SynthesisThought> thoughts, NoteStyleSpec style) async {
+    final limit = profile.writeWordLimit;
     final pieces = <List<SynthesisThought>>[];
     var current = <SynthesisThought>[];
     var words = 0;
     for (final t in thoughts) {
       final w = _words(t.text);
-      if (current.isNotEmpty && words + w > profile.writeWordLimit) {
+      if (current.isNotEmpty && words + w > limit) {
         pieces.add(current);
         current = [];
         words = 0;
+      }
+      if (w > limit && style.splittable) {
+        for (final part in splitAtSentenceEnds(t.text, limit)) {
+          pieces.add([SynthesisThought(id: t.id, text: part, time: t.time)]);
+        }
+        continue;
       }
       current.add(t);
       words += w;

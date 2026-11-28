@@ -17,6 +17,7 @@ class CaptureController extends Notifier<bool> {
   static const Duration saveTimeout = Duration(seconds: 5);
 
   DateTime? _startedAt;
+  Duration? _maxDuration;
   bool _isToggling = false;
   bool _warmupRequested = false;
   Completer<AudioQueueItem?>? _saveWaiter;
@@ -28,6 +29,10 @@ class CaptureController extends Notifier<bool> {
 
   /// When the current recording began (native clock), or `null` while idle.
   DateTime? get startedAt => state ? _startedAt : null;
+
+  /// The longest a recording may run before native stops and saves it, or `null` until native
+  /// has reported it. Native reports it with every state, so it is known while idle too.
+  Duration? get maxDuration => _maxDuration;
 
   @override
   bool build() {
@@ -57,6 +62,9 @@ class CaptureController extends Notifier<bool> {
 
   void _applyNativeState(NativeCaptureState native) {
     if (!ref.mounted) return;
+    final maxDurationMs = native.maxDurationMs;
+    // A state without a limit (for example the idle fallback after an error) keeps the last one.
+    if (maxDurationMs != null) _maxDuration = Duration(milliseconds: maxDurationMs);
     if (native.isRecording) {
       _startedAt = native.startedAtMs == null
           ? (_startedAt ?? DateTime.now())

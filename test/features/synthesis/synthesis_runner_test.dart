@@ -559,15 +559,72 @@ void main() {
       expect((await notes.getAllNotes()).single.synthesisAttempts, 1);
     });
 
-    test('a recording preempts a write turn: committed sessions stay, nothing else changes', () async {
+    // Decision 2026-11-27: a write turn a recording interrupts is finished and committed first.
+    test('a recording during a write turn lets it finish and commit, then stops before the next turn', () async {
       final a = await thought('Refactor the queue.', 0);
       final b = await thought('Clean the home office.', 5);
       var writes = 0;
       final held = Completer<void>();
+      final release = Completer<void>();
       engine.responder = (p) {
         if (isOrganise(p)) return defaultReply(p);
-        if (++writes == 1) return defaultReply(p);
+        if (++writes > 1) return defaultReply(p);
         held.complete();
+        return release.future.then((_) => defaultReply(p));
+      };
+
+      final run = runner().run(manual: false);
+      await held.future;
+      final speech = lifecycle.ensureModelsLoaded(reason: 'recording');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(arbiter.holder, HeavyModel.language, reason: 'the write turn is still going');
+      expect(log, isNot(contains('stt-load')));
+      release.complete();
+
+      expect(await run, SynthesisRunResult.preempted);
+      await speech;
+      expect(writes, 1, reason: 'no turn starts once the speech model is asked for');
+      expect(sessions().single.folder, 'Work');
+      expect(sessions().single.synthesizedContent, 'Refactor the queue.');
+      expect((await reload(a)).state, ThoughtState.synthesized);
+      final rb = await reload(b);
+      expect(rb.state, ThoughtState.processed);
+      expect(rb.synthesisAttempts, 0);
+      expect(log.indexOf('llm-dispose'), lessThan(log.indexOf('stt-load')));
+      expect(arbiter.holder, HeavyModel.speech);
+      expect(lifecycle.state, ModelLifecycleState.ready);
+      expect(llm.isInitialized, isFalse);
+      expect(runningChanges, [true, false]);
+    });
+
+    test('a recording during the last write turn lets the run complete; speech loads after', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final held = Completer<void>();
+      final release = Completer<void>();
+      engine.responder = (p) {
+        if (isOrganise(p)) return defaultReply(p);
+        held.complete();
+        return release.future.then((_) => defaultReply(p));
+      };
+
+      final run = runner().run(manual: false);
+      await held.future;
+      final speech = lifecycle.ensureModelsLoaded(reason: 'recording');
+      release.complete();
+
+      expect(await run, SynthesisRunResult.completed);
+      await speech;
+      expect(sessions().single.synthesizedContent, 'Refactor the queue.');
+      expect((await reload(a)).state, ThoughtState.synthesized);
+      expect(log.indexOf('llm-dispose'), lessThan(log.indexOf('stt-load')));
+      expect(arbiter.holder, HeavyModel.speech);
+    });
+
+    test('a recording during the organise turn still stops the run at once', () async {
+      final a = await thought('Refactor the queue.', 0);
+      final held = Completer<void>();
+      engine.responder = (p) {
+        if (!held.isCompleted) held.complete();
         return null;
       };
 
@@ -576,15 +633,10 @@ void main() {
       await lifecycle.ensureModelsLoaded(reason: 'recording');
 
       expect(await run, SynthesisRunResult.preempted);
-      expect(sessions().single.folder, 'Work');
-      expect((await reload(a)).state, ThoughtState.synthesized);
-      final rb = await reload(b);
-      expect(rb.state, ThoughtState.processed);
-      expect(rb.synthesisAttempts, 0);
+      expect(engine.prompts, hasLength(1));
+      expect(sessions(), isEmpty);
+      expect((await reload(a)).state, ThoughtState.processed);
       expect(arbiter.holder, HeavyModel.speech);
-      expect(lifecycle.state, ModelLifecycleState.ready);
-      expect(llm.isInitialized, isFalse);
-      expect(runningChanges, [true, false]);
     });
 
     test('a recording during model load preempts the run once the load settles', () async {
@@ -671,22 +723,38 @@ void main() {
       expect((await store.loadAll()).single.isReprocessing, isFalse);
     });
 
-    test('a flagged session whose rewrite is preempted stays flagged for the next run', () async {
+    // Decision 2026-11-27: the rewrite turn a recording interrupts is finished and committed;
+    // the sessions not reached stay flagged for the next run.
+    test('a recording during a rewrite turn lets it finish and commit; the next flagged session waits', () async {
       final x = await thought('Plan the release.', 0, state: ThoughtState.synthesized);
+      final y = await thought('Book the venue.', 300, state: ThoughtState.synthesized);
       await storeSession(session('s1', 'Work', 'Stale.', [x], reprocessing: true));
+      await storeSession(session('s2', 'Work', 'Stale.', [y], reprocessing: true));
       final held = Completer<void>();
+      final release = Completer<void>();
       engine.responder = (p) {
+        if (held.isCompleted) return defaultReply(p);
         held.complete();
-        return null;
+        return release.future.then((_) => defaultReply(p));
       };
 
       final run = runner().run(manual: false);
       await held.future;
-      await lifecycle.ensureModelsLoaded(reason: 'recording');
+      final speech = lifecycle.ensureModelsLoaded(reason: 'recording');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(arbiter.holder, HeavyModel.language);
+      release.complete();
 
       expect(await run, SynthesisRunResult.preempted);
-      expect(sessions().single.isReprocessing, isTrue);
-      expect(sessions().single.synthesizedContent, 'Stale.');
+      await speech;
+      expect(engine.prompts, hasLength(1));
+      final rewritten = sessions().where((s) => !s.isReprocessing).toList();
+      final waiting = sessions().where((s) => s.isReprocessing).toList();
+      expect(rewritten, hasLength(1));
+      expect(rewritten.single.synthesizedContent, rewritten.single.originNotes.single.cleanedText);
+      expect(waiting, hasLength(1));
+      expect(waiting.single.synthesizedContent, 'Stale.');
+      expect(arbiter.holder, HeavyModel.speech);
     });
 
     test('a run with no thoughts waiting but a flagged session does the rewrite', () async {
@@ -720,6 +788,50 @@ void main() {
 
       expect(await first, SynthesisRunResult.completed);
       expect(r.isRunning, isFalse);
+    });
+
+    test('every run reports how it ended once it is no longer running; a refused second run does not', () async {
+      final ended = <(SynthesisRunResult, bool)>[];
+      late SynthesisRunner r;
+      final c = app();
+      r = SynthesisRunner(
+        notes: notes,
+        sessions: c.read(synthesisRepositoryProvider.notifier),
+        readSessions: () => c.read(synthesisRepositoryProvider),
+        llm: llm,
+        lifecycle: lifecycle,
+        arbiter: arbiter,
+        profile: () => activeProfile,
+        isCaptureActive: () => captureActive,
+        modelsDir: () async => '/models',
+        onRunEnded: (result) => ended.add((result, r.isRunning)),
+      );
+
+      expect(await r.run(manual: false), SynthesisRunResult.nothingToDo);
+      await thought('Refactor the queue.', 0);
+      captureActive = true;
+      expect(await r.run(manual: false), SynthesisRunResult.busy);
+      captureActive = false;
+      engine.loadGate = Completer<void>();
+      final run = r.run(manual: false);
+      expect(await r.run(manual: false), SynthesisRunResult.busy);
+      engine.loadGate!.complete();
+      expect(await run, SynthesisRunResult.completed);
+
+      expect(ended, [
+        (SynthesisRunResult.nothingToDo, false),
+        (SynthesisRunResult.busy, false),
+        (SynthesisRunResult.completed, false),
+      ]);
+    });
+
+    test('the run-end provider counts every end, so the same result twice is two changes', () {
+      final c = app();
+      final changes = <SynthesisRunResult?>[];
+      c.listen(synthesisRunEndProvider, (_, end) => changes.add(end.result));
+      c.read(synthesisRunEndProvider.notifier).ended(SynthesisRunResult.completed);
+      c.read(synthesisRunEndProvider.notifier).ended(SynthesisRunResult.completed);
+      expect(changes, [SynthesisRunResult.completed, SynthesisRunResult.completed]);
     });
   });
 
@@ -1029,6 +1141,61 @@ void main() {
       FolderDefinition(name: 'Personal', description: 'p', defaultStyleId: 'journal'),
       FolderDefinition(name: 'Uncategorized', description: 'u'),
     ];
+
+    test('a thought moved out into its own note is written in its folder\'s default style', () async {
+      final x = await thought('Plan the trip home.', 0, state: ThoughtState.synthesized);
+      final y = await thought('Call mum at home.', 10, state: ThoughtState.synthesized);
+      await storeSession(session('s1', 'Personal', 'Old.', [x, y]));
+      app().read(synthesisRepositoryProvider);
+
+      await actions(folders: styledFolders).moveThoughtOut('s1', y.id);
+
+      final moved = sessions().firstWhere((s) => s.clusterId != 's1');
+      expect(moved.folder, 'Personal');
+      expect(moved.appliedStyleId, 'journal');
+      expect(moved.isReprocessing, isTrue, reason: 'flagged at once, before the run ends');
+      expect(await runs.single, SynthesisRunResult.completed);
+      expect(engine.prompts.where((p) => p.contains(noteStyleById('journal').systemPrompt)), hasLength(1));
+      final written = sessions().firstWhere((s) => s.clusterId == moved.clusterId);
+      expect(written.originNotes.single.id, y.id);
+      expect(written.synthesizedContent, 'Call mum at home.');
+      expect(written.appliedStyleId, 'journal');
+      expect(written.isReprocessing, isFalse);
+      final source = sessions().firstWhere((s) => s.clusterId == 's1');
+      expect(source.originNotes.single.id, x.id);
+      expect(source.synthesizedContent, 'Plan the trip home.');
+      expect(source.isReprocessing, isFalse);
+      expect(notices, isEmpty);
+    });
+
+    test('a thought moved out of a folder whose default is organised is written organised', () async {
+      final x = await thought('Plan the release.', 0, state: ThoughtState.synthesized);
+      final y = await thought('Book the venue.', 10, state: ThoughtState.synthesized);
+      await storeSession(session('s1', 'Work', 'Old.', [x, y]));
+      app().read(synthesisRepositoryProvider);
+
+      await actions(folders: styledFolders).moveThoughtOut('s1', y.id);
+
+      final moved = sessions().firstWhere((s) => s.clusterId != 's1');
+      expect(moved.appliedStyleId, defaultNoteStyleId);
+      expect(moved.isReprocessing, isTrue);
+      expect(await runs.single, SynthesisRunResult.completed);
+      final written = sessions().firstWhere((s) => s.clusterId == moved.clusterId);
+      expect(written.synthesizedContent, 'Book the venue.');
+      expect(written.isReprocessing, isFalse);
+      expect(sessions().firstWhere((s) => s.clusterId == 's1').synthesizedContent, 'Plan the release.');
+    });
+
+    test('moving out a thought of an unknown session changes nothing and starts no run', () async {
+      final x = await thought('Plan the release.', 0, state: ThoughtState.synthesized);
+      await storeSession(session('s1', 'Work', 'Old.', [x]));
+      app().read(synthesisRepositoryProvider);
+
+      await actions(folders: styledFolders).moveThoughtOut('missing', x.id);
+
+      expect(sessions().single.clusterId, 's1');
+      expect(runs, isEmpty);
+    });
 
     test('moving a note to a folder with the same default style only changes its folder', () async {
       final x = await thought('Plan the release.', 0, state: ThoughtState.synthesized);
@@ -1609,21 +1776,25 @@ void main() {
       expect((await reload(a)).state, ThoughtState.processed);
     });
 
+    // Decision 2026-11-27: the write turn in progress is finished and committed, then the run stops.
     test('a preempted run keeps the committed thoughts reset and restores only the waiting ones', () async {
       final a = await thought('Refactor the queue.', 0, attempts: 2);
       final b = await thought('Clean the home office.', 5, attempts: 2);
       var writes = 0;
       final held = Completer<void>();
+      final release = Completer<void>();
       engine.responder = (p) {
         if (isOrganise(p)) return defaultReply(p);
-        if (++writes == 1) return defaultReply(p);
+        if (++writes > 1) return defaultReply(p);
         held.complete();
-        return null;
+        return release.future.then((_) => defaultReply(p));
       };
 
       final run = runner().run(manual: false);
       await held.future;
-      await lifecycle.ensureModelsLoaded(reason: 'recording');
+      final speech = lifecycle.ensureModelsLoaded(reason: 'recording');
+      release.complete();
+      await speech;
 
       expect(await run, SynthesisRunResult.preempted);
       final ra = await reload(a);

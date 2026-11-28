@@ -4,6 +4,10 @@ import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 const String foldersIntro =
     'Synthesis files each note in one of these folders. The description tells it what belongs there.';
 
+/// Under the description field of the folder editor: the description is what Synthesis reads.
+const String folderDescriptionHelp =
+    'Synthesis reads this description to decide which notes belong in this folder. Add your own words — topics, people, projects — to make it more accurate.';
+
 const String uncategorizedNote = 'Catches whatever fits no other folder. It cannot be changed.';
 
 String folderLimitHint() => 'You can have up to $maxFolderCount folders.';

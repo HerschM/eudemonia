@@ -13,6 +13,15 @@ const String handEditedNotice =
 /// Asked before a style rewrite of a hand-edited note.
 const String rewriteReplacesEditsWarning = 'Rewriting in a style replaces your own edits to this note.';
 
+/// Asked before a note is deleted from Synthesis.
+String deleteNoteQuestion(String number, String title) => 'Delete note $number "$title"?';
+
+/// What deleting a note does to its thoughts (`SynthesisRepository.deleteCluster`): they are not
+/// deleted, they go back to waiting for Synthesis.
+String deleteNoteConsequence(int thoughtCount) => thoughtCount == 1
+    ? 'Its 1 thought stays in Capture and becomes ready for Synthesis again.'
+    : 'Its $thoughtCount thoughts stay in Capture and become ready for Synthesis again.';
+
 /// Shown in the text editor when an empty text is refused.
 const String emptyNoteRefusal = 'A note cannot be empty.';
 
@@ -31,12 +40,19 @@ String describeSessionSpan(DateTime start, Duration length) {
   return '$date • ⏱️ $text';
 }
 
-/// The title a note is listed under: its title block, else its first words.
-String noteListTitle(String markdown, {int maxWords = 8}) {
+/// The title block of [markdown] (its first heading), or null when the note does not start with one.
+String? noteHeadingTitle(String markdown) {
   final blocks = parseNoteMarkdown(markdown);
   if (blocks.isNotEmpty && blocks.first.kind == NoteBlockKind.title && blocks.first.text.trim().isNotEmpty) {
     return blocks.first.text.trim();
   }
+  return null;
+}
+
+/// The title a note is listed under: its title block, else its first words.
+String noteListTitle(String markdown, {int maxWords = 8}) {
+  final heading = noteHeadingTitle(markdown);
+  if (heading != null) return heading;
   final words = plainNotePreview(markdown).split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
   if (words.isEmpty) return 'Empty note';
   final shown = words.take(maxWords).join(' ');

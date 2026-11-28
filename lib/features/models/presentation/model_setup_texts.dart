@@ -57,6 +57,19 @@ String describeModelDownload(ModelSpec spec) {
   return spec.kind == ModelKind.language ? '$size · ${spec.memoryLine}' : size;
 }
 
+/// What the Settings row shows after `Speech model ·`: the chosen model's name once it is ready,
+/// otherwise its state (`Downloading 45%`, ...). With none chosen: `Not chosen` when a model is
+/// downloaded, else the state of the transfer under way, or `Not downloaded`.
+String describeSpeechModelSummary({
+  required ModelSpec? selected,
+  required ModelAvailability availability,
+  required bool anyDownloaded,
+}) {
+  if (selected != null && availability.isReady) return selected.displayName;
+  if (selected == null && anyDownloaded && availability.kind == ModelAvailabilityKind.absent) return 'Not chosen';
+  return describeSpeechModelState(availability);
+}
+
 /// One-line state of the speech model, for Settings: `Ready`, `Downloading 45%`, ...
 String describeSpeechModelState(ModelAvailability a) => switch (a.kind) {
       ModelAvailabilityKind.ready => 'Ready',

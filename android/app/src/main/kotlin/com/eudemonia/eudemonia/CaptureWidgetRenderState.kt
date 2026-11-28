@@ -57,7 +57,7 @@ data class CaptureWidgetRenderState(
                     icon = Icon.STOP,
                     clickTarget = ClickTarget.STOP_CAPTURE,
                     chronometerBase = nowElapsedMs - elapsedSinceStart,
-                    chronometerFormat = "Recording %s",
+                    chronometerFormat = CaptureLimits.RECORDING_CHRONOMETER_FORMAT,
                 )
             }
             return CaptureWidgetRenderState(

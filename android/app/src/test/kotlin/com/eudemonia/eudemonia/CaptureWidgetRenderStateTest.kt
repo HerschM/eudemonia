@@ -41,7 +41,7 @@ class CaptureWidgetRenderStateTest {
         assertEquals("Tap to stop and save", render.subtitle)
         assertEquals("Recording", render.compactLabel)
         assertEquals("Stop and save the recording", render.contentDescription)
-        assertEquals("Recording %s", render.chronometerFormat)
+        assertEquals("Recording %s / 5:00", render.chronometerFormat)
         assertEquals(CaptureWidgetRenderState.Icon.STOP, render.icon)
         assertEquals(CaptureWidgetRenderState.ClickTarget.STOP_CAPTURE, render.clickTarget)
         assertTrue(render.isRecording)

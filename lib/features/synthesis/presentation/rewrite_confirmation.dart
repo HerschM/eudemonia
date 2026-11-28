@@ -23,7 +23,7 @@ Future<bool> confirmRewriteOfHandEditedNote(BuildContext context) async {
         TextButton(
           key: const Key('rewrite_confirm_button'),
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Rewrite', style: TextStyle(color: AppColors.accentAI, fontWeight: FontWeight.w700)),
+          child: const Text('Rewrite', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
         ),
       ],
     ),

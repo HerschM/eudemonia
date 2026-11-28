@@ -14,15 +14,14 @@ void main() {
   late InMemoryModelSettingsStore store;
   late ProviderContainer container;
 
-  const speech = ModelCatalogue.speech;
+  const speech = ModelCatalogue.parakeetV3;
   const big = ModelCatalogue.qwen3_4b;
   const small = ModelCatalogue.qwen3_1_7b;
 
-  ProviderContainer build({bool includeCandidates = false}) {
+  ProviderContainer build() {
     container = ProviderContainer(overrides: [
       modelFilesChannelProvider.overrideWithValue(channel),
       modelSettingsStoreProvider.overrideWithValue(store),
-      includeCandidateModelsProvider.overrideWithValue(includeCandidates),
     ]);
     // The controller reads files at construction, like the app does at launch.
     container.read(modelLibraryControllerProvider);
@@ -232,7 +231,7 @@ void main() {
       store.stored = const ModelSettings(selectedLanguageModelId: 'qwen3-1.7b');
       channel.setModel(big, ModelFileState.ready);
       channel.setModel(small, ModelFileState.ready);
-      build(includeCandidates: true);
+      build();
       await settle(tester);
 
       expect(settings().selectedLanguageModelId, small.id);
@@ -253,7 +252,7 @@ void main() {
 
       expect(channel.downloads.map((d) => d['relativePath']),
           speech.files.skip(1).map((f) => f.relativePath).toList());
-      expect(channel.downloads.every((d) => d['wifiOnly'] == true && d['title'] == 'Speech model'), isTrue);
+      expect(channel.downloads.every((d) => d['wifiOnly'] == true && d['title'] == 'Parakeet v3 (25 languages)'), isTrue);
       expect(channel.downloads.first['url'], speech.files[1].url);
       expect(library().of(speech.id).isBusy, isTrue);
 
@@ -312,7 +311,7 @@ void main() {
     testWidgets('nothing is chosen automatically when two fitting models are ready', (tester) async {
       channel.setModel(big, ModelFileState.ready);
       channel.setModel(small, ModelFileState.ready);
-      build(includeCandidates: true);
+      build();
       await settle(tester);
 
       expect(settings().selectedLanguageModelId, isNull);
@@ -331,17 +330,31 @@ void main() {
       container.dispose();
     });
 
-    testWidgets('a stored candidate choice is dropped in a release build for the one visible model', (tester) async {
-      store.stored = const ModelSettings(selectedLanguageModelId: 'qwen3-1.7b');
-      channel.setModel(big, ModelFileState.ready);
+    testWidgets('a lone downloaded 1.7B is chosen automatically on a phone that fits both', (tester) async {
+      channel.device = const DeviceInfo(totalRamMb: 7600);
       channel.setModel(small, ModelFileState.ready);
-      build(includeCandidates: false);
+      build();
       await settle(tester);
 
-      // The candidate is not offered here, so its selection no longer counts and the one
-      // visible downloaded model is chosen instead.
-      expect(settings().selectedLanguageModelId, big.id);
-      expect(container.read(activeSynthesisProfileProvider), SynthesisModelProfile.qwen3_4b);
+      expect(settings().selectedLanguageModelId, small.id);
+      expect(container.read(activeSynthesisProfileProvider), SynthesisModelProfile.qwen3_1_7b);
+      container.dispose();
+    });
+
+    testWidgets('a 6 GB phone cannot select the 4B but can select the 1.7B', (tester) async {
+      channel.device = const DeviceInfo(totalRamMb: 5600);
+      channel.setModel(big, ModelFileState.ready);
+      build();
+      await settle(tester);
+      expect(controller().select(big.id), isFalse, reason: 'does not fit 5.6 GB');
+      expect(settings().selectedLanguageModelId, isNull);
+
+      channel.setModel(small, ModelFileState.ready);
+      await controller().refresh();
+      await settle(tester);
+      expect(controller().select(small.id), isTrue);
+      expect(settings().selectedLanguageModelId, small.id);
+      expect(container.read(activeSynthesisProfileProvider), SynthesisModelProfile.qwen3_1_7b);
       container.dispose();
     });
 
@@ -360,23 +373,24 @@ void main() {
       container.dispose();
     });
 
-    testWidgets('select refuses a model that is not ready, does not fit, hidden or not a language model', (tester) async {
+    testWidgets('select refuses a model that is not ready, does not fit or is not a language model', (tester) async {
       channel.device = const DeviceInfo(totalRamMb: 5600);
       channel.setModel(big, ModelFileState.ready);
       channel.setModel(small, ModelFileState.ready);
-      build(includeCandidates: false);
+      build();
       await settle(tester);
 
       expect(controller().select(big.id), isFalse, reason: 'does not fit 5.6 GB');
-      expect(controller().select(small.id), isFalse, reason: 'candidate hidden in release');
       expect(controller().select(speech.id), isFalse, reason: 'not a language model');
       expect(controller().select('nope'), isFalse);
-      expect(settings().selectedLanguageModelId, isNull);
+      // The 1.7B is the only downloaded model that fits, so it was chosen automatically.
+      expect(settings().selectedLanguageModelId, small.id);
+      expect(controller().select(small.id), isTrue);
       container.dispose();
     });
 
     testWidgets('select refuses a model that is not downloaded, then accepts it once ready', (tester) async {
-      build(includeCandidates: true);
+      build();
       await settle(tester);
       channel.setModel(big, ModelFileState.ready);
       channel.setModel(small, ModelFileState.running);
@@ -432,7 +446,6 @@ void main() {
       container = ProviderContainer(overrides: [
         modelFilesChannelProvider.overrideWithValue(channel),
         modelSettingsStoreProvider.overrideWithValue(_BrokenStore()),
-        includeCandidateModelsProvider.overrideWithValue(false),
       ]);
       container.read(modelLibraryControllerProvider);
       container.read(modelSettingsProvider);

@@ -175,3 +175,48 @@ String setTaskChecked(String noteText, int taskIndex, bool checked) {
   }
   return noteText;
 }
+
+final RegExp _italicRun = RegExp(r'\*(?=[^\s*])(.+?)(?<=[^\s*])\*');
+
+/// [text] without `**bold**` and `*italic*` markers; a lone `*` that opens nothing stays.
+String _withoutEmphasis(String text) =>
+    text.replaceAllMapped(_boldRun, (m) => m.group(1)!).replaceAllMapped(_italicRun, (m) => m.group(1)!);
+
+/// The note as plain readable text for the clipboard, under [title]: heading marks and emphasis
+/// markers removed, `- ` bullets kept, task lines as `[ ] ` / `[x] `, blank-line runs collapsed.
+/// The title is not repeated when the note starts with it; an empty [title] copies the note alone.
+String noteTextForClipboard(String title, String markdown) {
+  final lines = <String>[];
+  for (final raw in markdown.split(RegExp(r'\r\n|\r|\n'))) {
+    final line = raw.trim();
+    if (line.isEmpty) {
+      if (lines.isNotEmpty && lines.last.isNotEmpty) lines.add('');
+      continue;
+    }
+    final heading = _headingText(line);
+    final task = heading == null ? _taskLine.firstMatch(line) : null;
+    final bullet = heading == null && task == null ? _bulletLine.firstMatch(line) : null;
+    lines.add(
+      heading != null
+          ? _withoutEmphasis(heading)
+          : task != null
+              ? '[${task.group(1) == ' ' ? ' ' : 'x'}] ${_withoutEmphasis(task.group(2)!)}'
+              : bullet != null
+                  ? '- ${_withoutEmphasis(bullet.group(1)!)}'
+                  : _withoutEmphasis(line),
+    );
+  }
+  while (lines.isNotEmpty && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  final heading = title.trim();
+  if (heading.isNotEmpty && lines.isNotEmpty && lines.first == heading) {
+    lines.removeAt(0);
+    while (lines.isNotEmpty && lines.first.isEmpty) {
+      lines.removeAt(0);
+    }
+  }
+  final body = lines.join('\n');
+  if (heading.isEmpty) return body;
+  return body.isEmpty ? heading : '$heading\n\n$body';
+}

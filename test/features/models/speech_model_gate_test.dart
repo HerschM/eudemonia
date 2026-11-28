@@ -66,7 +66,7 @@ class _NoModelRunner implements SynthesisRunner {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const speech = ModelCatalogue.speech;
+  const speech = ModelCatalogue.parakeetV3;
 
   group('audio queue and the speech model (FR16.2)', () {
     late FakeModelFilesChannel files;
@@ -83,7 +83,6 @@ void main() {
       container = ProviderContainer(overrides: [
         modelFilesChannelProvider.overrideWithValue(files),
         modelSettingsStoreProvider.overrideWithValue(InMemoryModelSettingsStore()),
-        includeCandidateModelsProvider.overrideWithValue(false),
         notesRepositoryProvider.overrideWithValue(notes),
         sttServiceProvider.overrideWithValue(stt),
         modelLifecycleManagerProvider.overrideWithValue(lifecycle),
@@ -158,7 +157,6 @@ void main() {
         overrides: [
           modelFilesChannelProvider.overrideWithValue(files),
           modelSettingsStoreProvider.overrideWithValue(InMemoryModelSettingsStore()),
-          includeCandidateModelsProvider.overrideWithValue(false),
           synthesisRunnerProvider.overrideWithValue(runner),
         ],
         child: MaterialApp(

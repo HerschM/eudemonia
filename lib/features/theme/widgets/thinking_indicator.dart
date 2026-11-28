@@ -77,7 +77,7 @@ class _ThinkingIndicatorState extends State<ThinkingIndicator> with SingleTicker
                   angle: breath * 0.25,
                   child: Transform.scale(
                     scale: 0.975 + breath * 0.125,
-                    child: Icon(Icons.auto_awesome, key: const Key('thinking_spark'), size: 13, color: color),
+                    child: Icon(Icons.hub_outlined, key: const Key('thinking_spark'), size: 13, color: color),
                   ),
                 ),
                 const SizedBox(width: 6),

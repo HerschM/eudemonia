@@ -14,6 +14,10 @@ class ThoughtCard extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onDelete;
+
+  /// Copies the thought's text (given, as shown now, including a just-saved edit). Shows the Copy
+  /// button on a thought that has text, and makes a long press on the card copy it.
+  final ValueChanged<String>? onCopy;
   final int? sequenceNumber;
   final bool isSelected;
   final bool isSelectionMode;
@@ -34,6 +38,7 @@ class ThoughtCard extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.onDelete,
+    this.onCopy,
     this.sequenceNumber,
     this.isSelected = false,
     this.isSelectionMode = false,
@@ -53,6 +58,12 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
   String? _editedText;
 
   String get _currentText => _editedText ?? widget.note.correctedText;
+
+  /// Whether there is text to copy: a processed or synthesized thought, not an empty one.
+  bool get _isCopyable =>
+      widget.onCopy != null &&
+      (widget.note.state == ThoughtState.processed || widget.note.state == ThoughtState.synthesized) &&
+      _currentText.isNotEmpty;
 
   /// A recording that held no speech: shown as a calm note, not as a failure.
   bool get _isSilent =>
@@ -146,13 +157,14 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: widget.onTap,
-          onLongPress: widget.onLongPress,
+          // An explicit long-press action wins; otherwise a long press copies the text.
+          onLongPress: widget.onLongPress ?? (_isCopyable && !_isEditing ? () => widget.onCopy!(_currentText) : null),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Row (Strictly: [# Number] -> [▶ Play Audio] -> [• Unread Dot] -> Spacer() -> [🗑️ Delete])
+                // Header Row (Strictly: [# Number] -> [▶ Play Audio] -> [• Unread Dot] -> Spacer() -> [Copy] -> [🗑️ Delete])
                 Row(
                   key: const Key('header_row'),
                   children: [
@@ -207,7 +219,21 @@ class _ThoughtCardState extends State<ThoughtCard> with SingleTickerProviderStat
 
                     const Spacer(),
 
-                    // 4. Delete button (Uniformly rendered in header across all card states)
+                    // 4. Copy button, next to the delete button, for a thought that has text
+                    if (_isCopyable) ...[
+                      IconButton(
+                        key: const Key('thought_copy_button'),
+                        icon: const Icon(Icons.copy_outlined, size: 20),
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => widget.onCopy!(_currentText),
+                        tooltip: 'Copy text',
+                      ),
+                      if (widget.onDelete != null) const SizedBox(width: 16),
+                    ],
+
+                    // 5. Delete button (Uniformly rendered in header across all card states)
                     if (widget.onDelete != null)
                       IconButton(
                         key: const Key('delete_note_button'),

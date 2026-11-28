@@ -29,7 +29,7 @@ class StylePreset {
   /// Every style in picker order.
   static final List<StylePreset> defaultPresets = [
     for (final s in noteStyles)
-      StylePreset(id: s.id, name: s.label, icon: _icons[s.id] ?? Icons.auto_awesome, description: s.description),
+      StylePreset(id: s.id, name: s.label, icon: _icons[s.id] ?? Icons.draw_outlined, description: s.description),
   ];
 }
 
@@ -90,7 +90,7 @@ class StyleRewriterModal extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                const Icon(Icons.auto_awesome, color: AppColors.accentAI, size: 20),
+                const Icon(Icons.draw_outlined, color: AppColors.textPrimary, size: 20),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
@@ -149,13 +149,11 @@ class StyleRewriterModal extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.accentAI.withValues(alpha: 0.08)
-                              : AppColors.surface,
+                          color: isSelected ? AppColors.surfaceElevated : AppColors.surface,
                           borderRadius: BorderRadius.circular(AppColors.buttonRadius),
                           border: Border.all(
                             color: isSelected
-                                ? AppColors.accentAI
+                                ? AppColors.borderFocus
                                 : AppColors.borderSubtle,
                             width: isSelected ? 1.5 : 1.0,
                           ),
@@ -165,12 +163,15 @@ class StyleRewriterModal extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppColors.accentAI
-                                    .withValues(alpha: isSelected ? 0.2 : 0.12),
+                                color: AppColors.textPrimary
+                                    .withValues(alpha: isSelected ? 0.12 : 0.06),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Icon(preset.icon,
-                                  color: AppColors.accentAI, size: 18),
+                                  color: isSelected
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                                  size: 18),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -198,8 +199,8 @@ class StyleRewriterModal extends StatelessWidget {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: AppColors.accentAI
-                                                .withValues(alpha: 0.2),
+                                            color: AppColors.textPrimary
+                                                .withValues(alpha: 0.12),
                                             borderRadius:
                                                 BorderRadius.circular(4),
                                           ),
@@ -208,7 +209,7 @@ class StyleRewriterModal extends StatelessWidget {
                                             style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.bold,
-                                              color: AppColors.accentAI,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ),
@@ -229,7 +230,7 @@ class StyleRewriterModal extends StatelessWidget {
                             ),
                             if (isSelected)
                               const Icon(Icons.check,
-                                  color: AppColors.accentAI, size: 20),
+                                  color: AppColors.textPrimary, size: 20),
                           ],
                         ),
                       ),

@@ -8,6 +8,7 @@ import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** What the service, the widget and the Flutter bridge need from the capture core. */
 interface CaptureControl {
@@ -32,7 +33,8 @@ interface CaptureControl {
  * through it, and every surface (notification, widget, Flutter) listens to it.
  *
  * All session work runs on one worker thread, in submission order. Stale part files from a
- * killed process are salvaged first, before any new capture can start.
+ * killed process are salvaged first, before any new capture can start. The recording length
+ * limit is timed on the same worker, so it needs no Flutter engine and queues behind a stop.
  */
 class CaptureCore private constructor(
     private val session: CaptureSession,
@@ -60,17 +62,28 @@ class CaptureCore private constructor(
             val mainHandler = Handler(Looper.getMainLooper())
             val mainPoster = Executor { mainHandler.post(it) }
             val inbox = CaptureInbox(inboxDirectory(appContext))
+            val worker = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "EudemoniaCaptureCore")
+            }
+            val limitTimer = CaptureLimitTimer { delayMs, task ->
+                val pending = worker.schedule({
+                    try {
+                        task()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Capture stop at the length limit failed: ${e.message}")
+                    }
+                }, delayMs, TimeUnit.MILLISECONDS)
+                CaptureLimitTimer.Handle { pending.cancel(false) }
+            }
             val session = CaptureSession(
                 audio = CaptureRecorder(),
                 haptics = VibratorCaptureHaptics(appContext),
                 inbox = inbox,
                 clock = System::currentTimeMillis,
                 mainPoster = mainPoster,
+                limitTimer = limitTimer,
                 audioFocus = SystemCaptureAudioFocus(appContext),
             )
-            val worker = Executors.newSingleThreadExecutor { runnable ->
-                Thread(runnable, "EudemoniaCaptureCore")
-            }
             val core = CaptureCore(session, inbox, worker, mainPoster)
             core.addListener(CaptureWidgetUpdater(appContext))
             worker.execute {

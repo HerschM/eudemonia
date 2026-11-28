@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
+import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'llm_config.dart';
 import 'model_file_validator.dart';
 import 'model_load_guard.dart';
@@ -21,12 +22,16 @@ enum ModelLifecycleState {
 }
 
 /// Central orchestrator managing the memory lifecycle, inactivity eviction, and
-/// on-demand pre-warming of the on-device STT (Parakeet v3) model.
+/// on-demand pre-warming of the on-device STT (Parakeet) model the user chose.
 class ModelLifecycleManager {
   final STTService _sttService;
   final LLMConfig _config;
   final AppLogger? _logger;
   final Future<String?> Function()? _modelsDirResolver;
+
+  /// The folder, below the models directory, of the chosen speech model; `null` when none is
+  /// chosen. Without a resolver the first release's folder, `parakeet`, is used.
+  final String? Function()? _speechModelDirName;
   final void Function(ModelLifecycleState state)? _onStateChanged;
   final ModelFileValidator? _fileValidator;
   final ModelLoadGuard? _loadGuard;
@@ -47,6 +52,7 @@ class ModelLifecycleManager {
     LLMConfig? config,
     this._logger,
     this._modelsDirResolver,
+    this._speechModelDirName,
     this._onStateChanged,
     this._fileValidator,
     this._loadGuard,
@@ -92,6 +98,11 @@ class ModelLifecycleManager {
     return _loadFuture = _loadModels(reason).whenComplete(() => _loadFuture = null);
   }
 
+  String? _speechModelDir() {
+    final resolve = _speechModelDirName;
+    return resolve == null ? 'parakeet' : resolve();
+  }
+
   Future<void> _loadModels(String reason) async {
     _setState(ModelLifecycleState.loading);
 
@@ -99,11 +110,15 @@ class ModelLifecycleManager {
     _logger?.info('================ [ModelLifecycle State Transition] ================');
     _logger?.info('[ModelLifecycle] STATE CHANGE: Unloaded -> Loading');
     _logger?.info('[ModelLifecycle] Reason: $reason');
-    _logger?.info('[ModelLifecycle] Target Model: Sherpa-ONNX Parakeet v3');
+    _logger?.info('[ModelLifecycle] Target Model: Sherpa-ONNX Parakeet in "${_speechModelDir()}"');
     _logger?.info('[ModelLifecycle] Inactivity TTL: ${_config.modelInactivityTtl.inMinutes} minutes');
     _logger?.info('===================================================================');
 
     try {
+      // No chosen model behaves like a missing one: the load fails and recordings wait.
+      final speechDirName = _speechModelDir();
+      if (speechDirName == null) throw Exception('No speech model is chosen.');
+
       // Speech has priority: the language model is unloaded before this one is mapped.
       await _arbiter?.acquireSpeech();
 
@@ -119,7 +134,7 @@ class ModelLifecycleManager {
         throw Exception('Could not resolve models directory path.');
       }
 
-      final sttModelPath = '$modelsDirPath/parakeet';
+      final sttModelPath = '$modelsDirPath/$speechDirName';
       final files = ModelFiles(sttModelDir: sttModelPath);
 
       // The native runtimes abort the process on a malformed file, so reject what we can first.
@@ -323,9 +338,20 @@ final modelLifecycleManagerProvider = Provider<ModelLifecycleManager>((ref) {
     fileValidator: const ModelFileValidator(),
     loadGuard: ModelLoadGuard(),
     arbiter: ref.watch(modelResidencyArbiterProvider),
+    speechModelDirName: () => ref.read(selectedSpeechModelProvider)?.directory,
     onStateChanged: (state) {
       ref.read(modelLifecycleStateProvider.notifier).setLifecycleState(state);
     },
   );
+  // A direct callback, not ref.listen: Riverpod pauses the listeners of a provider nobody watches.
+  final models = ref.read(modelLibraryControllerProvider.notifier);
+  unloadSpeechModelOnSwitch(models, manager);
+  ref.onDispose(() => models.onSpeechSelectionChanged = null);
   return manager;
 });
+
+/// Unloads the speech model from memory whenever the user's choice of speech model changes, so
+/// the next transcription loads the new one and two models are never resident together.
+void unloadSpeechModelOnSwitch(ModelLibraryController models, ModelLifecycleManager manager) {
+  models.onSpeechSelectionChanged = () => unawaited(manager.evictModels(reason: 'Speech model changed'));
+}

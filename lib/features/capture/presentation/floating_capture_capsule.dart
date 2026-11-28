@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:eudemonia/core/formatting/recording_timer.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/voice_wave_indicator.dart';
 
@@ -15,11 +16,15 @@ class FloatingCaptureCapsule extends StatefulWidget {
   final DateTime? startedAt;
   final VoidCallback onTap;
 
+  /// The recording length limit. When set, the timer reads `01:30 / 05:00`; null shows elapsed time only.
+  final Duration? maxDuration;
+
   const FloatingCaptureCapsule({
     super.key,
     required this.isRecording,
     this.startedAt,
     required this.onTap,
+    this.maxDuration,
   });
 
   @override
@@ -66,13 +71,7 @@ class _FloatingCaptureCapsuleState extends State<FloatingCaptureCapsule> {
     super.dispose();
   }
 
-  String get _elapsedLabel {
-    final elapsed = DateTime.now().difference(_listeningSince);
-    final seconds = elapsed.isNegative ? 0 : elapsed.inSeconds;
-    final mm = (seconds ~/ 60).toString().padLeft(2, '0');
-    final ss = (seconds % 60).toString().padLeft(2, '0');
-    return '$mm:$ss';
-  }
+  String get _elapsedLabel => formatRecordingTimer(DateTime.now().difference(_listeningSince), widget.maxDuration);
 
   @override
   Widget build(BuildContext context) {

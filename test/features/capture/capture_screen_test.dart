@@ -8,6 +8,7 @@ import 'package:eudemonia/features/ai_processing/model_lifecycle_manager.dart';
 import 'package:eudemonia/features/capture/capture_inbox_ingestor.dart';
 import 'package:eudemonia/features/capture/native_capture_channel.dart';
 import 'package:eudemonia/features/capture/presentation/capture_screen.dart';
+import 'package:eudemonia/features/home/main_navigation_shell.dart';
 import 'package:eudemonia/features/notes/data/note_model.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
@@ -48,6 +49,8 @@ void main() {
     FakePermissionGateway? permissions,
     // The listening waveform animates forever, so a recording in progress cannot settle.
     bool settle = true,
+    // The record capsule belongs to the navigation shell: tests of it pump the shell, on Capture.
+    bool inShell = false,
   }) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -66,7 +69,7 @@ void main() {
           if (clusters != null)
             synthesisRepositoryProvider.overrideWith(() => SynthesisRepository(clusters)),
         ],
-        child: const MaterialApp(home: CaptureScreen()),
+        child: MaterialApp(home: inShell ? const MainNavigationShell(initialIndex: 0) : const CaptureScreen()),
       ),
     );
     if (settle) {
@@ -80,7 +83,7 @@ void main() {
   group('CaptureScreen layout (FR9, FR11.2) on a 360dp viewport', () {
     testWidgets('renders dual dropdown filters and the floating capsule, without the legacy folder carousel',
         (tester) async {
-      await pumpCapture(tester);
+      await pumpCapture(tester, inShell: true);
 
       expect(find.byKey(const Key('capture_triage_filter_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('capture_status_filter_dropdown')), findsOneWidget);
@@ -311,7 +314,7 @@ void main() {
         (tester) async {
       final channel = FakeNativeCaptureChannel()
         ..saveOnStop = const PendingCapture(path: '/inbox/1.wav', startedAtMs: 1700000000000);
-      await pumpCapture(tester, channel: channel);
+      await pumpCapture(tester, channel: channel, inShell: true);
 
       await tester.tap(find.byKey(const Key('floating_capture_button')));
       await tester.pump();
@@ -339,7 +342,7 @@ void main() {
           isRecording: true,
           startedAtMs: DateTime.now().subtract(const Duration(seconds: 65, milliseconds: 200)).millisecondsSinceEpoch,
         );
-      await pumpCapture(tester, channel: channel, settle: false);
+      await pumpCapture(tester, channel: channel, settle: false, inShell: true);
 
       expect(find.byKey(const Key('floating_capture_button_active')), findsOneWidget);
       expect(find.text('01:05 • Tap to Stop'), findsOneWidget);

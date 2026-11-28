@@ -71,11 +71,11 @@ class NoteActionRow extends StatelessWidget {
         ),
         _ActionChip(
           key: Key('style_button_$clusterId'),
-          icon: Icons.auto_awesome,
+          icon: Icons.draw_outlined,
           prefix: 'Style',
           label: styleLabel,
           trailing: Icons.arrow_drop_down,
-          color: AppColors.accentAI,
+          color: AppColors.textSecondary,
           tooltip: 'AI Style Re-Writer',
           onTap: onStyle,
         ),

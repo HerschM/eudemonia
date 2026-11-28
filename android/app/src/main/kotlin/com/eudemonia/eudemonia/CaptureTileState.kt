@@ -13,14 +13,14 @@ data class CaptureTileState(
             if (state.isRecording) {
                 CaptureTileState(
                     active = true,
-                    label = "Recording thought",
-                    subtitle = "Tap to stop and save",
+                    label = "Recording",
+                    subtitle = "Tap to stop",
                     action = ForegroundServiceCoordinator.ACTION_STOP_CAPTURE,
                 )
             } else {
                 CaptureTileState(
                     active = false,
-                    label = "Record thought",
+                    label = "Record",
                     subtitle = "Tap to record",
                     action = ForegroundServiceCoordinator.ACTION_START_CAPTURE,
                 )

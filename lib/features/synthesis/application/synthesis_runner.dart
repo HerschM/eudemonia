@@ -46,12 +46,17 @@ bool isSynthesisCandidate(Note note, {required bool manual, int maxAttempts = ma
 /// session and commit it (a new one in its folder's default style), then rewrite sessions flagged
 /// for reprocessing (a rewrite without a valid reply keeps the note and clears the flag). A note
 /// edited by hand is never rewritten: its new thoughts are appended to it, and a flag on it is
-/// cleared. Capture always has priority: a run never starts while capture is active and ends as
-/// soon as the speech model is needed.
+/// cleared. Capture always has priority: a run never starts while capture is active, and when the
+/// speech model is asked for (a recording is never held up; only its transcription waits) the
+/// run stops. A run still preparing, loading or organising stops at once. A run in a write or
+/// rewrite turn lets that turn finish and commits its session, so the work is not thrown away,
+/// then stops before the next turn; the turn's own generation limits bound the wait. Either way
+/// the language model is unloaded and released before speech is acquired, so the two models
+/// are never resident together (decision 2026-11-27).
 ///
 /// Every thought of a run is counted as one attempt when the run starts, so a run that dies
 /// mid-way (process killed) still counts; a thought that gets synthesized has its count reset,
-/// and a run preempted by capture takes its count back.
+/// and a run preempted by capture takes the count back from the thoughts it did not write.
 class SynthesisRunner {
   /// How long the CPU is kept awake per hold; renewed before the model load and every model
   /// call, so it only has to outlast one turn including its stop timeout.
@@ -74,11 +79,21 @@ class SynthesisRunner {
   /// Told every time a session's note is written in its style (also when new thoughts join it)
   /// and every time a flagged session's rewrite fails, so a restyle can be confirmed or undone.
   final RewriteFinished? _onRewriteFinished;
+
+  /// Told how every run ended, once [isRunning] is false again; not told of a run refused as
+  /// [SynthesisRunResult.busy] because another was in progress (that one reports its own end).
+  final void Function(SynthesisRunResult result)? _onRunEnded;
   final int maxAutomaticAttempts;
 
   bool _running = false;
   bool _preempted = false;
   Future<void>? _loading;
+
+  /// True while a write or rewrite turn is generating: a preemption then waits for the turn.
+  bool _writing = false;
+
+  /// Completes once a run holding the language model has unloaded and released it.
+  Completer<void>? _released;
 
   SynthesisRunner({
     required this._notes,
@@ -95,6 +110,7 @@ class SynthesisRunner {
     this._wakeLock,
     this._onRunningChanged,
     this._onRewriteFinished,
+    this._onRunEnded,
     this.maxAutomaticAttempts = maxAutomaticSynthesisAttempts,
   });
 
@@ -106,13 +122,15 @@ class SynthesisRunner {
   Future<SynthesisRunResult> run({required bool manual}) async {
     if (_running) return SynthesisRunResult.busy;
     _running = true;
+    var result = SynthesisRunResult.failed;
     try {
-      return await _run(manual);
+      return result = await _run(manual);
     } catch (e, stack) {
       _logger?.error('[Synthesis] Run could not start', error: e, stackTrace: stack);
-      return SynthesisRunResult.failed;
+      return result = SynthesisRunResult.failed;
     } finally {
       _running = false;
+      _onRunEnded?.call(result);
     }
   }
 
@@ -138,6 +156,7 @@ class SynthesisRunner {
     if (_isCaptureActive()) return SynthesisRunResult.busy;
     _preempted = false;
     if (!_arbiter.tryAcquireLanguage(onPreempt: _preempt)) return SynthesisRunResult.busy;
+    final released = _released = Completer<void>();
 
     _onRunningChanged?.call(true);
     final watch = Stopwatch()..start();
@@ -164,6 +183,8 @@ class SynthesisRunner {
       // The speech model may load as soon as the slot is released, so free this one first.
       await _llm.dispose();
       _arbiter.releaseLanguage();
+      _released = null;
+      released.complete();
       if (result == SynthesisRunResult.preempted) {
         try {
           await _undoAttempts(candidates);
@@ -205,7 +226,8 @@ class SynthesisRunner {
     final engine = SynthesisEngine(
       generate: (prompt, maxTokens, {grammar}) async {
         await _wakeLock?.hold(wakeLockWindow);
-        _checkPreempted();
+        // A write turn in progress is finished, also when it takes more than one model call.
+        if (!_writing) _checkPreempted();
         final g = await _llm.generate(prompt, maxOutputTokens: maxTokens, grammar: grammar);
         _logger?.info('[Synthesis] Turn: ${g.promptTokens} prompt tokens (${g.reusedPromptTokens} reused) read in '
             '${_seconds(g.readMs)}s; ${g.outputTokens} output tokens written in ${_seconds(g.writeMs)}s; '
@@ -244,8 +266,8 @@ class SynthesisRunner {
 
       for (final plan in outcome.plans) {
         _checkPreempted();
-        final note = await engine.write(plan);
-        _checkPreempted();
+        // Committed below even when a recording asked for the speech model meanwhile.
+        final note = await _writeTurn(engine, plan);
         if (note == null) {
           failedIds.addAll(plan.newThoughts.map((t) => t.id));
           _logger?.warning('[Synthesis] No valid note for the ${plan.folder} session with thought ids '
@@ -332,8 +354,7 @@ class SynthesisRunner {
           styleId: s.appliedStyleId,
         );
         _logger?.info('[Synthesis] Rewriting session ${s.sequenceNumber} in the ${s.appliedStyleId} style.');
-        final note = await engine.write(plan);
-        _checkPreempted();
+        final note = await _writeTurn(engine, plan);
         final current = _sessionById(s.clusterId);
         // Deleted, or its thoughts or style changed while the note was written: the next pass handles it.
         if (current == null || _writtenKey(current.appliedStyleId, current) != key) continue;
@@ -348,6 +369,16 @@ class SynthesisRunner {
           _onRewriteFinished?.call(s.clusterId, s.appliedStyleId, engine.unwritableReason(plan) ?? noValidReply);
         }
       }
+    }
+  }
+
+  /// One write or rewrite turn. A preemption that arrives during it waits for it (see [_preempt]).
+  Future<String?> _writeTurn(SynthesisEngine engine, SessionPlan plan) async {
+    _writing = true;
+    try {
+      return await engine.write(plan);
+    } finally {
+      _writing = false;
     }
   }
 
@@ -392,9 +423,17 @@ class SynthesisRunner {
     }
   }
 
-  /// Called by the arbiter when a recording needs the speech model.
+  /// Called by the arbiter when a recording needs the speech model. During a write turn the turn
+  /// goes on: the run commits it, stops at its next check, unloads the model and releases it,
+  /// and this completes then. Otherwise the generation is stopped and the model unloaded now.
   Future<void> _preempt() async {
     _preempted = true;
+    final released = _released;
+    if (_writing && released != null) {
+      _logger?.info('[Synthesis] Speech model needed; finishing the note being written first.');
+      await released.future;
+      return;
+    }
     final loading = _loading;
     if (loading != null) {
       try {
@@ -417,6 +456,18 @@ class SynthesisRunningNotifier extends Notifier<bool> {
 
 final synthesisRunningProvider = NotifierProvider<SynthesisRunningNotifier, bool>(SynthesisRunningNotifier.new);
 
+/// How the last run ended, with a count so that every end is a change, also the same result
+/// twice. Lets the trigger see the end of runs it did not start (see [SynthesisRunner]).
+class SynthesisRunEndNotifier extends Notifier<({int count, SynthesisRunResult? result})> {
+  @override
+  ({int count, SynthesisRunResult? result}) build() => (count: 0, result: null);
+
+  void ended(SynthesisRunResult result) => state = (count: state.count + 1, result: result);
+}
+
+final synthesisRunEndProvider =
+    NotifierProvider<SynthesisRunEndNotifier, ({int count, SynthesisRunResult? result})>(SynthesisRunEndNotifier.new);
+
 final Provider<SynthesisRunner> synthesisRunnerProvider = Provider<SynthesisRunner>((ref) {
   return SynthesisRunner(
     notes: ref.watch(notesRepositoryProvider),
@@ -438,5 +489,6 @@ final Provider<SynthesisRunner> synthesisRunnerProvider = Provider<SynthesisRunn
     onRunningChanged: (running) => ref.read(synthesisRunningProvider.notifier).setRunning(running),
     // Read when a rewrite ends, so the runner does not build the actions up front.
     onRewriteFinished: (id, style, failure) => ref.read(sessionActionsProvider).rewriteFinished(id, style, failure),
+    onRunEnded: (result) => ref.read(synthesisRunEndProvider.notifier).ended(result),
   );
 });

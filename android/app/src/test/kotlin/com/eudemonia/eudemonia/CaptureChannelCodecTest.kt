@@ -9,13 +9,20 @@ class CaptureChannelCodecTest {
     @Test
     fun encodesIdleAndRecordingState() {
         assertEquals(
-            mapOf("isRecording" to false, "startedAtMs" to null),
+            mapOf("isRecording" to false, "startedAtMs" to null, "maxDurationMs" to 300_000L),
             CaptureChannelCodec.encodeState(CaptureState.IDLE)
         )
         assertEquals(
-            mapOf("isRecording" to true, "startedAtMs" to 1_700_000_000_000L),
+            mapOf("isRecording" to true, "startedAtMs" to 1_700_000_000_000L, "maxDurationMs" to 300_000L),
             CaptureChannelCodec.encodeState(CaptureState(true, 1_700_000_000_000L))
         )
+    }
+
+    @Test
+    fun everyStateCarriesTheRecordingLimit() {
+        for (state in listOf(CaptureState.IDLE, CaptureState(true, 42L))) {
+            assertEquals(CaptureLimits.MAX_RECORDING_MS, CaptureChannelCodec.encodeState(state)["maxDurationMs"])
+        }
     }
 
     @Test

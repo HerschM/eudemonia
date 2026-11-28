@@ -9,6 +9,11 @@ const List<({String package, String text})> modelCredits = [
         'Converted for on-device use by the sherpa-onnx project.',
   ),
   (
+    package: 'Parakeet TDT 0.6b v2 (speech model)',
+    text: 'NVIDIA. Licensed under Creative Commons Attribution 4.0 (CC-BY-4.0). '
+        'Converted for on-device use by the sherpa-onnx project.',
+  ),
+  (
     package: 'Qwen3 (writing models)',
     text: 'Alibaba Cloud. Licensed under the Apache License 2.0.',
   ),

@@ -19,12 +19,19 @@ class FakeNativeCaptureChannel implements NativeCaptureChannel {
   /// When set, `stop` makes the "native" side report this saved recording, as the real one does.
   PendingCapture? saveOnStop;
 
+  /// When set, the states `start` and `stop` reply with carry this limit, as the real ones do.
+  int? maxDurationMs;
+
   int startCalls = 0;
   int stopCalls = 0;
   int pinCalls = 0;
   Completer<void>? startGate;
 
   bool get hasListeners => _onStateChanged != null;
+
+  NativeCaptureState get _idle => maxDurationMs == null
+      ? NativeCaptureState.idle
+      : NativeCaptureState(isRecording: false, maxDurationMs: maxDurationMs);
 
   void _requireInitialised() {
     if (!hasListeners) throw StateError('NativeCaptureChannel used before listeners were set');
@@ -70,8 +77,12 @@ class FakeNativeCaptureChannel implements NativeCaptureChannel {
     await startGate?.future;
     if (state.isRecording) throw StateError('start called while native is already recording');
     state = startSucceeds
-        ? NativeCaptureState(isRecording: true, startedAtMs: DateTime.now().millisecondsSinceEpoch)
-        : NativeCaptureState.idle;
+        ? NativeCaptureState(
+            isRecording: true,
+            startedAtMs: DateTime.now().millisecondsSinceEpoch,
+            maxDurationMs: maxDurationMs,
+          )
+        : _idle;
     return state;
   }
 
@@ -80,7 +91,7 @@ class FakeNativeCaptureChannel implements NativeCaptureChannel {
     _requireInitialised();
     stopCalls++;
     if (!state.isRecording) throw StateError('stop called while native is idle');
-    state = NativeCaptureState.idle;
+    state = _idle;
     final saved = saveOnStop;
     if (saved != null) scheduleMicrotask(() => emitSaved(saved));
     return state;

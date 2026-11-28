@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/domain/synthesis_cluster.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_action_row.dart';
+import 'package:eudemonia/features/synthesis/presentation/note_copy.dart';
 import 'package:eudemonia/features/synthesis/presentation/note_markdown_view.dart';
 import 'package:eudemonia/features/synthesis/presentation/raw_thoughts_list.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
@@ -10,7 +11,9 @@ import 'package:eudemonia/features/theme/app_colors.dart';
 /// An opened note. Read mode: the formatted note (its checklist can be ticked) and under it the
 /// quiet link `From 3 thoughts ▾` that reveals the thoughts as a plain list. Edit mode: also the
 /// note's actions above it, a line saying so when the note was edited by hand, and a Move Out
-/// button on every thought. Pure presentational widget.
+/// button on every thought. In both modes a Copy button (`note_copy_button`) and a long press on
+/// the note copy it as plain text. The note's title is not repeated here: its row shows it.
+/// Pure presentational widget.
 class NoteBody extends StatelessWidget {
   final SynthesisCluster note;
   final bool editMode;
@@ -45,6 +48,14 @@ class NoteBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: () => copyNote(context, note),
+      child: _content(context),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final thoughtCount = note.originNotes.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,7 +84,26 @@ class NoteBody extends StatelessWidget {
             ),
           const SizedBox(height: 12),
         ],
-        NoteMarkdownView(text: note.synthesizedContent, onTaskToggled: onTaskToggled),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: NoteMarkdownView(text: note.synthesizedContent, hideTitle: true, onTaskToggled: onTaskToggled),
+            ),
+            Tooltip(
+              message: 'Copy note',
+              child: InkWell(
+                key: const Key('note_copy_button'),
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => copyNote(context, note),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.copy_outlined, size: 18, color: AppColors.textSecondary),
+                ),
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 10),
         Wrap(
           alignment: WrapAlignment.spaceBetween,

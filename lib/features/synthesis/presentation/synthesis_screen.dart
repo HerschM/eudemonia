@@ -20,7 +20,9 @@ import 'package:eudemonia/features/synthesis/presentation/rewrite_confirmation.d
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_filtering.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_view.dart';
+import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/confirm_delete_dialog.dart';
 
 // The keys of a note's row and card (`synthesis_cluster_card_<id>`, `note_row_<id>`, ...) are
 // documented with `NoteRow`; this file keeps exporting `sessionCardKey` for its users.
@@ -43,6 +45,11 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
   String? _folder;
   SynthesisTriage _triage = SynthesisTriage.all;
   bool _panelOpen = false;
+
+  /// The notes listed under the Unread or Read filter so far: they stay listed after their read
+  /// state changes (a note being read does not vanish). Dropped when a filter chip is picked, the
+  /// folder changes or the screen goes.
+  final Set<String> _kept = {};
 
   /// Notes opened or closed by the user; a note not in here is open when the preference says so.
   final Map<String, bool> _open = {};
@@ -118,6 +125,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
       _folder = null;
       _panelOpen = false;
       if (!matchesTriage(target, _triage)) _triage = SynthesisTriage.all;
+      _kept.clear();
       _open[clusterId] = true;
       _buildAllRows = true;
     });
@@ -156,6 +164,16 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
   void _markRead(String clusterId) {
     final repo = ref.read(synthesisRepositoryProvider.notifier);
     if (repo.sessionById(clusterId)?.isUnread ?? false) repo.markClusterAsRead(clusterId);
+  }
+
+  Future<void> _delete(SynthesisCluster note) async {
+    final confirmed = await confirmDelete(
+      context,
+      question: deleteNoteQuestion(note.sequenceNumber, noteListTitle(note.synthesizedContent)),
+      consequence: deleteNoteConsequence(note.originNotes.length),
+    );
+    if (!confirmed || !mounted) return;
+    await ref.read(synthesisRepositoryProvider.notifier).deleteCluster(note.clusterId);
   }
 
   void _manageFolders() {
@@ -215,7 +233,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
             'Moved [${thought.formattedSequence}] to ${sessionReferenceLabel(target, relativeTo: note.sessionStart)}');
       },
       onMakeIndependent: () {
-        repo.ejectRawNoteToIndependent(note.clusterId, thought.id);
+        unawaited(ref.read(sessionActionsProvider).moveThoughtOut(note.clusterId, thought.id));
         _showMessage('Promoted [${thought.formattedSequence}] to independent synthesized note.');
       },
     );
@@ -241,6 +259,12 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
     final folder = chosen != null && folderCounts(notes, folderNames).any((f) => f.name.toLowerCase() == chosen)
         ? _folder
         : null;
+    // Remember what the filter lists now; a note read while it is listed stays listed.
+    if (_triage == SynthesisTriage.all) {
+      _kept.clear();
+    } else {
+      _kept.addAll([for (final n in visibleNotes(notes, folder: folder, triage: _triage)) n.clusterId]);
+    }
     // Without a chosen writing model a run cannot start, so the buttons lead to the choice (FR16.5).
     void synthesizeNow() => hasWritingModel ? startManualSynthesis(context) : openModelSetup(Navigator.of(context));
 
@@ -255,6 +279,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
         folderNames: folderNames,
         folder: folder,
         triage: _triage,
+        keptIds: _kept,
         readMode: prefs.readMode,
         panelOpen: _panelOpen,
         isOpen: _isOpen,
@@ -275,14 +300,19 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
         }),
         onReadModeChanged: ref.read(notesViewPrefsProvider.notifier).setReadMode,
         onSelectAllNotes: () => setState(() {
+          _kept.clear();
           _folder = null;
           _panelOpen = false;
         }),
         onSelectFolder: (name) => setState(() {
+          _kept.clear();
           _folder = name;
           _panelOpen = false;
         }),
-        onTriageChanged: (triage) => setState(() => _triage = triage),
+        onTriageChanged: (triage) => setState(() {
+          _kept.clear();
+          _triage = triage;
+        }),
         onManageFolders: _manageFolders,
         onChooseModel: () => openModelSetup(Navigator.of(context)),
         onSynthesizeNow: synthesizeNow,
@@ -294,7 +324,7 @@ class _SynthesisScreenState extends ConsumerState<SynthesisScreen> with Automati
         onStyle: _chooseStyle,
         onEditText: _editText,
         onMerge: (note) => _merge(note, notes),
-        onDelete: (note) => unawaited(repo.deleteCluster(note.clusterId)),
+        onDelete: (note) => unawaited(_delete(note)),
         onMoveOut: (note, thought) => _moveOut(note, thought, notes),
       ),
     );

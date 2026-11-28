@@ -57,7 +57,8 @@ void main() {
     testWidgets(
       'renders the bar, the folder panel filters, batch banner, and cluster cards on 360dp narrow viewport',
       (WidgetTester tester) async {
-        tester.view.physicalSize = const Size(360, 800);
+        // Taller than a phone: the test font is wide, so an opened row's whole title takes many lines.
+        tester.view.physicalSize = const Size(360, 1400);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
@@ -397,8 +398,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // The title is on the row and again at the top of the opened note.
-        expect(find.text('Flat and Contract Updates'), findsNWidgets(2));
+        // The title is on the row only: the opened note does not repeat it (TASK-093, user review 2026-11-27).
+        expect(find.text('Flat and Contract Updates'), findsOneWidget);
         expect(find.text("Daniel's contract"), findsOneWidget);
         expect(find.text('I signed the contract with Daniel on Monday.'),
             findsOneWidget);

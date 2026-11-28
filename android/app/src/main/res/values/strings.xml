@@ -7,5 +7,5 @@
     <string name="capture_widget_title">Capture a thought</string>
     <string name="capture_widget_subtitle">Tap to record</string>
     <string name="capture_widget_content_description">Record a thought</string>
-    <string name="capture_tile_label">Record thought</string>
+    <string name="capture_tile_label">Record</string>
 </resources>

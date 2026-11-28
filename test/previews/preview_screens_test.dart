@@ -548,10 +548,10 @@ void main() {
       }
     });
 
-    testWidgets('nothing downloaded offers Download and the candidate carries a Testing tag', (tester) async {
+    testWidgets('nothing downloaded offers Download for all four models, with no Testing tag', (tester) async {
       await pumpScenario(tester, 0);
-      expect(find.text('Download'), findsNWidgets(3));
-      expect(find.byKey(const Key('model_testing_tag_qwen3-1.7b')), findsOneWidget);
+      expect(find.text('Download'), findsNWidgets(4));
+      expect(find.text('Testing'), findsNothing);
     });
 
     testWidgets('speech downloading shows 312 MB of 671 MB', (tester) async {
@@ -561,7 +561,8 @@ void main() {
 
     testWidgets('4B ready and in use', (tester) async {
       await pumpScenario(tester, 2);
-      expect(find.text('In use'), findsOneWidget);
+      // The ready speech model (the only one downloaded) and the 4B are each in use.
+      expect(find.text('In use'), findsNWidgets(2));
       expect(find.byKey(const Key('model_download_qwen3-1.7b')), findsOneWidget);
     });
 

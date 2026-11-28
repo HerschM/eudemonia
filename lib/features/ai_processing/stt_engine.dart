@@ -1,6 +1,29 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
+import 'audio_segmenter.dart';
+
+/// The result of one transcription, plus what the service logs about long recordings.
+class SttTranscript {
+  /// The recognised text; empty when no speech is found.
+  final String text;
+
+  /// Length of the recording.
+  final Duration audioDuration;
+
+  /// Number of pieces the recording was decoded in (1 for recordings of at most 40 s).
+  final int segmentCount;
+
+  /// Time spent reading, planning and decoding the recording.
+  final Duration elapsed;
+
+  const SttTranscript({
+    required this.text,
+    required this.audioDuration,
+    this.segmentCount = 1,
+    this.elapsed = Duration.zero,
+  });
+}
 
 /// Synchronous speech recognition engine driven by the STT worker isolate.
 ///
@@ -10,8 +33,8 @@ abstract class SttEngine {
   /// Loads model weights from [modelDir] into RAM.
   void load(String modelDir);
 
-  /// Transcribes the WAV file at [audioFilePath]. Returns an empty string when no speech is found.
-  String transcribe(String audioFilePath);
+  /// Transcribes the WAV file at [audioFilePath]. The text is empty when no speech is found.
+  SttTranscript transcribe(String audioFilePath);
 
   /// Releases all native handles.
   void dispose();
@@ -42,7 +65,36 @@ Float32List resampleLinear(Float32List input, int fromRate, int toRate) {
   return output;
 }
 
-/// Sherpa-ONNX Parakeet v3 transducer engine.
+/// Decodes [segments] of [samples] one after another through [decodeSegment], which gets
+/// each segment's samples followed by [SherpaSttEngine.tailPaddingSamples] of silence.
+///
+/// A single segment's text is returned unchanged, so a recording that is not cut gives
+/// exactly the text it gave before segmenting existed. With several segments each text is
+/// trimmed, silent segments contribute nothing, and the rest are joined with one space.
+String transcribeInSegments(
+  Float32List samples,
+  List<AudioSegment> segments,
+  String Function(Float32List paddedSamples) decodeSegment,
+) {
+  if (segments.length == 1) {
+    final only = segments.single;
+    return decodeSegment(_withTailPadding(samples, only.start, only.end));
+  }
+  final texts = <String>[];
+  for (final segment in segments) {
+    final text = decodeSegment(_withTailPadding(samples, segment.start, segment.end)).trim();
+    if (text.isNotEmpty) texts.add(text);
+  }
+  return texts.join(' ');
+}
+
+Float32List _withTailPadding(Float32List samples, int start, int end) {
+  final padded = Float32List(end - start + SherpaSttEngine.tailPaddingSamples);
+  padded.setRange(0, end - start, samples, start);
+  return padded;
+}
+
+/// Sherpa-ONNX Parakeet transducer engine.
 class SherpaSttEngine implements SttEngine {
   static const int targetSampleRate = 16000;
 
@@ -83,7 +135,7 @@ class SherpaSttEngine implements SttEngine {
   }
 
   @override
-  String transcribe(String audioFilePath) {
+  SttTranscript transcribe(String audioFilePath) {
     final recognizer = _recognizer;
     if (recognizer == null) throw Exception('STT Service not initialized');
 
@@ -91,25 +143,35 @@ class SherpaSttEngine implements SttEngine {
       throw Exception('Audio recording not found at $audioFilePath');
     }
 
+    final stopwatch = Stopwatch()..start();
     final waveData = readWave(audioFilePath);
-    if (waveData.samples.isEmpty) return '';
+    if (waveData.samples.isEmpty) return const SttTranscript(text: '', audioDuration: Duration.zero);
 
     Float32List samples = waveData.samples;
     if (waveData.sampleRate != targetSampleRate && waveData.sampleRate > 0) {
       samples = resampleLinear(samples, waveData.sampleRate, targetSampleRate);
     }
 
-    final paddedSamples = Float32List(samples.length + tailPaddingSamples);
-    paddedSamples.setRange(0, samples.length, samples);
+    // Long recordings are decoded in pieces so memory stays flat (see audio_segmenter.dart).
+    final segments = planSttSegments(samples, targetSampleRate);
+    final text = transcribeInSegments(samples, segments, (paddedSamples) {
+      // One stream per segment, freed before the next one is created.
+      final stream = recognizer.createStream();
+      try {
+        stream.acceptWaveform(samples: paddedSamples, sampleRate: targetSampleRate);
+        recognizer.decode(stream);
+        return recognizer.getResult(stream).text;
+      } finally {
+        stream.free();
+      }
+    });
 
-    final stream = recognizer.createStream();
-    try {
-      stream.acceptWaveform(samples: paddedSamples, sampleRate: targetSampleRate);
-      recognizer.decode(stream);
-      return recognizer.getResult(stream).text;
-    } finally {
-      stream.free();
-    }
+    return SttTranscript(
+      text: text,
+      audioDuration: Duration(microseconds: samples.length * Duration.microsecondsPerSecond ~/ targetSampleRate),
+      segmentCount: segments.length,
+      elapsed: stopwatch.elapsed,
+    );
   }
 
   @override

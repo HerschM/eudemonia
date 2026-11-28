@@ -11,7 +11,7 @@ import android.service.quicksettings.TileService
 import android.util.Log
 
 /**
- * Quick Settings tile "Record thought": one swipe and one tap from anywhere, including the
+ * Quick Settings tile "Record": one swipe and one tap from anywhere, including the
  * lock screen. A tap starts or stops a capture through [EudemoniaForegroundService], exactly
  * like the notification button and the home-screen widget; the tile never opens the app.
  */

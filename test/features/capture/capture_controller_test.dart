@@ -198,6 +198,45 @@ void main() {
     });
   });
 
+  group('recording length limit', () {
+    test('is unknown until native has reported it', () async {
+      final controller = await boot();
+
+      expect(controller.maxDuration, isNull);
+    });
+
+    test('comes from the startup state, even while idle', () async {
+      channel.state = const NativeCaptureState(isRecording: false, maxDurationMs: 300000);
+
+      final controller = await boot();
+
+      expect(controller.maxDuration, const Duration(minutes: 5));
+    });
+
+    test('follows native events and the reply of a start', () async {
+      final controller = await boot();
+
+      channel.emitState(
+          const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000, maxDurationMs: 240000));
+      expect(controller.maxDuration, const Duration(minutes: 4));
+      channel.emitState(const NativeCaptureState(isRecording: false, maxDurationMs: 240000));
+
+      channel.maxDurationMs = 300000;
+      await controller.handleTrigger();
+      expect(controller.maxDuration, const Duration(minutes: 5));
+    });
+
+    test('a state without a limit keeps the last one native reported', () async {
+      channel.state = const NativeCaptureState(isRecording: false, maxDurationMs: 300000);
+      final controller = await boot();
+
+      channel.emitState(const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000));
+      channel.emitState(NativeCaptureState.idle);
+
+      expect(controller.maxDuration, const Duration(minutes: 5));
+    });
+  });
+
   group('startup', () {
     test('syncs a recording already in progress and ingests what is waiting in the inbox', () async {
       channel.state = const NativeCaptureState(isRecording: true, startedAtMs: 1700000000000);

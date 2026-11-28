@@ -26,7 +26,7 @@ class CaptureSection extends ConsumerWidget {
     if (offered || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Open Quick Settings, tap the pencil, then drag "Record thought" into your tiles.'),
+        content: Text('Open Quick Settings, tap the pencil, then drag "Record" into your tiles.'),
       ),
     );
   }

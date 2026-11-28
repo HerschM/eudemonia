@@ -6,7 +6,10 @@ class NativeCaptureState {
   final bool isRecording;
   final int? startedAtMs;
 
-  const NativeCaptureState({required this.isRecording, this.startedAtMs});
+  /// The longest a recording may run before native stops and saves it; `null` when not reported.
+  final int? maxDurationMs;
+
+  const NativeCaptureState({required this.isRecording, this.startedAtMs, this.maxDurationMs});
 
   static const NativeCaptureState idle = NativeCaptureState(isRecording: false);
 
@@ -14,9 +17,11 @@ class NativeCaptureState {
     if (map is! Map) return idle;
     final recording = map['isRecording'] == true;
     final startedAt = map['startedAtMs'];
+    final maxDuration = map['maxDurationMs'];
     return NativeCaptureState(
       isRecording: recording,
       startedAtMs: recording && startedAt is num ? startedAt.toInt() : null,
+      maxDurationMs: maxDuration is num ? maxDuration.toInt() : null,
     );
   }
 
@@ -24,13 +29,15 @@ class NativeCaptureState {
   bool operator ==(Object other) =>
       other is NativeCaptureState &&
       other.isRecording == isRecording &&
-      other.startedAtMs == startedAtMs;
+      other.startedAtMs == startedAtMs &&
+      other.maxDurationMs == maxDurationMs;
 
   @override
-  int get hashCode => Object.hash(isRecording, startedAtMs);
+  int get hashCode => Object.hash(isRecording, startedAtMs, maxDurationMs);
 
   @override
-  String toString() => 'NativeCaptureState(isRecording: $isRecording, startedAtMs: $startedAtMs)';
+  String toString() => 'NativeCaptureState(isRecording: $isRecording, startedAtMs: $startedAtMs, '
+      'maxDurationMs: $maxDurationMs)';
 }
 
 /// A finished recording that native code has committed to its inbox.
@@ -118,7 +125,7 @@ class NativeCaptureChannel {
     }
   }
 
-  /// Offers to add the `Record thought` tile to Quick Settings; `false` when the system cannot ask
+  /// Offers to add the `Record` tile to Quick Settings; `false` when the system cannot ask
   /// (before Android 13).
   Future<bool> requestAddQuickSettingsTile() async {
     try {

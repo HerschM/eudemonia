@@ -41,16 +41,17 @@ enum NoteTextEdit {
 }
 
 /// What the user does to a whole session in Synthesis that decides how its note is written:
-/// choosing its style, moving it to a folder (which writes it in the folder's default style) and
-/// editing it by hand (after which it is never rewritten automatically).
+/// choosing its style, moving it to a folder (which writes it in the folder's default style),
+/// moving one of its thoughts out into a note of its own (written in the folder's default style)
+/// and editing it by hand (after which it is never rewritten automatically).
 ///
 /// The previous style is remembered only in memory, so nothing new is persisted: after a restart
 /// a pending restyle that fails falls back to organised.
 class SessionActions {
   final SynthesisRepository _sessions;
 
-  /// Starts a synthesis run. Not awaited: a busy, preempted or model-less run leaves the flag for
-  /// the next run, which rewrites the session in its style then.
+  /// Starts a synthesis run. Not awaited: a busy, preempted or model-less run leaves the flag,
+  /// and `SynthesisTriggerController` starts the next run for it.
   final Future<SynthesisRunResult> Function() _startRun;
   final void Function(RestyleNotice notice) _notify;
 
@@ -93,6 +94,18 @@ class SessionActions {
     if (session.isHandEdited || !folders.any((f) => f.name == folderName)) return;
     final styleId = folderDefaultStyle(folders, folderName);
     if (styleId != session.appliedStyleId) _restyle(clusterId, session.appliedStyleId, styleId);
+  }
+
+  /// Moves thought [noteId] out of the session into a note of its own, filed in the same folder
+  /// and written in that folder's default style (organised for a folder that is not in the
+  /// list). Both notes are flagged and a run is started without waiting for it.
+  Future<void> moveThoughtOut(String clusterId, int noteId) async {
+    await _sessions.hydrated;
+    final folders = await _folders();
+    final session = _sessions.sessionById(clusterId);
+    if (session == null || !session.originNotes.any((o) => o.id == noteId)) return;
+    _sessions.ejectRawNoteToIndependent(clusterId, noteId, styleId: folderDefaultStyle(folders, session.folder));
+    unawaited(_startRun());
   }
 
   /// Replaces the note with [text] the user wrote, kept exactly except for trailing whitespace.

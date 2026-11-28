@@ -10,6 +10,9 @@ import java.util.concurrent.Executor
  * [start] and [stop] are serialised and block for as long as the recorder needs, so callers
  * run them off the main thread (see [CaptureCore]). Haptics fire on the calling thread the
  * moment a start or stop is confirmed; listener callbacks are delivered through [mainPoster].
+ *
+ * Every recording arms [limitTimer] for [CaptureLimits.MAX_RECORDING_MS]; when it fires, the
+ * recording is stopped and saved through the same path as a user stop. A stop cancels it.
  */
 class CaptureSession(
     private val audio: AudioCapture,
@@ -17,11 +20,16 @@ class CaptureSession(
     private val inbox: CaptureInbox,
     private val clock: () -> Long,
     private val mainPoster: Executor,
+    private val limitTimer: CaptureLimitTimer,
     private val audioFocus: CaptureAudioFocus = CaptureAudioFocus.NONE,
 ) {
     private val lock = Any()
     private val listeners = CopyOnWriteArrayList<CaptureListener>()
     private var part: File? = null
+    private var limitHandle: CaptureLimitTimer.Handle? = null
+
+    /** Counts recordings, so a limit that fires late never stops a later recording. */
+    private var recordingNumber = 0L
 
     @Volatile
     var state: CaptureState = CaptureState.IDLE
@@ -50,6 +58,8 @@ class CaptureSession(
         part = target
         val recording = CaptureState(isRecording = true, startedAtMs = startedAtMs)
         state = recording
+        val thisRecording = ++recordingNumber
+        limitHandle = limitTimer.schedule(CaptureLimits.MAX_RECORDING_MS) { stopAtLimit(thisRecording) }
         haptics.onCaptureStarted()
         publish { it.onStateChanged(recording) }
         recording
@@ -59,11 +69,22 @@ class CaptureSession(
      * Stops recording and commits the file. Returns null when idle, or when the commit failed
      * (the part file then stays for the next salvage).
      */
-    fun stop(): SavedCapture? = synchronized(lock) {
+    fun stop(): SavedCapture? = synchronized(lock) { stopRecording() }
+
+    /** The automatic stop at the length limit; a no-op once [recording] has already ended. */
+    private fun stopAtLimit(recording: Long): SavedCapture? = synchronized(lock) {
+        if (recording != recordingNumber) return null
+        stopRecording()
+    }
+
+    /** Callers hold [lock]. */
+    private fun stopRecording(): SavedCapture? {
         val current = state
         val target = part
         val startedAtMs = current.startedAtMs
         if (!current.isRecording || target == null || startedAtMs == null) return null
+        limitHandle?.cancel()
+        limitHandle = null
         val durationMs = audio.stop()
         audioFocus.release()
         val committed = inbox.commit(target)
@@ -73,7 +94,7 @@ class CaptureSession(
         val saved = committed?.let { SavedCapture(it, startedAtMs, durationMs) }
         if (saved != null) publish { it.onCaptureSaved(saved) }
         publish { it.onStateChanged(CaptureState.IDLE) }
-        saved
+        return saved
     }
 
     private fun publish(event: (CaptureListener) -> Unit) {

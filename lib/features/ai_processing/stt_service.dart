@@ -30,7 +30,7 @@ class STTService {
     await _teardown;
     if (_isInitialized) return;
 
-    _logger?.info('[STTService] Initializing Parakeet v3 STT model from $modelDir...');
+    _logger?.info('[STTService] Initializing speech model from $modelDir...');
 
     final worker = await _SttWorker.spawn(_engineFactory);
     try {
@@ -42,18 +42,23 @@ class STTService {
 
     _worker = worker;
     _isInitialized = true;
-    _logger?.info('[STTService] Parakeet v3 STT model loaded successfully.');
+    _logger?.info('[STTService] speech model loaded successfully.');
   }
 
   Future<String> transcribe(String audioFilePath) async {
     final worker = _worker;
     if (!_isInitialized || worker == null) throw Exception('STT Service not initialized');
 
-    final text = await worker.request(_SttOp.transcribe, audioFilePath) as String;
-    if (text.isEmpty) {
+    final transcript = await worker.request(_SttOp.transcribe, audioFilePath) as SttTranscript;
+    if (transcript.segmentCount > 1) {
+      // Never the transcript itself: recordings are private.
+      _logger?.info('[STTService] Long recording: ${_seconds(transcript.audioDuration)} s of audio in '
+          '${transcript.segmentCount} segments, transcribed in ${_seconds(transcript.elapsed)} s.');
+    }
+    if (transcript.text.isEmpty) {
       _logger?.warning('[STTService] No speech found in file: $audioFilePath');
     }
-    return text;
+    return transcript.text;
   }
 
   /// Frees the model. The worker handles requests in order, so an in-flight
@@ -64,12 +69,14 @@ class STTService {
     _isInitialized = false;
     if (worker == null) return;
 
-    _logger?.info('[STTService] Disposing Parakeet v3 STT model...');
+    _logger?.info('[STTService] Disposing speech model...');
     _teardown = worker.shutdown().then((_) {
-      _logger?.info('[STTService] Parakeet v3 STT model disposed.');
+      _logger?.info('[STTService] speech model disposed.');
     });
   }
 }
+
+String _seconds(Duration duration) => (duration.inMilliseconds / 1000).toStringAsFixed(1);
 
 enum _SttOp { load, transcribe, dispose }
 

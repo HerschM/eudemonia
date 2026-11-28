@@ -14,6 +14,9 @@ class NoteMarkdownView extends StatelessWidget {
   /// Draws only the first blocks, for a collapsed card.
   final int? maxBlocks;
 
+  /// Leaves out the leading title block (the row above already shows it); the text is not changed.
+  final bool hideTitle;
+
   /// Called with a task's index among the note's tasks and its new state when it is tapped.
   final void Function(int taskIndex, bool checked)? onTaskToggled;
 
@@ -22,6 +25,7 @@ class NoteMarkdownView extends StatelessWidget {
     required this.text,
     this.style,
     this.maxBlocks,
+    this.hideTitle = false,
     this.onTaskToggled,
   });
 
@@ -44,6 +48,12 @@ class NoteMarkdownView extends StatelessWidget {
     final headingStyle = body.copyWith(fontWeight: FontWeight.w700);
 
     var blocks = parseNoteMarkdown(text);
+    if (hideTitle &&
+        blocks.isNotEmpty &&
+        blocks.first.kind == NoteBlockKind.title &&
+        blocks.first.text.trim().isNotEmpty) {
+      blocks = blocks.sublist(1);
+    }
     final limit = maxBlocks;
     if (limit != null && blocks.length > limit) {
       blocks = blocks.take(limit < 0 ? 0 : limit).toList();

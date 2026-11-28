@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:eudemonia/features/ai_processing/resident_model.dart';
 import 'package:eudemonia/features/home/main_navigation_shell.dart';
+import 'package:eudemonia/features/home/presentation/pipeline_hud_modal.dart';
 import 'package:eudemonia/features/notes/data/notes_repository.dart';
 import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/settings/settings_screen.dart';
@@ -195,8 +197,8 @@ void main() {
 
     test('describes an unavailable reading without inventing numbers', () {
       expect(
-        describePipelineMemory(modelsLoaded: true, telemetry: null),
-        'AI models loaded • live memory reading unavailable',
+        describePipelineMemoryLine(ResidentModel.speech, null),
+        'Speech model loaded • live memory reading unavailable',
       );
     });
   });

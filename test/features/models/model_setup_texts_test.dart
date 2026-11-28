@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('formatModelBytes', () {
     test('decimal units, whole MB and one decimal GB', () {
-      expect(formatModelBytes(ModelCatalogue.speech.totalBytes), '671 MB');
+      expect(formatModelBytes(ModelCatalogue.parakeetV3.totalBytes), '671 MB');
       expect(formatModelBytes(ModelCatalogue.qwen3_4b.totalBytes), '2.5 GB');
       expect(formatModelBytes(ModelCatalogue.qwen3_1_7b.totalBytes), '1.1 GB');
       expect(formatModelBytes(312000000), '312 MB');
@@ -42,24 +42,24 @@ void main() {
   });
 
   group('ModelSetupData', () {
-    ModelSetupData build({int? ram = 7600, bool candidates = false, String? selected}) => ModelSetupData.build(
+    ModelSetupData build({int? ram = 7600, String? selected, String? selectedSpeech}) => ModelSetupData.build(
           loading: false,
           totalRamMb: ram,
           availabilityOf: (_) => ModelAvailability.absent,
+          selectedSpeechModelId: selectedSpeech,
           selectedLanguageModelId: selected,
           wifiOnly: true,
-          includeCandidates: candidates,
         );
 
-    test('a big enough phone lists the model with no warning', () {
+    test('a big enough phone lists both models with no warning', () {
       final data = build();
-      expect(data.languageModels.map((c) => c.spec.id), ['qwen3-4b']);
-      expect(data.languageModels.single.fits, isTrue);
+      expect(data.languageModels.map((c) => c.spec.id), ['qwen3-4b', 'qwen3-1.7b']);
+      expect(data.languageModels.every((c) => c.fits), isTrue);
       expect(data.noModelFitsMessage, isNull);
     });
 
     test('a model the phone cannot hold is greyed with both memory figures', () {
-      final data = build(ram: 5600, candidates: true);
+      final data = build(ram: 5600);
       final big = data.languageModels.firstWhere((c) => c.spec.id == 'qwen3-4b');
       expect(big.fits, isFalse);
       expect(big.doesNotFitMessage, 'Needs a phone with 8 GB of memory. This phone has 6 GB.');
@@ -69,20 +69,28 @@ void main() {
 
     test('when nothing fits the message names the smallest requirement', () {
       expect(build(ram: 3600).noModelFitsMessage,
-          'Synthesis needs a phone with at least 8 GB of memory. Capture and transcription work on this phone.');
-      expect(build(ram: 3600, candidates: true).noModelFitsMessage, contains('at least 6 GB'));
+          'Synthesis needs a phone with at least 6 GB of memory. Capture and transcription work on this phone.');
     });
 
     test('unknown memory counts as not fitting and omits the phone figure', () {
       final data = build(ram: null);
-      expect(data.languageModels.single.fits, isFalse);
-      expect(data.languageModels.single.doesNotFitMessage, 'Needs a phone with 8 GB of memory.');
+      expect(data.languageModels.every((c) => !c.fits), isTrue);
+      expect(data.languageModels.first.doesNotFitMessage, 'Needs a phone with 8 GB of memory.');
+      expect(data.languageModels.last.doesNotFitMessage, 'Needs a phone with 6 GB of memory.');
       expect(data.noModelFitsMessage, isNotNull);
     });
 
+    test('the speech models are listed in catalogue order, the chosen one flagged', () {
+      expect(build().speechModels.map((c) => c.spec.id), ['parakeet-tdt-0.6b-v3-int8', 'parakeet-tdt-0.6b-v2-int8']);
+      expect(build().speechModels.every((c) => c.fits && !c.selected), isTrue);
+      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v2-int8').speechModels.map((c) => c.selected), [false, true]);
+      expect(build(selectedSpeech: 'parakeet-tdt-0.6b-v3-int8').speechModels.map((c) => c.selected), [true, false]);
+    });
+
     test('the selected model is flagged', () {
-      expect(build(selected: 'qwen3-4b').languageModels.single.selected, isTrue);
-      expect(build().languageModels.single.selected, isFalse);
+      expect(build(selected: 'qwen3-4b').languageModels.map((c) => c.selected), [true, false]);
+      expect(build(selected: 'qwen3-1.7b').languageModels.map((c) => c.selected), [false, true]);
+      expect(build().languageModels.any((c) => c.selected), isFalse);
     });
   });
 
@@ -97,6 +105,43 @@ void main() {
     expect(describeSpeechModelState(ModelAvailability.absent), 'Not downloaded');
   });
 
+  group('describeSpeechModelSummary', () {
+    ModelAvailability ready(ModelSpec m) =>
+        ModelAvailability(ModelAvailabilityKind.ready, downloadedBytes: m.totalBytes, totalBytes: m.totalBytes);
+    const downloading = ModelAvailability(ModelAvailabilityKind.downloading, downloadedBytes: 45, totalBytes: 100);
+
+    test('the chosen model is named once it is ready', () {
+      expect(
+          describeSpeechModelSummary(
+              selected: ModelCatalogue.parakeetV2, availability: ready(ModelCatalogue.parakeetV2), anyDownloaded: true),
+          'Parakeet v2 (English)');
+      expect(
+          describeSpeechModelSummary(
+              selected: ModelCatalogue.parakeetV3, availability: ready(ModelCatalogue.parakeetV3), anyDownloaded: true),
+          'Parakeet v3 (25 languages)');
+    });
+
+    test('a chosen model that is not ready shows its state', () {
+      expect(
+          describeSpeechModelSummary(
+              selected: ModelCatalogue.parakeetV2, availability: downloading, anyDownloaded: false),
+          'Downloading 45%');
+      expect(
+          describeSpeechModelSummary(
+              selected: ModelCatalogue.parakeetV2, availability: ModelAvailability.absent, anyDownloaded: false),
+          'Not downloaded');
+    });
+
+    test('none chosen: Not downloaded when nothing is, Not chosen when a model is, else the transfer', () {
+      expect(describeSpeechModelSummary(selected: null, availability: ModelAvailability.absent, anyDownloaded: false),
+          'Not downloaded');
+      expect(describeSpeechModelSummary(selected: null, availability: ModelAvailability.absent, anyDownloaded: true),
+          'Not chosen');
+      expect(describeSpeechModelSummary(selected: null, availability: downloading, anyDownloaded: true),
+          'Downloading 45%');
+    });
+  });
+
   test('a transfer the system has not started reads as waiting, for Wi-Fi when Wi-Fi only is on', () {
     expect(describeModelReason('queued', failed: false), 'Waiting to start');
     expect(describeModelReason('queued_wifi_only', failed: false), 'Waiting for Wi-Fi');
@@ -104,11 +149,15 @@ void main() {
           loading: false,
           totalRamMb: 7600,
           availabilityOf: (_) => const ModelAvailability(ModelAvailabilityKind.paused, totalBytes: 10, reason: 'queued'),
+          selectedSpeechModelId: null,
           selectedLanguageModelId: null,
           wifiOnly: wifiOnly,
-          includeCandidates: false,
         );
-    expect(data(wifiOnly: true).speech.availability.reason, 'queued_wifi_only');
-    expect(data(wifiOnly: false).speech.availability.reason, 'queued');
+    for (final card in data(wifiOnly: true).speechModels) {
+      expect(card.availability.reason, 'queued_wifi_only');
+    }
+    for (final card in data(wifiOnly: false).speechModels) {
+      expect(card.availability.reason, 'queued');
+    }
   });
 }

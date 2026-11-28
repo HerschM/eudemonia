@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_item.dart';
 import 'package:eudemonia/features/ai_processing/audio_queue_service.dart';
-import 'package:eudemonia/features/capture/capture_controller.dart';
+import 'package:eudemonia/features/capture/presentation/thought_delete_wording.dart';
 import 'package:eudemonia/features/capture/thought_actions.dart';
 import 'package:eudemonia/features/home/application/shell_state.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
@@ -16,10 +16,11 @@ import 'package:eudemonia/features/settings/background_permission_service.dart';
 import 'package:eudemonia/features/synthesis/data/synthesis_repository.dart';
 import 'package:eudemonia/features/synthesis/domain/session_numbering.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
+import 'package:eudemonia/features/theme/widgets/clipboard_copy.dart';
+import 'package:eudemonia/features/theme/widgets/confirm_delete_dialog.dart';
 import 'package:eudemonia/features/theme/widgets/day_header.dart';
 import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 import 'package:eudemonia/features/theme/widgets/read_on_dwell.dart';
-import 'floating_capture_capsule.dart';
 
 enum CaptureTriageFilter { all, unread, read }
 
@@ -28,7 +29,8 @@ enum CaptureStatusFilter { all, processing, processed, synthesized, failed }
 /// Stage 1 — Capture: the unfiltered, state-coded stream of raw thoughts.
 ///
 /// Thoughts carry no folder here (folders belong to Synthesis). Machine
-/// pipeline status lives in the navigation shell's Pipeline HUD, not on this screen.
+/// pipeline status lives in the navigation shell's Pipeline HUD, not on this screen. The record
+/// capsule belongs to the shell, so it is on every tab.
 class CaptureScreen extends ConsumerStatefulWidget {
   const CaptureScreen({super.key});
 
@@ -40,6 +42,11 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   CaptureTriageFilter _triageFilter = CaptureTriageFilter.all;
   CaptureStatusFilter _statusFilter = CaptureStatusFilter.all;
+
+  /// Thoughts that have been listed while Unread or Read is showing. They stay listed after their
+  /// read state changes (a thought read while the user looks at it must not vanish); the set is
+  /// dropped when a triage filter is picked, and with the screen.
+  final Set<int> _keptUnderTriage = {};
 
   /// The shell swipes between tabs; this one keeps its scroll position and filters while away.
   @override
@@ -98,12 +105,20 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
           .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
   }
 
+  /// Picking a triage filter (the same one again too) starts a fresh listing.
+  void _pickTriageFilter(CaptureTriageFilter filter) {
+    setState(() {
+      _triageFilter = filter;
+      _keptUnderTriage.clear();
+    });
+  }
+
   bool _matchesFilters(Note n) {
     final matchesTriage = switch (_triageFilter) {
       CaptureTriageFilter.all => true,
       CaptureTriageFilter.unread => !n.isRead,
       CaptureTriageFilter.read => n.isRead,
-    };
+    } || _keptUnderTriage.contains(n.id);
     final matchesStatus = switch (_statusFilter) {
       CaptureStatusFilter.all => true,
       CaptureStatusFilter.processing => n.state == ThoughtState.enqueued,
@@ -114,56 +129,22 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     return matchesTriage && matchesStatus;
   }
 
-  Future<void> _onCapsuleTapped() async {
-    final captured = await ref.read(captureControllerProvider.notifier).handleTrigger();
-    final sequence = captured?.sequenceNumber;
-    if (!mounted || sequence == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.surfaceElevated,
-        duration: const Duration(seconds: 2),
-        content: Text(
-          'Captured a new note [#${sequence.toString().padLeft(2, '0')}]',
-          style: const TextStyle(color: AppColors.textPrimary),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final isRecording = ref.watch(captureControllerProvider);
-    final startedAt = ref.read(captureControllerProvider.notifier).startedAt;
     final notesAsync = ref.watch(recentNotesProvider);
     final queueItems = ref.watch(queueItemsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Stack(
-          children: [
-            notesAsync.when(
-              skipLoadingOnReload: true,
-              data: (persistedNotes) => _buildFeed(_unifiedThoughts(persistedNotes, queueItems)),
-              loading: () => const Center(child: PulseDotsLoader()),
-              error: (err, stack) => Center(
-                child: Text('Error: $err', style: const TextStyle(color: AppColors.textSecondary)),
-              ),
-            ),
-            Positioned(
-              left: 20,
-              right: 20,
-              bottom: 16,
-              child: Center(
-                child: FloatingCaptureCapsule(
-                  isRecording: isRecording,
-                  startedAt: startedAt,
-                  onTap: _onCapsuleTapped,
-                ),
-              ),
-            ),
-          ],
+        child: notesAsync.when(
+          skipLoadingOnReload: true,
+          data: (persistedNotes) => _buildFeed(_unifiedThoughts(persistedNotes, queueItems)),
+          loading: () => const Center(child: PulseDotsLoader()),
+          error: (err, stack) => Center(
+            child: Text('Error: $err', style: const TextStyle(color: AppColors.textSecondary)),
+          ),
         ),
       ),
     );
@@ -171,6 +152,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
 
   Widget _buildFeed(List<Note> allThoughts) {
     final displayed = allThoughts.where(_matchesFilters).toList();
+    if (_triageFilter != CaptureTriageFilter.all) _keptUnderTriage.addAll(displayed.map((n) => n.id));
 
     // Flatten day headers and cards into one lazily built list.
     final rows = <Object>[];
@@ -224,7 +206,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
                 CaptureTriageFilter.read => Icons.drafts_outlined,
               },
               color: (f) => f == _triageFilter ? AppColors.accentAction : AppColors.textSecondary,
-              onChanged: (f) => setState(() => _triageFilter = f),
+              onChanged: _pickTriageFilter,
             ),
             _buildFilterDropdown<CaptureStatusFilter>(
               key: const Key('capture_status_filter_dropdown'),
@@ -241,7 +223,7 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
                 CaptureStatusFilter.all => Icons.layers_outlined,
                 CaptureStatusFilter.processing => Icons.hourglass_top,
                 CaptureStatusFilter.processed => Icons.chat_bubble_outline,
-                CaptureStatusFilter.synthesized => Icons.auto_awesome,
+                CaptureStatusFilter.synthesized => Icons.hub_outlined,
                 CaptureStatusFilter.failed => Icons.error_outline,
               },
               color: (f) => switch (f) {
@@ -474,7 +456,20 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
         if (!isPersisted) return;
         await ref.read(thoughtActionsProvider).editText(note, newText);
       },
+      onCopy: (text) => copyToClipboard(context, text),
       onDelete: () async {
+        // Tells the user what else goes with the thought: the note written from it.
+        final session = isPersisted ? ref.read(synthesisRepositoryProvider.notifier).sessionOfThought(note.id) : null;
+        final confirmed = await confirmDelete(
+          context,
+          question: deleteThoughtQuestion(note.dailySequenceNumber),
+          consequence: describeThoughtDeleteConsequence(
+            session: session,
+            noteId: note.id,
+            thoughtCreatedAt: note.createdAt,
+          ),
+        );
+        if (!confirmed || !mounted) return;
         if (isPersisted) {
           await ref.read(thoughtActionsProvider).delete(note);
         } else if (hasAudio) {

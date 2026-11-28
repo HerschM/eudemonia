@@ -14,16 +14,18 @@ bool matchesTriage(SynthesisCluster note, SynthesisTriage triage) => switch (tri
 bool matchesFolder(SynthesisCluster note, String? folder) =>
     folder == null || note.folder.toLowerCase() == folder.toLowerCase();
 
-/// The notes to list: the ones matching [folder] and [triage], newest day first and, inside a
-/// day, the highest `#S-NN` first.
+/// The notes to list: the ones matching [folder] and [triage] (plus those of [keep] that match
+/// [folder], whatever their read state now is), newest day first and, inside a day, the highest
+/// `#S-NN` first.
 List<SynthesisCluster> visibleNotes(
   List<SynthesisCluster> notes, {
   String? folder,
   SynthesisTriage triage = SynthesisTriage.all,
+  Set<String> keep = const {},
 }) {
   return [
     for (final n in notes)
-      if (matchesFolder(n, folder) && matchesTriage(n, triage)) n,
+      if (matchesFolder(n, folder) && (matchesTriage(n, triage) || keep.contains(n.clusterId))) n,
   ]..sort(newestFirst);
 }
 

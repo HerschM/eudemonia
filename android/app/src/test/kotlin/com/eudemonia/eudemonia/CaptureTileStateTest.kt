@@ -11,7 +11,7 @@ class CaptureTileStateTest {
     fun idleTileStartsACapture() {
         val tile = CaptureTileState.from(CaptureState.IDLE)
         assertFalse(tile.active)
-        assertEquals("Record thought", tile.label)
+        assertEquals("Record", tile.label)
         assertEquals("Tap to record", tile.subtitle)
         assertEquals(ForegroundServiceCoordinator.ACTION_START_CAPTURE, tile.action)
     }
@@ -20,8 +20,8 @@ class CaptureTileStateTest {
     fun recordingTileStopsAndSaves() {
         val tile = CaptureTileState.from(CaptureState(isRecording = true, startedAtMs = 1_000L))
         assertTrue(tile.active)
-        assertEquals("Recording thought", tile.label)
-        assertEquals("Tap to stop and save", tile.subtitle)
+        assertEquals("Recording", tile.label)
+        assertEquals("Tap to stop", tile.subtitle)
         assertEquals(ForegroundServiceCoordinator.ACTION_STOP_CAPTURE, tile.action)
     }
 }

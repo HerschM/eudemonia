@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/core/logger/app_logger.dart';
 import 'llama_isolate_engine.dart';
 import 'llm_config.dart';
+import 'model_lifecycle_manager.dart';
+import 'resident_model.dart';
 
 export 'llm_config.dart';
 
@@ -133,6 +135,10 @@ class LLMService {
 
   /// How long a stopped prompt may take to report completion before the engine is declared stuck.
   final Duration stopTimeout;
+
+  /// Told when the model starts loading, is loaded, and is out of memory again (after a failed
+  /// load, or once a dispose has freed the weights), with the speech model's three states.
+  final void Function(ModelLifecycleState state)? _onStateChanged;
   LlmEngine? _engine;
   bool _isInitialized = false;
   Future<void> _teardown = Future.value();
@@ -148,6 +154,7 @@ class LLMService {
     // A stop is noticed after the prompt chunk or token being decoded (seconds on a phone even
     // when hot), and giving up means killing the worker without freeing the model.
     this.stopTimeout = const Duration(minutes: 1),
+    this._onStateChanged,
   }) : _engineFactory = engineFactory ?? (() => LlamaIsolateEngine(config, _logger));
 
   bool get isInitialized => _isInitialized;
@@ -159,10 +166,17 @@ class LLMService {
     if (_isInitialized) return;
 
     _logger?.info('[LLMService] Initializing llama.cpp engine with config: $config');
+    _onStateChanged?.call(ModelLifecycleState.loading);
     final engine = _engineFactory();
-    await engine.load(modelPath);
+    try {
+      await engine.load(modelPath);
+    } catch (_) {
+      _onStateChanged?.call(ModelLifecycleState.unloaded);
+      rethrow;
+    }
     _engine = engine;
     _isInitialized = true;
+    _onStateChanged?.call(ModelLifecycleState.ready);
     _logger?.info('[LLMService] Llama engine initialized successfully (context: ${config.kvCacheMaxSize}, '
         'chunk: ${config.promptChunkTokens}, prefix reuse: ${config.reusePromptPrefix}).');
   }
@@ -283,6 +297,7 @@ class LLMService {
     } catch (e) {
       _logger?.warning('[LLMService] Error disposing engine: $e');
     }
+    _onStateChanged?.call(ModelLifecycleState.unloaded);
     _logger?.info('[LLMService] LLMService disposed. Base weights and KV cache freed.');
   }
 }
@@ -290,5 +305,9 @@ class LLMService {
 final llmServiceProvider = Provider<LLMService>((ref) {
   final config = ref.watch(llmConfigProvider);
   final logger = ref.watch(appLoggerProvider);
-  return LLMService(config: config, logger: logger);
+  return LLMService(
+    config: config,
+    logger: logger,
+    onStateChanged: (state) => ref.read(languageModelStateProvider.notifier).setState(state),
+  );
 });

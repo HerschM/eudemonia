@@ -1,16 +1,48 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:eudemonia/features/synthesis/presentation/manual_synthesis.dart';
+import 'package:eudemonia/features/ai_processing/resident_model.dart';
+import 'package:eudemonia/features/home/application/pipeline_status.dart';
+import 'package:eudemonia/features/settings/system_telemetry_service.dart';
 import 'package:eudemonia/features/synthesis/presentation/synthesis_texts.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/busy_action_button.dart';
 
+/// How often the memory line is read again while the sheet is open (never while it is closed).
+const Duration pipelineHudRefreshInterval = Duration(seconds: 2);
+
+/// The sheet's memory line: the model in memory and the latest OS reading; nothing is estimated.
+String describePipelineMemoryLine(ResidentModel model, SystemTelemetry? telemetry) {
+  final parts = <String>[describeResidentModel(model)];
+  final appMemory = telemetry?.appMemoryLabel;
+  final deviceMemory = telemetry?.deviceMemoryLabel;
+  if (appMemory != null) parts.add('App memory $appMemory');
+  if (deviceMemory != null) parts.add('Device $deviceMemory');
+  if (appMemory == null && deviceMemory == null) parts.add('live memory reading unavailable');
+  return parts.join(' • ');
+}
+
+String _notes(int count) => '$count ${count == 1 ? 'note' : 'notes'}';
+
+/// The Synthesis stage line. A run going says so, also a rewrite or restyle with no new thoughts.
+String describeSynthesisStage({required int readyThoughts, required int rewriting, required bool synthesizing}) {
+  if (readyThoughts > 0) return describeThoughtsReadyForSynthesis(readyThoughts);
+  if (synthesizing) return rewriting > 0 ? 'Rewriting ${_notes(rewriting)}' : 'Writing your notes';
+  if (rewriting > 0) return '${_notes(rewriting)} waiting to be rewritten';
+  return 'All sessions consolidated';
+}
+
 class PipelineHudModal extends StatelessWidget {
   final int captureTranscribingCount;
   final int synthesisReadyCount;
+
+  /// Notes flagged to be rewritten.
+  final int rewritingCount;
   final VoidCallback onSynthesizeNow;
-  /// Live memory line. Resolves after the sheet is already on screen so opening never waits on it.
-  final Future<String> memoryTelemetry;
+
+  /// The memory line; null until the first reading, so opening never waits on it.
+  final String? memoryLine;
 
   /// A synthesis run is going: the button is disabled and shows the AI thinking in its place.
   final bool synthesizing;
@@ -20,17 +52,14 @@ class PipelineHudModal extends StatelessWidget {
     required this.captureTranscribingCount,
     required this.synthesisReadyCount,
     required this.onSynthesizeNow,
-    required this.memoryTelemetry,
+    this.memoryLine,
+    this.rewritingCount = 0,
     this.synthesizing = false,
   });
 
-  static void show(
-    BuildContext context, {
-    required int captureTranscribingCount,
-    required int synthesisReadyCount,
-    required VoidCallback onSynthesizeNow,
-    required Future<String> memoryTelemetry,
-  }) {
+  /// Opens the sheet. It reads the live status itself ([pipelineStatusProvider]) for as long as
+  /// it is open.
+  static void show(BuildContext context, {required VoidCallback onSynthesizeNow}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -40,16 +69,8 @@ class PipelineHudModal extends StatelessWidget {
           top: Radius.circular(AppColors.modalRadius),
         ),
       ),
-      // The sheet stays open while a run starts and ends, so it follows the run itself.
-      builder: (context) => Consumer(
-        builder: (context, ref, _) => PipelineHudModal(
-          captureTranscribingCount: captureTranscribingCount,
-          synthesisReadyCount: synthesisReadyCount,
-          onSynthesizeNow: onSynthesizeNow,
-          memoryTelemetry: memoryTelemetry,
-          synthesizing: ref.watch(synthesisBusyProvider),
-        ),
-      ),
+      // The sheet stays open while a run starts and ends, so it follows the pipeline itself.
+      builder: (context) => LivePipelineHud(onSynthesizeNow: onSynthesizeNow),
     );
   }
 
@@ -128,15 +149,21 @@ class PipelineHudModal extends StatelessWidget {
             _buildStageTile(
               stageNumber: '2',
               stageName: 'Synthesis',
-              description: synthesisReadyCount > 0
-                  ? describeThoughtsReadyForSynthesis(synthesisReadyCount)
-                  : 'All sessions consolidated',
+              description: describeSynthesisStage(
+                readyThoughts: synthesisReadyCount,
+                rewriting: rewritingCount,
+                synthesizing: synthesizing,
+              ),
               statusColor: synthesisReadyCount > 0
                   ? AppColors.accentAction
-                  : AppColors.accentCapture,
+                  : synthesizing || rewritingCount > 0
+                      ? AppColors.accentAI
+                      : AppColors.accentCapture,
               icon: synthesisReadyCount > 0
                   ? Icons.extension_outlined
-                  : Icons.check_circle_outline,
+                  : synthesizing || rewritingCount > 0
+                      ? Icons.hourglass_top
+                      : Icons.check_circle_outline,
               trailing: synthesisReadyCount > 0
                   ? BusyActionButton(
                       key: const Key('hud_synthesize_now_button'),
@@ -165,16 +192,13 @@ class PipelineHudModal extends StatelessWidget {
                   const Icon(Icons.memory, size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: FutureBuilder<String>(
-                      future: memoryTelemetry,
-                      builder: (context, snapshot) => Text(
-                        snapshot.data ?? 'Reading device memory…',
-                        key: const Key('hud_memory_telemetry'),
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
+                    child: Text(
+                      memoryLine ?? 'Reading device memory…',
+                      key: const Key('hud_memory_telemetry'),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -256,3 +280,57 @@ class PipelineHudModal extends StatelessWidget {
   }
 }
 
+
+/// The sheet as shown: every line from [pipelineStatusProvider], and the memory read again every
+/// [pipelineHudRefreshInterval] while it is open. The timer lives exactly as long as the sheet.
+class LivePipelineHud extends ConsumerStatefulWidget {
+  final VoidCallback onSynthesizeNow;
+
+  const LivePipelineHud({super.key, required this.onSynthesizeNow});
+
+  @override
+  ConsumerState<LivePipelineHud> createState() => _LivePipelineHudState();
+}
+
+class _LivePipelineHudState extends ConsumerState<LivePipelineHud> {
+  Timer? _refresh;
+  SystemTelemetry? _telemetry;
+  bool _hasReading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _readMemory();
+    _refresh = Timer.periodic(pipelineHudRefreshInterval, (_) => _readMemory());
+  }
+
+  Future<void> _readMemory() async {
+    final reading = await ref.read(systemTelemetryServiceProvider).read();
+    if (!mounted) return;
+    setState(() {
+      _telemetry = reading;
+      _hasReading = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _refresh?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(pipelineStatusProvider);
+    return PipelineHudModal(
+      captureTranscribingCount: status.transcribing,
+      synthesisReadyCount: status.readyThoughts,
+      rewritingCount: status.rewriting,
+      synthesizing: status.synthesizing,
+      onSynthesizeNow: widget.onSynthesizeNow,
+      memoryLine: _hasReading
+          ? describePipelineMemoryLine(status.residentModel, _telemetry)
+          : '${describeResidentModel(status.residentModel)} • Reading device memory…',
+    );
+  }
+}

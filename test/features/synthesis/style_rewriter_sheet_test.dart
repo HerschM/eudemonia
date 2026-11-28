@@ -1,5 +1,6 @@
 import 'package:eudemonia/features/synthesis/domain/note_style.dart';
 import 'package:eudemonia/features/synthesis/presentation/style_rewriter_sheet.dart';
+import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,5 +65,49 @@ void main() {
   testWidgets('an unknown or old style id marks nothing', (tester) async {
     await open(tester, selected: 'concise-old');
     expect(find.text('Active'), findsNothing);
+  });
+
+  group('the selected style is neutral, not violet (TASK-093, user review 2026-11-27)', () {
+    /// Every colour the sheet draws with: icons, text, box fills and borders.
+    Set<Color> colorsDrawn(WidgetTester tester) {
+      final sheet = find.byType(StyleRewriterModal);
+      final colors = <Color>{};
+      for (final element in find.descendant(of: sheet, matching: find.byWidgetPredicate((_) => true)).evaluate()) {
+        final w = element.widget;
+        if (w is Icon && w.color != null) colors.add(w.color!);
+        if (w is Text && w.style?.color != null) colors.add(w.style!.color!);
+        if (w is Container && w.decoration is BoxDecoration) {
+          final d = w.decoration as BoxDecoration;
+          if (d.color != null) colors.add(d.color!);
+          final border = d.border;
+          if (border is Border) colors.add(border.top.color);
+        }
+      }
+      return colors;
+    }
+
+    bool isViolet(Color c) => c.toARGB32() & 0xFFFFFF == AppColors.accentAI.toARGB32() & 0xFFFFFF;
+
+    testWidgets('no violet anywhere in the sheet, with a style selected', (tester) async {
+      await open(tester, selected: 'journal');
+      expect(colorsDrawn(tester).where(isViolet), isEmpty);
+    });
+
+    testWidgets('the selected row has the elevated surface, the focus outline and a plain check in the main text colour',
+        (tester) async {
+      await open(tester, selected: 'journal');
+      final row = find.ancestor(of: find.text('Journal entry'), matching: find.byType(Container)).first;
+      final decoration = tester.widget<Container>(row).decoration as BoxDecoration;
+      expect(decoration.color, AppColors.surfaceElevated);
+      expect((decoration.border as Border).top.color, AppColors.borderFocus);
+      final check = tester.widget<Icon>(find.descendant(of: find.ancestor(of: find.text('Journal entry'), matching: find.byType(InkWell)), matching: find.byIcon(Icons.check)));
+      expect(check.color, AppColors.textPrimary);
+    });
+
+    testWidgets('the header and the default icon are not the star', (tester) async {
+      await open(tester);
+      expect(find.byIcon(Icons.draw_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.auto_awesome), findsNothing);
+    });
   });
 }

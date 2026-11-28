@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:eudemonia/features/models/application/model_library_controller.dart';
 import 'package:eudemonia/features/models/application/model_settings.dart';
+import 'package:eudemonia/features/models/domain/model_catalogue.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_view.dart';
 import 'package:eudemonia/features/models/presentation/model_setup_view_data.dart';
 import 'package:eudemonia/features/theme/app_colors.dart';
@@ -23,9 +24,9 @@ class ModelSetupScreen extends ConsumerWidget {
       loading: !library.loaded,
       totalRamMb: library.device.totalRamMb,
       availabilityOf: library.of,
+      selectedSpeechModelId: settings.selectedSpeechModelId,
       selectedLanguageModelId: settings.selectedLanguageModelId,
       wifiOnly: settings.wifiOnly,
-      includeCandidates: ref.watch(includeCandidateModelsProvider),
     );
 
     return Scaffold(
@@ -49,7 +50,9 @@ class ModelSetupScreen extends ConsumerWidget {
         onDownload: (id) => controller.download(id),
         onCancel: (id) => controller.cancel(id),
         onDelete: (id) => controller.delete(id),
-        onSelect: controller.select,
+        onSelect: (id) => ModelCatalogue.byId(id)?.kind == ModelKind.speech
+            ? controller.selectSpeech(id)
+            : controller.select(id),
         onWifiOnlyChanged: controller.setWifiOnly,
       ),
     );

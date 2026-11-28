@@ -159,15 +159,30 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
         key: const Key('folder_style_field'),
         initialValue: _style,
         isExpanded: true,
+        isDense: false,
+        itemHeight: null,
         dropdownColor: AppColors.surfaceElevated,
         style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
-        decoration: _decoration('Default style').copyWith(
-          helperText: noteStyleById(_style).description,
-          helperMaxLines: 2,
-          helperStyle: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
+        decoration: _decoration('Default style'),
+        // Every choice carries its description under the name, as the restyle sheet's rows do; the
+        // closed field shows the chosen style the same way.
         items: [
-          for (final s in noteStyles) DropdownMenuItem<String>(value: s.id, child: Text(s.label)),
+          for (final s in noteStyles)
+            DropdownMenuItem<String>(
+              value: s.id,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(s.description, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
         ],
         onChanged: _busy
             ? null
@@ -251,6 +266,14 @@ class _FolderEditorSheetState extends ConsumerState<FolderEditorSheet> {
                 textCapitalization: TextCapitalization.sentences,
                 style: const TextStyle(color: AppColors.textPrimary),
                 decoration: _decoration('Description'),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 2, 4, 0),
+                child: Text(
+                  folderDescriptionHelp,
+                  key: Key('folder_description_help'),
+                  style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textSecondary),
+                ),
               ),
               const SizedBox(height: 12),
               _styleField(),

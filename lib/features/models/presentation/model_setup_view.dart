@@ -6,8 +6,8 @@ import 'package:eudemonia/features/models/presentation/model_setup_view_data.dar
 import 'package:eudemonia/features/theme/app_colors.dart';
 import 'package:eudemonia/features/theme/widgets/pulse_dots_loader.dart';
 
-/// The body of the model setup screen: the speech model, the choice of writing model and the
-/// Wi-Fi switch. Pure presentational widget, fed by plain values and callbacks.
+/// The body of the model setup screen: the choice of speech model, the choice of writing model
+/// and the Wi-Fi switch. Pure presentational widget, fed by plain values and callbacks.
 class ModelSetupView extends StatelessWidget {
   final ModelSetupData data;
   final ValueChanged<String> onDownload;
@@ -38,15 +38,25 @@ class ModelSetupView extends StatelessWidget {
             style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.textSecondary),
           ),
         ),
-        ModelCard(
-          data: data.speech,
-          requiredLabel: true,
-          onDownload: onDownload,
-          onCancel: onCancel,
-          onDelete: onDelete,
-          onSelect: onSelect,
+        const _SectionHeader('Speech model'),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
+          child: Text(
+            'Turns your recordings into text. Choose one.',
+            style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textSecondary),
+          ),
         ),
-        const SizedBox(height: 24),
+        for (final card in data.speechModels) ...[
+          ModelCard(
+            data: card,
+            onDownload: onDownload,
+            onCancel: onCancel,
+            onDelete: onDelete,
+            onSelect: onSelect,
+          ),
+          const SizedBox(height: 12),
+        ],
+        const SizedBox(height: 12),
         const _SectionHeader('Writing model'),
         const Padding(
           padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
@@ -137,8 +147,6 @@ class _InfoCard extends StatelessWidget {
 class ModelCard extends StatelessWidget {
   final ModelCardData data;
 
-  /// The speech model's card says it is required.
-  final bool requiredLabel;
   final ValueChanged<String> onDownload;
   final ValueChanged<String> onCancel;
   final ValueChanged<String> onDelete;
@@ -147,7 +155,6 @@ class ModelCard extends StatelessWidget {
   const ModelCard({
     super.key,
     required this.data,
-    this.requiredLabel = false,
     required this.onDownload,
     required this.onCancel,
     required this.onDelete,
@@ -156,44 +163,21 @@ class ModelCard extends StatelessWidget {
 
   ModelSpec get _spec => data.spec;
   ModelAvailability get _availability => data.availability;
-  bool get _isLanguage => _spec.kind == ModelKind.language;
 
   @override
   Widget build(BuildContext context) {
-    final description = requiredLabel ? 'Required. ${_spec.qualityLine}' : _spec.qualityLine;
+    final description = _spec.qualityLine;
     final ready = _availability.isReady && data.fits;
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            // The name and tag take the free width so the menu sits at the card's right edge.
+            // The name takes the free width so the menu sits at the card's right edge.
             Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      _spec.displayName,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                    ),
-                  ),
-                  if (_spec.isCandidate) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      key: Key('model_testing_tag_${_spec.id}'),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.accentWarning.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(AppColors.badgeRadius),
-                        border: Border.all(color: AppColors.accentWarning.withValues(alpha: 0.4)),
-                      ),
-                      child: const Text(
-                        'Testing',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.accentWarning),
-                      ),
-                    ),
-                  ],
-                ],
+              child: Text(
+                _spec.displayName,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
               ),
             ),
             if (ready)
@@ -320,16 +304,6 @@ class ModelCard extends StatelessWidget {
 
   Widget _readyRow() {
     final id = _spec.id;
-    if (!_isLanguage) {
-      return const Row(
-        key: Key('model_ready'),
-        children: [
-          Icon(Icons.check_circle_outline, size: 18, color: AppColors.accentCapture),
-          SizedBox(width: 8),
-          Text('Ready', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentCapture)),
-        ],
-      );
-    }
     return _actionRow(
       Row(
         key: Key('model_ready_$id'),

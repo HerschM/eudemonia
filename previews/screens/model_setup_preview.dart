@@ -22,6 +22,7 @@ class _ModelSetupPreviewState extends State<ModelSetupPreview> {
   late int _index = widget.initialScenario;
   late Map<String, ModelAvailability> _availability;
   String? _selectedId;
+  String? _selectedSpeechId;
   bool _wifiOnly = true;
 
   MockModelScenario get _scenario => _scenarios[_index];
@@ -36,6 +37,9 @@ class _ModelSetupPreviewState extends State<ModelSetupPreview> {
     _index = index;
     _availability = Map.of(_scenario.availability);
     _selectedId = _scenario.selectedLanguageModelId;
+    // Like the app: a lone downloaded speech model is already in use.
+    final readySpeech = [for (final m in ModelCatalogue.speechModels) if (_of(m.id).isReady) m];
+    _selectedSpeechId = readySpeech.length == 1 ? readySpeech.single.id : null;
   }
 
   ModelAvailability _of(String id) => _availability[id] ?? ModelAvailability.absent;
@@ -55,9 +59,9 @@ class _ModelSetupPreviewState extends State<ModelSetupPreview> {
       loading: false,
       totalRamMb: _scenario.totalRamMb,
       availabilityOf: _of,
+      selectedSpeechModelId: _selectedSpeechId,
       selectedLanguageModelId: _selectedId,
       wifiOnly: _wifiOnly,
-      includeCandidates: true,
     );
     return Scaffold(
       backgroundColor: PreviewTheme.background,
@@ -101,8 +105,15 @@ class _ModelSetupPreviewState extends State<ModelSetupPreview> {
               onDelete: (id) => setState(() {
                 _availability.remove(id);
                 if (_selectedId == id) _selectedId = null;
+                if (_selectedSpeechId == id) _selectedSpeechId = null;
               }),
-              onSelect: (id) => setState(() => _selectedId = id),
+              onSelect: (id) => setState(() {
+                if (ModelCatalogue.byId(id)?.kind == ModelKind.speech) {
+                  _selectedSpeechId = id;
+                } else {
+                  _selectedId = id;
+                }
+              }),
               onWifiOnlyChanged: (value) => setState(() => _wifiOnly = value),
             ),
           ),
